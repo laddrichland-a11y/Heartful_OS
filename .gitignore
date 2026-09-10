@@ -1,0 +1,16 @@
+# macOS metadata
+.DS_Store
+._*
+
+# Original client Git history (retained locally)
+.git-client-backup/
+
+# Local dependencies, generated output, and credentials
+node_modules/
+.next/
+.netlify/
+.env*
+*.tsbuildinfo
+firebase-service-account*.json
+*-firebase-adminsdk-*.json
+_to_delete/

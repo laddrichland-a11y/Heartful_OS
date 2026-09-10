@@ -1,0 +1,177 @@
+@import "tailwindcss";
+
+:root {
+  --background: #faf7f2;
+  --foreground: #2b2420;
+
+  /* Heartful OS palette — warm, grounded, modern */
+  --color-clay-50: #fbf5ef;
+  --color-clay-100: #f3e6d8;
+  --color-clay-200: #e6cbb0;
+  --color-clay-300: #d6a87e;
+  --color-clay-400: #c7855a;
+  --color-clay-500: #b5663f;
+  --color-clay-600: #985236;
+  --color-clay-700: #7a402d;
+  --color-clay-800: #5e3225;
+  --color-clay-900: #46251c;
+
+  --color-sage-50: #f4f7f2;
+  --color-sage-100: #e4ecdd;
+  --color-sage-200: #c7d8b8;
+  --color-sage-300: #a4c08f;
+  --color-sage-400: #84a96d;
+  --color-sage-500: #67914f;
+  --color-sage-600: #51743f;
+  --color-sage-700: #405b33;
+  --color-sage-800: #34472a;
+  --color-sage-900: #283823;
+
+  --color-plum-50: #f7f3f8;
+  --color-plum-100: #ece1ee;
+  --color-plum-200: #d6bfdb;
+  --color-plum-300: #bb98c4;
+  --color-plum-400: #9f72ac;
+  --color-plum-500: #855694;
+  --color-plum-600: #6b4178;
+  --color-plum-700: #533161;
+  --color-plum-800: #3e2549;
+  --color-plum-900: #2c1a35;
+
+  --color-ink-50: #f7f6f4;
+  --color-ink-100: #ece9e4;
+  --color-ink-200: #d8d1c6;
+  --color-ink-300: #b8ab98;
+  --color-ink-400: #948572;
+  --color-ink-500: #756757;
+  --color-ink-600: #5c5044;
+  --color-ink-700: #483f36;
+  --color-ink-800: #362f29;
+  --color-ink-900: #2b2420;
+}
+
+@theme inline {
+  --color-background: var(--background);
+  --color-foreground: var(--foreground);
+  --font-sans: -apple-system, BlinkMacSystemFont, "Segoe UI", Inter, Roboto, Helvetica, Arial, sans-serif;
+  --font-mono: ui-monospace, SFMono-Regular, "SF Mono", Menlo, Consolas, monospace;
+
+  --color-clay-50: var(--color-clay-50);
+  --color-clay-100: var(--color-clay-100);
+  --color-clay-200: var(--color-clay-200);
+  --color-clay-300: var(--color-clay-300);
+  --color-clay-400: var(--color-clay-400);
+  --color-clay-500: var(--color-clay-500);
+  --color-clay-600: var(--color-clay-600);
+  --color-clay-700: var(--color-clay-700);
+  --color-clay-800: var(--color-clay-800);
+  --color-clay-900: var(--color-clay-900);
+
+  --color-sage-50: var(--color-sage-50);
+  --color-sage-100: var(--color-sage-100);
+  --color-sage-200: var(--color-sage-200);
+  --color-sage-300: var(--color-sage-300);
+  --color-sage-400: var(--color-sage-400);
+  --color-sage-500: var(--color-sage-500);
+  --color-sage-600: var(--color-sage-600);
+  --color-sage-700: var(--color-sage-700);
+  --color-sage-800: var(--color-sage-800);
+  --color-sage-900: var(--color-sage-900);
+
+  --color-plum-50: var(--color-plum-50);
+  --color-plum-100: var(--color-plum-100);
+  --color-plum-200: var(--color-plum-200);
+  --color-plum-300: var(--color-plum-300);
+  --color-plum-400: var(--color-plum-400);
+  --color-plum-500: var(--color-plum-500);
+  --color-plum-600: var(--color-plum-600);
+  --color-plum-700: var(--color-plum-700);
+  --color-plum-800: var(--color-plum-800);
+  --color-plum-900: var(--color-plum-900);
+
+  --color-ink-50: var(--color-ink-50);
+  --color-ink-100: var(--color-ink-100);
+  --color-ink-200: var(--color-ink-200);
+  --color-ink-300: var(--color-ink-300);
+  --color-ink-400: var(--color-ink-400);
+  --color-ink-500: var(--color-ink-500);
+  --color-ink-600: var(--color-ink-600);
+  --color-ink-700: var(--color-ink-700);
+  --color-ink-800: var(--color-ink-800);
+  --color-ink-900: var(--color-ink-900);
+}
+
+body {
+  background: var(--background);
+  color: var(--foreground);
+  font-family: var(--font-sans);
+}
+
+* {
+  scrollbar-width: thin;
+}
+
+.card {
+  background: white;
+  border: 1px solid var(--color-ink-100);
+  border-radius: 1rem;
+  box-shadow: 0 1px 2px rgba(43, 36, 32, 0.04);
+}
+
+.btn-primary {
+  background: var(--color-clay-500);
+  color: white;
+  border-radius: 0.65rem;
+  padding: 0.55rem 1.1rem;
+  font-weight: 500;
+  transition: background 0.15s ease;
+  cursor: pointer;
+}
+.btn-primary:hover {
+  background: var(--color-clay-600);
+}
+.btn-primary:disabled {
+  cursor: default;
+}
+
+.btn-secondary {
+  background: var(--color-sage-100);
+  color: var(--color-sage-800);
+  border-radius: 0.65rem;
+  padding: 0.55rem 1.1rem;
+  font-weight: 500;
+  transition: background 0.15s ease;
+  cursor: pointer;
+}
+.btn-secondary:hover {
+  background: var(--color-sage-200);
+}
+.btn-secondary:disabled {
+  cursor: default;
+}
+
+.btn-ghost {
+  border-radius: 0.65rem;
+  padding: 0.55rem 1.1rem;
+  font-weight: 500;
+  color: var(--color-ink-600);
+  transition: background 0.15s ease;
+  cursor: pointer;
+}
+.btn-ghost:hover {
+  background: var(--color-ink-50);
+}
+.btn-ghost:disabled {
+  cursor: default;
+}
+
+.badge {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.25rem;
+  border-radius: 999px;
+  padding: 0.15rem 0.6rem;
+  font-size: 0.72rem;
+  font-weight: 600;
+  letter-spacing: 0.01em;
+}

@@ -1,0 +1,244 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Heartful OS — Demo Screens</title>
+<style>
+  :root {
+    --clay: #b5663f;
+    --clay-soft: #d99a75;
+    --clay-wash: #f6ece6;
+    --ink: #2b2420;
+    --ink-2: #6b5d54;
+    --ink-3: #948572;
+    --paper: #fdfaf7;
+    --line: rgba(43,36,32,0.12);
+  }
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  html, body { height: 100%; overflow: hidden; }
+  body {
+    background: var(--paper);
+    color: var(--ink);
+    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", "Helvetica Neue", Arial, sans-serif;
+    -webkit-font-smoothing: antialiased;
+  }
+  .stage { position: fixed; inset: 0; display: flex; align-items: center; justify-content: center; }
+  .slide {
+    width: 100%; max-width: 1180px; padding: 0 72px;
+    opacity: 0; transform: translateY(14px);
+    transition: opacity .5s ease, transform .5s ease;
+    position: absolute; pointer-events: none;
+  }
+  .slide.on { opacity: 1; transform: none; pointer-events: auto; }
+
+  .eyebrow { font-size: 15px; letter-spacing: .16em; text-transform: uppercase; color: var(--clay); font-weight: 600; margin-bottom: 22px; }
+  h1 { font-size: 68px; line-height: 1.06; letter-spacing: -0.035em; font-weight: 700; margin-bottom: 24px; }
+  h2 { font-size: 46px; line-height: 1.14; letter-spacing: -0.028em; font-weight: 700; margin-bottom: 26px; max-width: 20ch; }
+  p.lede { font-size: 25px; line-height: 1.5; color: var(--ink-2); max-width: 46ch; }
+  p.lede em { color: var(--clay); font-style: normal; font-weight: 600; }
+
+  .cols { display: grid; grid-template-columns: 1fr 1fr; gap: 64px; align-items: start; }
+  .col h3 { font-size: 15px; letter-spacing: .14em; text-transform: uppercase; color: var(--ink-3); font-weight: 600; margin-bottom: 20px; }
+  .col.sol h3 { color: var(--clay); }
+  ul { list-style: none; }
+  li { font-size: 21px; line-height: 1.45; color: var(--ink-2); padding: 13px 0 13px 32px; position: relative; border-top: 1px solid var(--line); }
+  li:first-child { border-top: none; }
+  li::before { content: ""; position: absolute; left: 4px; top: 24px; width: 9px; height: 9px; border-radius: 50%; background: var(--ink-3); opacity: .45; }
+  .col.sol li::before { background: var(--clay); opacity: 1; }
+  .col.sol li { color: var(--ink); }
+
+  .title { text-align: center; }
+  .title h1 { margin-bottom: 20px; }
+  .title p.lede { margin: 0 auto; max-width: 40ch; }
+  .hero-logo { display: flex; align-items: center; justify-content: center; gap: 22px; margin-bottom: 52px; }
+  .hero-mark { width: 96px; height: 96px; border-radius: 22px; background: var(--clay); display: flex; align-items: center; justify-content: center; flex: none; }
+  .hero-mark svg { width: 58px; height: 58px; }
+  .hero-word { text-align: left; }
+  .hero-name { font-size: 40px; font-weight: 700; letter-spacing: -0.03em; line-height: 1.1; }
+  .hero-tag { font-size: 14px; letter-spacing: .2em; text-transform: uppercase; color: var(--ink-3); margin-top: 4px; }
+
+  .thesis { text-align: center; }
+  .thesis h1 { font-size: 74px; max-width: 17ch; margin: 0 auto 28px; }
+  .thesis .u { color: var(--clay); }
+  .thesis p { font-size: 24px; color: var(--ink-2); max-width: 52ch; margin: 0 auto; line-height: 1.5; }
+
+  .journey-head { text-align: center; margin-bottom: 4px; }
+  .journey-head h2 { font-size: 40px; max-width: none; margin: 0 auto 10px; }
+  .journey-head p { font-size: 19px; color: var(--ink-3); }
+
+  .brandbar { position: fixed; left: 40px; bottom: 32px; display: flex; align-items: center; gap: 13px; opacity: .85; }
+  .mark { width: 34px; height: 34px; border-radius: 9px; background: var(--clay); display: flex; align-items: center; justify-content: center; flex: none; }
+  .mark svg { width: 21px; height: 21px; }
+  .bname { font-size: 15px; font-weight: 700; letter-spacing: -0.01em; }
+  .btag { font-size: 10.5px; letter-spacing: .13em; color: var(--ink-3); text-transform: uppercase; }
+
+  .nav { position: fixed; right: 40px; bottom: 32px; display: flex; align-items: center; gap: 14px; font-size: 13px; color: var(--ink-3); }
+  .nav button { width: 32px; height: 32px; border-radius: 50%; border: 1px solid var(--line); background: transparent; color: var(--ink-2); cursor: pointer; font-size: 15px; line-height: 1; font-family: inherit; }
+  .nav button:hover { background: var(--clay-wash); border-color: var(--clay-soft); }
+  .hint { position: fixed; left: 50%; transform: translateX(-50%); bottom: 34px; font-size: 13px; color: var(--ink-3); opacity: .6; transition: opacity .4s; }
+  .hint.hide { opacity: 0; }
+
+  @media print { .nav, .hint { display: none; } }
+</style>
+</head>
+<body>
+
+<div class="stage">
+
+  <!-- 1 · Title -->
+  <section class="slide title on" data-i="0">
+    <div class="hero-logo">
+      <div class="hero-mark">
+        <svg viewBox="0 0 24 24" fill="none" stroke="#fff" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round">
+          <path d="M19.414 14.414C21 12.828 22 11.5 22 9.5a5.5 5.5 0 0 0-9.591-3.676.6.6 0 0 1-.818.001A5.5 5.5 0 0 0 2 9.5c0 2.3 1.5 4 3 5.5l5.535 5.362a2 2 0 0 0 2.879.052 2.12 2.12 0 0 0-.004-3 2.124 2.124 0 1 0 3-3 2.124 2.124 0 0 0 3.004 0 2 2 0 0 0 0-2.828l-1.881-1.882a2.41 2.41 0 0 0-3.409 0l-1.71 1.71a2 2 0 0 1-2.828 0 2 2 0 0 1 0-2.828l2.823-2.762"/>
+        </svg>
+      </div>
+      <div class="hero-word">
+        <div class="hero-name">Heartful OS</div>
+        <div class="hero-tag">Journey management</div>
+      </div>
+    </div>
+    <h1>Heartful&nbsp;OS</h1>
+    <p class="lede">Built by practitioners for practitioners to predictively and accurately manage the workflow of transformational journeys.</p>
+  </section>
+
+
+  <!-- 2 · Thesis -->
+  <section class="slide thesis" data-i="1">
+    <h1>The journey has a shape.<br><span class="u">Software should know it.</span></h1>
+    <p>Conventional practice management treats every session as a unit of time. This work isn&rsquo;t a series of appointments &mdash; it&rsquo;s a structured arc, and the structure is where the value lives.</p>
+  </section>
+
+  <!-- 3 · Seven stages -->
+  <section class="slide" data-i="2">
+    <div class="journey-head">
+      <h2>Seven stages, encoded in the system</h2>
+      <p>Every stage is captured in the system, and subsequent stages are modeled from the previous stage</p>
+    </div>
+    <svg viewBox="0 0 1180 340" style="width:100%;height:auto;margin-top:6px" role="img" aria-label="The seven stages of the Heartful OS journey model">
+      <defs>
+        <linearGradient id="spine" x1="0" y1="0" x2="1" y2="0">
+          <stop offset="0%" stop-color="#d99a75" stop-opacity="0.35"/>
+          <stop offset="100%" stop-color="#b5663f" stop-opacity="0.9"/>
+        </linearGradient>
+      </defs>
+
+      <line x1="84" y1="150" x2="1096" y2="150" stroke="url(#spine)" stroke-width="3" stroke-linecap="round"/>
+
+      <g class="stg" data-s="0">
+        <circle cx="84"  cy="150" r="17" fill="#fdfaf7" stroke="#d99a75" stroke-width="3"/>
+        <circle cx="84"  cy="150" r="6"  fill="#d99a75"/>
+        <text x="84"  y="112" text-anchor="middle" font-size="19" font-weight="700" fill="#2b2420">Intake</text>
+        <text x="84"  y="196" text-anchor="middle" font-size="15" fill="#948572">Assessment</text>
+        <text x="84"  y="216" text-anchor="middle" font-size="15" fill="#948572">&amp; screening</text>
+      </g>
+
+      <g class="stg" data-s="1">
+        <circle cx="253" cy="150" r="17" fill="#fdfaf7" stroke="#d79471" stroke-width="3"/>
+        <circle cx="253" cy="150" r="6"  fill="#d79471"/>
+        <text x="253" y="112" text-anchor="middle" font-size="19" font-weight="700" fill="#2b2420">Preparation</text>
+        <text x="253" y="196" text-anchor="middle" font-size="15" fill="#948572">Intention,</text>
+        <text x="253" y="216" text-anchor="middle" font-size="15" fill="#948572">safety, consent</text>
+      </g>
+
+      <g class="stg" data-s="2">
+        <circle cx="422" cy="150" r="22" fill="#b5663f" stroke="#b5663f" stroke-width="3"/>
+        <circle cx="422" cy="150" r="7"  fill="#fdfaf7"/>
+        <text x="422" y="107" text-anchor="middle" font-size="19" font-weight="700" fill="#b5663f">Journey day</text>
+        <text x="422" y="201" text-anchor="middle" font-size="15" fill="#948572">The session</text>
+        <text x="422" y="221" text-anchor="middle" font-size="15" fill="#948572">itself</text>
+      </g>
+
+      <g class="stg" data-s="3">
+        <circle cx="590" cy="150" r="17" fill="#fdfaf7" stroke="#c67d55" stroke-width="3"/>
+        <circle cx="590" cy="150" r="6"  fill="#c67d55"/>
+        <text x="590" y="112" text-anchor="middle" font-size="19" font-weight="700" fill="#2b2420">12&#8209;hour check&#8209;in</text>
+        <text x="590" y="196" text-anchor="middle" font-size="15" fill="#948572">Highest clinical</text>
+        <text x="590" y="216" text-anchor="middle" font-size="15" fill="#948572">value window</text>
+      </g>
+
+      <g class="stg" data-s="4">
+        <circle cx="759" cy="150" r="17" fill="#fdfaf7" stroke="#bd7049" stroke-width="3"/>
+        <circle cx="759" cy="150" r="6"  fill="#bd7049"/>
+        <text x="759" y="112" text-anchor="middle" font-size="19" font-weight="700" fill="#2b2420">Integration 1</text>
+        <text x="759" y="196" text-anchor="middle" font-size="15" fill="#948572">Meaning</text>
+        <text x="759" y="216" text-anchor="middle" font-size="15" fill="#948572">making</text>
+      </g>
+
+      <g class="stg" data-s="5">
+        <circle cx="928" cy="150" r="17" fill="#fdfaf7" stroke="#b5663f" stroke-width="3"/>
+        <circle cx="928" cy="150" r="6"  fill="#b5663f"/>
+        <text x="928" y="112" text-anchor="middle" font-size="19" font-weight="700" fill="#2b2420">Integration 2</text>
+        <text x="928" y="196" text-anchor="middle" font-size="15" fill="#948572">Embedding</text>
+        <text x="928" y="216" text-anchor="middle" font-size="15" fill="#948572">the change</text>
+      </g>
+
+      <g class="stg" data-s="6">
+        <circle cx="1096" cy="150" r="17" fill="#b5663f" stroke="#b5663f" stroke-width="3"/>
+        <circle cx="1096" cy="150" r="6"  fill="#fdfaf7"/>
+        <text x="1096" y="112" text-anchor="middle" font-size="19" font-weight="700" fill="#2b2420">Growth &amp; close</text>
+        <text x="1096" y="196" text-anchor="middle" font-size="15" fill="#948572">Growth action</text>
+        <text x="1096" y="216" text-anchor="middle" font-size="15" fill="#948572">plan issued</text>
+      </g>
+
+      <text x="590" y="292" text-anchor="middle" font-size="16" fill="#948572">Every form, session type, AI briefing, and portal view derives from where the client sits on this line</text>
+    </svg>
+  </section>
+
+  <!-- 4 · Transition into the live app -->
+  <section class="slide thesis" data-i="3">
+    <div class="eyebrow" style="text-align:center">Let me show you</div>
+    <h1 style="font-size:60px;max-width:18ch">Here&rsquo;s what that<br><span class="u">looks like in practice.</span></h1>
+    <p>One practitioner, one client, one journey &mdash; start to finish.</p>
+  </section>
+
+</div>
+
+<div class="brandbar">
+  <div class="mark">
+    <svg viewBox="0 0 24 24" fill="none" stroke="#fff" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round">
+      <path d="M19.414 14.414C21 12.828 22 11.5 22 9.5a5.5 5.5 0 0 0-9.591-3.676.6.6 0 0 1-.818.001A5.5 5.5 0 0 0 2 9.5c0 2.3 1.5 4 3 5.5l5.535 5.362a2 2 0 0 0 2.879.052 2.12 2.12 0 0 0-.004-3 2.124 2.124 0 1 0 3-3 2.124 2.124 0 0 0 3.004 0 2 2 0 0 0 0-2.828l-1.881-1.882a2.41 2.41 0 0 0-3.409 0l-1.71 1.71a2 2 0 0 1-2.828 0 2 2 0 0 1 0-2.828l2.823-2.762"/>
+    </svg>
+  </div>
+  <div>
+    <div class="bname">Heartful OS</div>
+    <div class="btag">Journey management</div>
+  </div>
+</div>
+
+<div class="nav">
+  <button id="prev" aria-label="Previous slide">&#8249;</button>
+  <span id="count">1 / 5</span>
+  <button id="next" aria-label="Next slide">&#8250;</button>
+</div>
+
+<div class="hint" id="hint">Arrow keys or space to advance &middot; F for full screen</div>
+
+<script>
+var slides = document.querySelectorAll('.slide');
+var i = 0, hint = document.getElementById('hint'), hinted = false;
+
+function go(n) {
+  i = Math.max(0, Math.min(slides.length - 1, n));
+  slides.forEach(function (s, k) { s.classList.toggle('on', k === i); });
+  document.getElementById('count').textContent = (i + 1) + ' / ' + slides.length;
+  if (!hinted) { hinted = true; hint.classList.add('hide'); }
+}
+
+document.getElementById('next').addEventListener('click', function () { go(i + 1); });
+document.getElementById('prev').addEventListener('click', function () { go(i - 1); });
+
+document.addEventListener('keydown', function (e) {
+  if (e.key === 'ArrowRight' || e.key === ' ' || e.key === 'PageDown') { e.preventDefault(); go(i + 1); }
+  if (e.key === 'ArrowLeft' || e.key === 'PageUp') { e.preventDefault(); go(i - 1); }
+  if (e.key === 'Home') go(0);
+  if (e.key === 'End') go(slides.length - 1);
+  if (e.key === 'f' || e.key === 'F') {
+    if (document.fullscreenElement) document.exitFullscreen();
+    else document.documentElement.requestFullscreen();
+  }
+});
+</script>
+</body>
+</html>
