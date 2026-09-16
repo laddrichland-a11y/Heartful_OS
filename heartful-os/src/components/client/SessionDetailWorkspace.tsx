@@ -506,20 +506,20 @@ export default function SessionDetailWorkspace({
   }
 
   return (
-    <div className="space-y-5 max-w-2xl">
-      {/* Milestone completion toggle */}
+    <div className="max-w-5xl space-y-5">
       {milestoneKey && (
         <MilestoneToggleBanner
           clientId={clientId}
           milestoneKey={milestoneKey}
           label={label}
+          meta={`${session.scheduled_at ? formatDateTime(session.scheduled_at) : "Date not scheduled"}${session.duration_minutes ? ` · ${session.duration_minutes} min` : ""}`}
           initialCompleted={milestoneCompleted}
         />
       )}
 
       {/* Session header card */}
-      <div className="card p-5">
-        <div className="flex items-start justify-between gap-4 mb-4">
+      <div className="client-surface p-5">
+        {!milestoneKey && <div className="flex items-start justify-between gap-4 mb-4">
           <div>
             <h2 className="text-lg font-semibold text-ink-900">{label}</h2>
             <p className="text-sm text-ink-500">{clientName}</p>
@@ -534,9 +534,9 @@ export default function SessionDetailWorkspace({
           >
             {session.status}
           </span>
-        </div>
+        </div>}
 
-        <div className="space-y-2 text-sm text-ink-600 mb-5">
+        {!milestoneKey && <div className="space-y-2 text-sm text-ink-600 mb-5">
           {session.scheduled_at && (
             <div className="flex items-center gap-2">
               <Calendar className="h-4 w-4 text-ink-400 shrink-0" />
@@ -552,9 +552,12 @@ export default function SessionDetailWorkspace({
               <span>{session.location}</span>
             </div>
           )}
-        </div>
+        </div>}
 
-        {/* Actions */}
+        <div className={cx("mb-3 max-w-2xl", !milestoneKey && "border-t border-ink-100 pt-4")}>
+          <p className="client-eyebrow text-plum-600">AI Session Brief</p>
+          <p className="mt-1 text-xs leading-5 text-ink-500">A concise briefing based on the client&apos;s intake, previous sessions, intentions, recent themes, risks, and open threads.</p>
+        </div>
         <div className="flex items-center gap-2 flex-wrap">
           <button
             disabled={prepareBusy}
@@ -564,9 +567,9 @@ export default function SessionDetailWorkspace({
             {prepareBusy ? (
               <Loader2 className="h-4 w-4 animate-spin" />
             ) : (
-              <Sparkles className="h-4 w-4" />
+              <FileText className="h-4 w-4" />
             )}
-            Prepare Me
+            Generate Brief
           </button>
           {isScheduled && (
             <>
@@ -912,7 +915,7 @@ export default function SessionDetailWorkspace({
 
             {(transcript.trim() || recordings.length > 0) && (
               <div className="rounded-xl border border-ink-100 bg-ink-50/60 p-3 space-y-2">
-                <p className="text-[11px] uppercase tracking-wide text-ink-400">Transcript &amp; Recording Used</p>
+                <p className="text-xs uppercase tracking-wide text-ink-400">Transcript &amp; Recording Used</p>
                 {transcript.trim() && (
                   <details className="text-sm">
                     <summary className="cursor-pointer text-ink-600 hover:text-ink-900 text-xs font-medium">
@@ -954,7 +957,7 @@ export default function SessionDetailWorkspace({
       {briefing && (
         <div>
           <SummaryCard
-            title="Pre-Session Briefing"
+            title="AI Session Brief"
             content={briefing.content}
             model={briefing.model}
             onDelete={deleteBriefing}
@@ -998,7 +1001,7 @@ export default function SessionDetailWorkspace({
                 {expandedPast === pb.id && (
                   <div className="mt-2">
                     <SummaryCard
-                      title="Pre-Session Briefing"
+                      title="AI Session Brief"
                       content={pb.content}
                       model={pb.model}
                       onSave={(next) => savePastBriefing(pb.id, next)}

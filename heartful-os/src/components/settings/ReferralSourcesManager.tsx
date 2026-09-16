@@ -1,73 +1,98 @@
 "use client";
 
-import { useState } from "react";
-import { Plus, X, Loader2 } from "lucide-react";
+import { useRef, useState, type FormEvent } from "react";
+import { Plus, X } from "lucide-react";
 import { ReferralSource } from "@/lib/types";
 import { createReferralSourceAction, deleteReferralSourceAction } from "@/lib/actions";
 
 export default function ReferralSourcesManager({ initial }: { initial: ReferralSource[] }) {
   const [sources, setSources] = useState(initial);
   const [newName, setNewName] = useState("");
+  const [showInput, setShowInput] = useState(false);
   const [adding, setAdding] = useState(false);
   const [deletingId, setDeletingId] = useState<string | null>(null);
+  const [error, setError] = useState("");
+  const inputRef = useRef<HTMLInputElement>(null);
 
-  async function add() {
-    if (!newName.trim()) return;
+  function reveal() {
+    setShowInput(true);
+    requestAnimationFrame(() => inputRef.current?.focus());
+  }
+
+  async function add(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+    const name = newName.trim();
+    if (!name || adding) return;
     setAdding(true);
-    const src = await createReferralSourceAction(newName.trim());
-    setSources((prev) => [...prev, src]);
-    setNewName("");
-    setAdding(false);
+    setError("");
+    try {
+      const source = await createReferralSourceAction(name);
+      setSources((previous) => [...previous, source]);
+      setNewName("");
+      setShowInput(false);
+    } catch {
+      setError("Could not add source. Try again.");
+    } finally {
+      setAdding(false);
+    }
   }
 
   async function remove(id: string) {
     setDeletingId(id);
-    await deleteReferralSourceAction(id);
-    setSources((prev) => prev.filter((s) => s.id !== id));
-    setDeletingId(null);
+    setError("");
+    try {
+      await deleteReferralSourceAction(id);
+      setSources((previous) => previous.filter((source) => source.id !== id));
+    } catch {
+      setError("Could not remove source. Try again.");
+    } finally {
+      setDeletingId(null);
+    }
   }
 
   return (
-    <div className="space-y-2">
-      <div className="flex flex-wrap gap-2">
-        {sources.map((s) => (
-          <span
-            key={s.id}
-            className="badge bg-ink-100 text-ink-600 flex items-center gap-1.5 pr-1.5"
-          >
-            {s.name}
+    <div className="settings-referrals">
+      <div className="settings-source-list">
+        {sources.map((source) => (
+          <span key={source.id} className="settings-source-chip">
+            {source.name}
             <button
-              onClick={() => remove(s.id)}
-              disabled={deletingId === s.id}
-              className="rounded-full hover:bg-ink-300 p-0.5 transition-colors"
-              title="Remove"
+              type="button"
+              onClick={() => remove(source.id)}
+              disabled={deletingId === source.id}
+              aria-label={`Remove ${source.name}`}
+              title={`Remove ${source.name}`}
             >
-              {deletingId === s.id ? (
-                <Loader2 className="h-3 w-3 animate-spin" />
-              ) : (
-                <X className="h-3 w-3" />
-              )}
+              <X size={13} aria-hidden="true" />
             </button>
           </span>
         ))}
+        {!showInput && (
+          <button type="button" className="settings-add-source" onClick={reveal}>
+            <Plus size={14} aria-hidden="true" /> Add source
+          </button>
+        )}
       </div>
-      <div className="flex gap-2 mt-2">
-        <input
-          value={newName}
-          onChange={(e) => setNewName(e.target.value)}
-          onKeyDown={(e) => e.key === "Enter" && add()}
-          placeholder="Add referral source…"
-          className="flex-1 border border-ink-200 rounded-xl px-3 py-1.5 text-sm focus:outline-none focus:ring-2 focus:ring-clay-200"
-        />
-        <button
-          onClick={add}
-          disabled={adding || !newName.trim()}
-          className="btn-primary text-sm px-3 py-1.5 flex items-center gap-1.5 disabled:opacity-50"
-        >
-          {adding ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Plus className="h-3.5 w-3.5" />}
-          Add
-        </button>
-      </div>
+      {showInput && (
+        <form className="settings-source-form" onSubmit={add}>
+          <label className="sr-only" htmlFor="new-referral-source">New referral source</label>
+          <input
+            id="new-referral-source"
+            ref={inputRef}
+            value={newName}
+            onChange={(event) => setNewName(event.target.value)}
+            onKeyDown={(event) => { if (event.key === "Escape") setShowInput(false); }}
+            placeholder="Source name"
+          />
+          <button type="submit" className="btn-primary" disabled={adding || !newName.trim()}>
+            {adding ? "Adding…" : "Add"}
+          </button>
+          <button type="button" className="settings-text-button" onClick={() => { setShowInput(false); setNewName(""); }}>
+            Cancel
+          </button>
+        </form>
+      )}
+      {error && <p className="settings-error" role="alert">{error}</p>}
     </div>
   );
 }

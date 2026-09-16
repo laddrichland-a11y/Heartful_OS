@@ -1,44 +1,105 @@
 import AppShell from "@/components/layout/AppShell";
-import { getClients, getOnHoldClients, getMilestones, getReferralSources } from "@/lib/data";
+import { getClients, getOnHoldClients, getMilestones, getReferralSources, getSessions } from "@/lib/data";
 import Link from "next/link";
-import { cx, formatDate, initials, statusBadgeClasses } from "@/lib/utils";
-import { STATUS_LABELS } from "@/lib/types";
-import JourneyProgressBar from "@/components/JourneyProgressBar";
+import { cx } from "@/lib/utils";
+import { ClientStatus } from "@/lib/types";
+import ClientList from "@/components/client/ClientList";
 import NewClientButton from "@/components/client/NewClientButton";
 import { PauseCircle } from "lucide-react";
 
 export const dynamic = "force-dynamic";
 
+function isCompletedClient(status: ClientStatus) {
+  return status === "journey_complete" || status === "journey_closed" || status === "inactive";
+}
+
+type ClientFilter = "all" | "active" | "awaiting_integration" | "completed";
+
+function isAwaitingIntegrationClient(status: ClientStatus) {
+  return status === "journey_complete" || status === "check_in_complete" || status === "integration_1_complete";
+}
+
 export default async function ClientsPage({
   searchParams,
 }: {
-  searchParams: Promise<{ view?: string }>;
+  searchParams: Promise<{ view?: string; new?: string; filter?: string }>;
 }) {
-  const { view } = await searchParams;
+  const { view, new: newClient, filter } = await searchParams;
   const showingHeld = view === "hold";
+  const selectedFilter: ClientFilter =
+    filter === "active" || filter === "awaiting_integration" || filter === "completed" ? filter : "all";
 
-  const [active, held, referralSources] = await Promise.all([
+  const [allClients, held, referralSources] = await Promise.all([
     getClients(),
     getOnHoldClients(),
     getReferralSources(),
   ]);
-  const clients = showingHeld ? held : active;
+  const completedCount = allClients.filter((client) => isCompletedClient(client.status)).length;
+  const activeCount = allClients.length - completedCount;
+  const awaitingIntegrationCount = allClients.filter((client) => isAwaitingIntegrationClient(client.status)).length;
+  const filterOptions: Array<{ key: ClientFilter; label: string; count: number; href: string }> = [
+    { key: "all", label: "All", count: allClients.length, href: "/clients" },
+    { key: "active", label: "Active", count: activeCount, href: "/clients?filter=active" },
+    { key: "awaiting_integration", label: "Awaiting Integration", count: awaitingIntegrationCount, href: "/clients?filter=awaiting_integration" },
+    { key: "completed", label: "Completed", count: completedCount, href: "/clients?filter=completed" },
+  ];
+  const filteredClients = allClients.filter((client) => {
+    if (selectedFilter === "active") return !isCompletedClient(client.status);
+    if (selectedFilter === "awaiting_integration") return isAwaitingIntegrationClient(client.status);
+    if (selectedFilter === "completed") return isCompletedClient(client.status);
+    return true;
+  });
+  const clients = showingHeld ? held : filteredClients;
   const withMilestones = await Promise.all(
-    clients.map(async (c) => ({ client: c, milestones: await getMilestones(c.id) }))
+    clients.map(async (client) => {
+      const [milestones, sessions] = await Promise.all([getMilestones(client.id), getSessions(client.id)]);
+      return {
+        client,
+        milestones,
+        referralName: referralSources.find((source) => source.id === client.referral_source_id)?.name,
+        hasScheduledSession: sessions.some((session) => session.status === "scheduled"),
+      };
+    })
+  );
+  const orderedClients = [...withMilestones].sort(
+    (a, b) => Number(isCompletedClient(a.client.status)) - Number(isCompletedClient(b.client.status))
   );
 
   return (
     <AppShell title="Clients">
-      <div className="flex items-center justify-between mb-5">
-        <div className="flex items-center gap-4">
+      <div className="clients-typography">
+      <div className="mb-4 grid grid-cols-[minmax(0,1fr)_auto] items-start gap-3">
+        <div className="flex flex-wrap items-center gap-3">
           <Link href="/dashboard" className="text-sm text-ink-400 hover:text-ink-700 flex items-center gap-1">
             ← Dashboard
           </Link>
-          <p className="text-sm text-ink-500">
-            {showingHeld ? `${held.length} on hold` : `${active.length} active clients`}
-          </p>
+          {showingHeld ? (
+            <p className="text-sm text-ink-500">{held.length} on hold</p>
+          ) : (
+            <nav aria-label="Filter clients" className="inline-flex flex-wrap items-center rounded-full bg-ink-50 p-1">
+              {filterOptions.map((option) => {
+                const selected = selectedFilter === option.key;
+                return (
+                  <Link
+                    key={option.key}
+                    href={option.href}
+                    aria-current={selected ? "page" : undefined}
+                    className={cx(
+                      "inline-flex h-7 items-center gap-1.5 rounded-full px-4 py-0 text-sm font-semibold transition-colors",
+                      selected
+                        ? "bg-clay-50 text-clay-800"
+                        : "text-ink-500 hover:bg-white hover:text-ink-700"
+                    )}
+                  >
+                    {option.label}
+                    <span className={selected ? "text-clay-700" : "text-ink-400"}>{option.count}</span>
+                  </Link>
+                );
+              })}
+            </nav>
+          )}
         </div>
-        <NewClientButton referralSources={referralSources} />
+        <NewClientButton referralSources={referralSources} initialOpen={newClient === "1"} />
       </div>
 
       {/* Active / On hold toggle — held clients are excluded everywhere else,
@@ -54,7 +115,7 @@ export default async function ClientsPage({
                 : "border-ink-200 text-ink-500 hover:bg-ink-50"
             )}
           >
-            Active ({active.length})
+            Clients ({allClients.length})
           </Link>
           <Link
             href="/clients?view=hold"
@@ -70,51 +131,21 @@ export default async function ClientsPage({
         </div>
       )}
 
-      {withMilestones.length === 0 ? (
-        <div className="card p-8 text-center text-sm text-ink-400">
-          {showingHeld ? "Nobody is on hold right now." : "No active clients yet."}
-        </div>
-      ) : (
-        <div className="grid gap-4">
-          {withMilestones.map(({ client, milestones }) => {
-            const referral = referralSources.find((r) => r.id === client.referral_source_id);
-            return (
-              <Link
-                key={client.id}
-                href={`/clients/${client.id}`}
-                className={cx("card p-5 hover:shadow-md transition-shadow block", client.on_hold_at && "opacity-75")}
-              >
-                <div className="flex items-start justify-between gap-4 flex-wrap">
-                  <div className="flex items-center gap-3">
-                    <div className="h-11 w-11 rounded-full bg-clay-100 text-clay-700 flex items-center justify-center font-medium">
-                      {initials(client.full_name)}
-                    </div>
-                    <div>
-                      <div className="font-medium text-ink-900">{client.full_name}</div>
-                      <div className="text-xs text-ink-500">
-                        {client.email} · Client since {formatDate(client.created_at)}
-                      </div>
-                    </div>
-                  </div>
-                  <div className="flex items-center gap-3">
-                    {client.on_hold_at && (
-                      <span className="badge bg-amber-100 text-amber-800 flex items-center gap-1">
-                        <PauseCircle className="h-3 w-3" />
-                        {client.hold_follow_up_at ? `Follow up ${formatDate(client.hold_follow_up_at)}` : "On hold"}
-                      </span>
-                    )}
-                    <span className={cx("badge", statusBadgeClasses(client.status))}>{STATUS_LABELS[client.status]}</span>
-                    {referral && <span className="text-xs text-ink-400">via {referral.name}</span>}
-                  </div>
-                </div>
-                <div className="mt-4">
-                  <JourneyProgressBar milestones={milestones} compact />
-                </div>
-              </Link>
-            );
-          })}
-        </div>
-      )}
+      <ClientList
+        items={orderedClients}
+        emptyMessage={
+          showingHeld
+            ? "Nobody is on hold right now."
+            : selectedFilter === "active"
+              ? "No active clients."
+              : selectedFilter === "awaiting_integration"
+                ? "No clients are awaiting integration."
+              : selectedFilter === "completed"
+                ? "No completed clients."
+                : "No clients yet."
+        }
+      />
+      </div>
     </AppShell>
   );
 }

@@ -10,12 +10,15 @@ import {
   getMilestones,
   getPractitioner,
   getRecordings,
+  getReferralSources,
 } from "@/lib/data";
 import { notFound } from "next/navigation";
 import SessionDetailWorkspace from "@/components/client/SessionDetailWorkspace";
-import ClientPhaseNav, { PhaseNavKey } from "@/components/client/ClientPhaseNav";
+import ClientPhaseNav from "@/components/client/ClientPhaseNav";
+import { PhaseNavKey } from "@/components/client/JourneyStageNav";
 import { AiSummaryType, SessionType } from "@/lib/types";
 import { headers } from "next/headers";
+import ClientHeader from "@/components/client/ClientHeader";
 
 export const dynamic = "force-dynamic";
 
@@ -65,7 +68,7 @@ export default async function SessionDetailPage({
   const protocol = h.get("x-forwarded-proto") ?? "http";
   const portalUrl = `${protocol}://${host}/portal?client=${id}`;
 
-  const [aiSummaries, formTemplates, formSubmissions, documents, milestones, sessions, practitioner, recordings] =
+  const [aiSummaries, formTemplates, formSubmissions, documents, milestones, sessions, practitioner, recordings, referralSources] =
     await Promise.all([
       getAiSummaries(id),
       getFormTemplates(),
@@ -75,6 +78,7 @@ export default async function SessionDetailPage({
       getSessions(id),
       getPractitioner(),
       getRecordings(id, sessionId),
+      getReferralSources(),
     ]);
 
   // Earliest still-scheduled session after this one (e.g. the 12hr check-in
@@ -109,11 +113,21 @@ export default async function SessionDetailPage({
     ? milestones.find((m) => m.milestone_key === milestoneKey)
     : undefined;
 
-  const pageTitle = session.session_type === "harm_reduction_support" ? "Journey Day" : "Session";
-
   return (
-    <AppShell title={`${pageTitle} — ${client.full_name}`}>
-      <ClientPhaseNav clientId={id} current={SESSION_NAV_PHASE[session.session_type]} />
+    <AppShell title={client.full_name} variant="wellnest-client">
+      <ClientHeader
+        client={client}
+        milestones={milestones}
+        sessions={sessions}
+        referralSources={referralSources}
+        practitioner={practitioner}
+        portalUrl={portalUrl}
+      />
+      <ClientPhaseNav
+        clientId={id}
+        current={SESSION_NAV_PHASE[session.session_type]}
+        hideClientSummary
+      />
       <SessionDetailWorkspace
         clientId={id}
         clientName={client.full_name}

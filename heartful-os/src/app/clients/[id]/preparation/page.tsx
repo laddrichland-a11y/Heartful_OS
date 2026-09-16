@@ -31,13 +31,13 @@ export default async function PreparationPage({ params }: { params: Promise<{ id
   const milestone = milestones.find((m) => m.milestone_key === "preparation_complete");
 
   return (
-    <AppShell title={`Preparation Session — ${client.full_name}`}>
+    <AppShell title={client.full_name} variant="wellnest-client">
       <ClientPhaseNav clientId={id} current="preparation" />
-      <p className="text-xs uppercase tracking-wide text-ink-400 mb-4">Phase 2 · 90 minutes</p>
       <MilestoneToggleBanner
         clientId={id}
         milestoneKey="preparation_complete"
         label="Preparation Session"
+        meta="Phase 2 · 90 minutes"
         initialCompleted={milestone?.completed ?? false}
       />
       <PhasePrepareMe clientId={id} sessionTypeLabel="Preparation" sessionType="preparation" />

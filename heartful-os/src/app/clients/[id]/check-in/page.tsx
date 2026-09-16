@@ -21,12 +21,13 @@ export default async function CheckInPage({ params }: { params: Promise<{ id: st
   const milestone = milestones.find((m) => m.milestone_key === "check_in_12hr_complete");
 
   return (
-    <AppShell title={`12-Hour Check-In — ${client.full_name}`}>
+    <AppShell title={client.full_name} variant="wellnest-client">
       <ClientPhaseNav clientId={id} current="post_journey_check_in" />
       <MilestoneToggleBanner
         clientId={id}
         milestoneKey="check_in_12hr_complete"
         label="12-Hour Check-In"
+        meta="Phase 4 · 12-hour check-in"
         initialCompleted={milestone?.completed ?? false}
       />
       <PhasePrepareMe clientId={id} sessionTypeLabel="12-Hour Check-In" sessionType="check_in_12hr" />

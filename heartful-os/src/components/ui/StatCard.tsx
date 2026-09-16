@@ -18,22 +18,22 @@ export default function StatCard({
   href?: string;
 }) {
   const inner = (
-    <div className="card p-4 flex items-start gap-3 h-full">
+    <div className="card summary-card p-4 flex items-start gap-3 h-full">
       <div
         className={cx(
-          "h-10 w-10 rounded-xl flex items-center justify-center shrink-0",
+          "summary-icon h-8 w-8 rounded-lg flex items-center justify-center shrink-0",
           accent === "clay" && "bg-clay-100 text-clay-600",
           accent === "sage" && "bg-sage-100 text-sage-700",
           accent === "plum" && "bg-plum-100 text-plum-700",
           accent === "ink" && "bg-ink-100 text-ink-600"
         )}
       >
-        <Icon className="h-5 w-5" />
+        <Icon className="h-4 w-4" />
       </div>
       <div>
-        <div className="text-2xl font-semibold text-ink-900 leading-tight">{value}</div>
-        <div className="text-xs text-ink-500">{label}</div>
-        {sub && <div className="text-[11px] text-ink-400 mt-0.5">{sub}</div>}
+        <div className="text-xl font-semibold text-ink-900 leading-tight">{value}</div>
+        <div className="text-sm text-ink-500">{label}</div>
+        {sub && <div className="text-xs text-ink-400 mt-1 leading-relaxed">{sub}</div>}
       </div>
     </div>
   );

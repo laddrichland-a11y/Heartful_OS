@@ -35,7 +35,7 @@ function LoginPageInner() {
   }
 
   return (
-    <div className="min-h-screen flex items-center justify-center bg-[var(--background)] px-4">
+    <div className="auth-shell min-h-screen flex items-center justify-center bg-[var(--background)] px-4">
       <div className="card p-6 w-full max-w-sm space-y-4">
         <div className="flex items-center gap-2">
           <div className="h-9 w-9 rounded-lg bg-clay-500 text-white flex items-center justify-center">

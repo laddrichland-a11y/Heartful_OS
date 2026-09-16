@@ -1,7 +1,7 @@
 "use client";
 
 import { useState } from "react";
-import { DollarSign, Loader2, X, Check } from "lucide-react";
+import { ArrowRight, DollarSign, Loader2, X, Check } from "lucide-react";
 import { recordPaymentAction } from "@/lib/actions";
 
 const METHODS = ["Cash", "Check", "Venmo", "Bank Transfer", "Other"];
@@ -9,16 +9,33 @@ const METHODS = ["Cash", "Check", "Venmo", "Bank Transfer", "Other"];
 export default function RecordPaymentButton({
   clientId,
   outstanding,
+  variant = "inline",
+  onOpen,
+  open: controlledOpen,
+  onOpenChange,
+  hideTrigger = false,
 }: {
   clientId: string;
   outstanding: number;
+  variant?: "inline" | "menu";
+  onOpen?: () => void;
+  open?: boolean;
+  onOpenChange?: (open: boolean) => void;
+  hideTrigger?: boolean;
 }) {
-  const [open, setOpen] = useState(false);
+  const [internalOpen, setInternalOpen] = useState(false);
   const [amount, setAmount] = useState(outstanding.toFixed(2));
   const [method, setMethod] = useState("Cash");
   const [notes, setNotes] = useState("");
   const [saving, setSaving] = useState(false);
   const [done, setDone] = useState(false);
+
+  const open = controlledOpen ?? internalOpen;
+
+  function setOpen(nextOpen: boolean) {
+    setInternalOpen(nextOpen);
+    onOpenChange?.(nextOpen);
+  }
 
   if (outstanding <= 0) return null;
 
@@ -37,12 +54,17 @@ export default function RecordPaymentButton({
 
   return (
     <>
-      <button
-        onClick={() => setOpen(true)}
-        className="text-xs text-sage-600 hover:text-sage-800 font-medium flex items-center gap-1 mt-0.5"
-      >
-        <DollarSign className="h-3 w-3" /> Record payment
-      </button>
+      {!hideTrigger && (
+        <button
+          type="button"
+          onClick={() => { setOpen(true); onOpen?.(); }}
+          className={variant === "menu" ? "report-row-menu-item" : "wn-record-payment-action"}
+        >
+          <DollarSign aria-hidden="true" />
+          <span>{variant === "menu" ? "Mark as paid" : "Record payment"}</span>
+          {variant === "inline" && <ArrowRight aria-hidden="true" />}
+        </button>
+      )}
 
       {open && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/30 backdrop-blur-sm p-4">

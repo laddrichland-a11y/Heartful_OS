@@ -2,7 +2,7 @@
 
 import { useRouter } from "next/navigation";
 import { useState } from "react";
-import { Sparkles, Loader2 } from "lucide-react";
+import { FileText, Sparkles, Loader2 } from "lucide-react";
 import { AiSummaryType } from "@/lib/types";
 
 export default function AiGenerateButton({
@@ -11,12 +11,14 @@ export default function AiGenerateButton({
   label,
   extra,
   onDone,
+  icon = "sparkles",
 }: {
   clientId: string;
   summaryType: AiSummaryType;
   label: string;
   extra?: Record<string, unknown>;
   onDone?: (summary: { content: Record<string, unknown>; title: string; model?: string }) => void;
+  icon?: "sparkles" | "document";
 }) {
   const router = useRouter();
   const [busy, setBusy] = useState(false);
@@ -41,7 +43,7 @@ export default function AiGenerateButton({
       }}
       className="btn-primary flex items-center gap-2 text-sm disabled:opacity-60"
     >
-      {busy ? <Loader2 className="h-4 w-4 animate-spin" /> : <Sparkles className="h-4 w-4" />}
+      {busy ? <Loader2 className="h-4 w-4 animate-spin" /> : icon === "document" ? <FileText className="h-4 w-4" /> : <Sparkles className="h-4 w-4" />}
       {busy ? "Generating..." : label}
     </button>
   );

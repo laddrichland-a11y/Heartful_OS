@@ -31,13 +31,13 @@ export default async function IntakePage({ params }: { params: Promise<{ id: str
   const milestone = milestones.find((m) => m.milestone_key === "intake_complete");
 
   return (
-    <AppShell title={`Intake & Assessment — ${client.full_name}`}>
+    <AppShell title={client.full_name} variant="wellnest-client">
       <ClientPhaseNav clientId={id} current="intake" />
-      <p className="text-xs uppercase tracking-wide text-ink-400 mb-4">Phase 1 · 90 minutes</p>
       <MilestoneToggleBanner
         clientId={id}
         milestoneKey="intake_complete"
         label="Intake & Assessment"
+        meta="Phase 1 · 90 minutes"
         initialCompleted={milestone?.completed ?? false}
       />
       <PhasePrepareMe clientId={id} sessionTypeLabel="Intake & Assessment" sessionType="intake_assessment" />

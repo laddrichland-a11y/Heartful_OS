@@ -9,11 +9,13 @@ export default function EmergencyContactEditor({
   initialName,
   initialRelationship,
   initialPhone,
+  overview = false,
 }: {
   clientId: string;
   initialName?: string;
   initialRelationship?: string;
   initialPhone?: string;
+  overview?: boolean;
 }) {
   const [editing, setEditing] = useState(false);
   const [name, setName] = useState(initialName ?? "");
@@ -103,6 +105,31 @@ export default function EmergencyContactEditor({
             Save
           </button>
         </div>
+      </div>
+    );
+  }
+
+  if (overview) {
+    return (
+      <div className="wn-emergency-overview">
+        <div className="min-w-0">
+          <span>Emergency contact</span>
+          {hasContact ? (
+            <strong>
+              {displayName}{displayRelationship && ` (${displayRelationship})`}{displayPhone && ` — ${displayPhone}`}
+            </strong>
+          ) : (
+            <strong className="is-empty">Not provided</strong>
+          )}
+        </div>
+        <button
+          onClick={() => setEditing(true)}
+          className="wn-emergency-edit"
+          title="Edit emergency contact"
+          aria-label="Edit emergency contact"
+        >
+          <Pencil className="h-3.5 w-3.5" />
+        </button>
       </div>
     );
   }

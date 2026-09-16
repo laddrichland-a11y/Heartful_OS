@@ -1,26 +1,20 @@
+"use client";
+
+import { useState } from "react";
+import Image from "next/image";
+import { CalendarDays, CheckCircle2, ChevronDown, ChevronUp, CircleDollarSign, KeyRound, Mail, PauseCircle, Phone, UserRound } from "lucide-react";
 import { Client, JourneyMilestone, Profile, ReferralSource, Session } from "@/lib/types";
-import { formatCurrency, formatDate, initials, phaseForStatus } from "@/lib/utils";
-import JourneyProgressBar from "@/components/JourneyProgressBar";
+import { clientAvatarSrc, formatCurrency, formatDate, formatDateTime, initials } from "@/lib/utils";
 import ClientStatusControl from "@/components/client/ClientStatusControl";
 import ClientHeaderActions from "@/components/client/ClientHeaderActions";
+import QuickNoteButton from "@/components/client/QuickNoteButton";
 import DeleteClientButton from "@/components/client/DeleteClientButton";
 import ResetPortalPasswordButton from "@/components/client/ResetPortalPasswordButton";
-import { Mail, Phone, KeyRound, CheckCircle2, PauseCircle } from "lucide-react";
 import RecordPaymentButton from "@/components/client/RecordPaymentButton";
 import EmergencyContactEditor from "@/components/client/EmergencyContactEditor";
 import HoldControl from "@/components/HoldControl";
-import { PhaseNavPills, PHASE_LINKS } from "@/components/client/ClientPhaseNav";
 
-
-export default function ClientHeader({
-  client,
-  milestones,
-  sessions = [],
-  referralSources,
-  practitioner,
-  portalUrl,
-  autoOpenIntro = false,
-}: {
+export default function ClientHeader({ client, sessions = [], referralSources, practitioner, portalUrl, autoOpenIntro = false }: {
   client: Client;
   milestones: JourneyMilestone[];
   sessions?: Session[];
@@ -29,132 +23,177 @@ export default function ClientHeader({
   portalUrl: string;
   autoOpenIntro?: boolean;
 }) {
-  const referral = referralSources.find((r) => r.id === client.referral_source_id);
+  const [expanded, setExpanded] = useState(true);
+  const referral = referralSources.find((source) => source.id === client.referral_source_id);
+  const avatarSrc = clientAvatarSrc(client.full_name);
   const balance = Math.max(0, (client.package_value ?? 0) - (client.amount_paid ?? 0));
+  const now = new Date().toISOString();
+  const nextSession = sessions
+    .filter((session) => session.status === "scheduled" && session.scheduled_at && session.scheduled_at > now)
+    .sort((a, b) => (a.scheduled_at ?? "").localeCompare(b.scheduled_at ?? ""))[0];
+  const nextSessionLabel = nextSession ? formatDateTime(nextSession.scheduled_at) : "No session scheduled";
+  const paymentLabel = balance > 0 ? `${formatCurrency(balance)} outstanding` : "Paid in full";
 
-  // Which pill shows as "active" — the phase whose session was most recently
-  // completed, rather than the client's current/next phase. Falls back to
-  // the current-phase-based pill if nothing's been completed yet (e.g. a
-  // brand new client) or the completed session type isn't one of the pills.
-  const lastCompletedSession = sessions
-    .filter((s) => s.status === "completed")
-    .sort((a, b) => ((b.scheduled_at ?? "") > (a.scheduled_at ?? "") ? 1 : -1))[0];
-  const activePhase =
-    (lastCompletedSession &&
-      PHASE_LINKS.find((p) => p.sessionType === lastCompletedSession.session_type)?.phase) ??
-    phaseForStatus(client.status, client.current_phase);
+  function toggleExpanded() {
+    setExpanded((current) => !current);
+  }
 
-  const growthPlanDone = milestones.some((m) => m.milestone_key === "growth_action_plan_complete" && m.completed);
+  const introActionProps = {
+    autoOpenIntro,
+    clientId: client.id,
+    clientName: client.full_name,
+    clientEmail: client.email,
+    practitionerName: practitioner.full_name,
+    practiceName: practitioner.practice_name,
+    portalUrl,
+    packageName: client.package_name,
+    packageValue: client.package_value,
+    amountDue: balance,
+    venmoHandle: practitioner.venmo_handle,
+  };
 
   return (
-    <div className="card p-5 mb-6">
+    <section className={`client-workspace-chrome wn-client-header wn-client-overview mb-5 ${expanded ? "is-expanded" : "is-collapsed"}`} aria-label="Client overview">
       {client.on_hold_at && (
-        <div className="mb-4 flex flex-wrap items-center gap-2 rounded-lg border border-amber-200 bg-amber-50 px-3 py-2 text-xs text-amber-900">
-          <PauseCircle className="h-4 w-4 shrink-0" />
-          <span className="font-medium">On hold</span>
-          {client.hold_reason && <span>— {client.hold_reason}</span>}
-          {client.hold_follow_up_at && (
-            <span className="text-amber-700">
-              · follow up {formatDate(client.hold_follow_up_at)}
-            </span>
-          )}
-          <span className="text-amber-700">· hidden from lists, dashboard and calendar</span>
+        <div className="wn-hold-banner">
+          <PauseCircle className="h-4 w-4" />
+          <strong>Client on hold</strong>
+          {client.hold_reason && <span>{client.hold_reason}</span>}
+          {client.hold_follow_up_at && <span>Follow up {formatDate(client.hold_follow_up_at)}</span>}
         </div>
       )}
-      <div className="flex flex-wrap items-start justify-between gap-4">
-        <div className="flex items-center gap-3">
-          <div className="h-14 w-14 rounded-full bg-clay-100 text-clay-700 flex items-center justify-center font-semibold text-lg">
-            {initials(client.full_name)}
+
+      <div className="wn-overview-summary">
+        <div className="wn-overview-identity">
+          <div className="wn-avatar">
+            {avatarSrc ? <Image src={avatarSrc} alt="" width={58} height={58} priority /> : initials(client.full_name)}
           </div>
-          <div>
-            <div className="flex items-center gap-2">
-              <h2 className="text-xl font-semibold text-ink-900">{client.full_name}</h2>
+          <div className="wn-overview-name">
+            <span className="wn-section-eyebrow">Client overview</span>
+            <div className="wn-overview-title-row">
+              <h1>{client.full_name}</h1>
               <ClientStatusControl clientId={client.id} status={client.status} phase={client.current_phase} />
             </div>
-            <div className="flex flex-wrap gap-3 text-xs text-ink-500 mt-1">
-              {client.email && (
-                <span className="flex items-center gap-1">
-                  <Mail className="h-3 w-3" /> {client.email}
-                </span>
-              )}
-              {client.phone && (
-                <span className="flex items-center gap-1">
-                  <Phone className="h-3 w-3" /> {client.phone}
-                </span>
-              )}
-              {referral && <span>Referred via {referral.name}</span>}
-              <span>Client since {formatDate(client.created_at)}</span>
-            </div>
-            <div className="mt-1.5 flex items-center gap-1.5 text-xs">
-              {client.portal_password_hash ? (
-                <>
-                  <CheckCircle2 className="h-3 w-3 text-sage-500" />
-                  <span className="text-ink-500">Portal account set up{client.portal_email ? `: ${client.portal_email}` : ""}</span>
-                </>
-              ) : (
-                <>
-                  <KeyRound className="h-3 w-3 text-ink-400" />
-                  <span className="text-ink-400">Client hasn&apos;t set up their portal login yet</span>
-                </>
-              )}
-            </div>
           </div>
         </div>
-        <div className="text-right space-y-2">
-          <div>
-            <div className="text-sm text-ink-900 font-medium">{formatCurrency(client.amount_paid)} collected</div>
-            <div className="text-xs text-ink-500">{formatCurrency(balance)} outstanding of {formatCurrency(client.package_value)}</div>
-            <RecordPaymentButton clientId={client.id} outstanding={balance} />
+
+        {!expanded && (
+          <div className="wn-overview-compact-facts">
+            <CompactFact label="Next session" value={nextSessionLabel} />
+            <CompactFact label="Payment" value={paymentLabel} tone={balance > 0 ? "warning" : "success"} />
           </div>
-          <ClientHeaderActions
-            autoOpenIntro={autoOpenIntro}
-            clientId={client.id}
-            clientName={client.full_name}
-            clientEmail={client.email}
-            practitionerName={practitioner.full_name}
-            practiceName={practitioner.practice_name}
-            portalUrl={portalUrl}
-            packageName={client.package_name}
-            packageValue={client.package_value}
-            amountDue={balance}
-            venmoHandle={practitioner.venmo_handle}
-          />
-          {client.portal_password_hash && (
-            <ResetPortalPasswordButton clientId={client.id} clientName={client.full_name} />
+        )}
+
+        <div className="wn-overview-summary-actions">
+          {!expanded && (
+            <>
+              <QuickNoteButton clientId={client.id} clientName={client.full_name} compact />
+              {client.email && <a className="wn-compact-icon-action" href={`mailto:${client.email}`} aria-label={`Email ${client.full_name}`} title="Email client"><Mail /></a>}
+              {client.phone && <a className="wn-compact-icon-action" href={`tel:${client.phone}`} aria-label={`Call ${client.full_name}`} title="Call client"><Phone /></a>}
+            </>
           )}
-          <HoldControl
-            kind="client"
-            recordId={client.id}
-            name={client.full_name}
-            onHold={Boolean(client.on_hold_at)}
-            followUpAt={client.hold_follow_up_at}
-            reason={client.hold_reason}
-          />
-          <DeleteClientButton clientId={client.id} clientName={client.full_name} />
+          <button type="button" className="wn-overview-toggle" onClick={toggleExpanded} aria-expanded={expanded} aria-controls="client-overview-details">
+            <span>{expanded ? "Collapse" : "Expand"}</span>
+            {expanded ? <ChevronUp /> : <ChevronDown />}
+          </button>
         </div>
       </div>
 
-      <EmergencyContactEditor
-        clientId={client.id}
-        initialName={client.emergency_contact_name}
-        initialRelationship={client.emergency_contact_relationship}
-        initialPhone={client.emergency_contact_phone}
-      />
+      {expanded && (
+        <div id="client-overview-details" className="wn-overview-details">
+          <div className="wn-overview-section wn-overview-contact">
+            <h2>Contact</h2>
+            <dl className="wn-overview-field-list">
+              <OverviewFact
+                icon={<Mail />}
+                iconAction={<ClientHeaderActions {...introActionProps} compact />}
+                label="Email"
+                value={client.email ?? "Not provided"}
+                href={client.email ? `mailto:${client.email}` : undefined}
+              />
+              <OverviewFact icon={<Phone />} label="Phone" value={client.phone ?? "Not provided"} href={client.phone ? `tel:${client.phone}` : undefined} />
+            </dl>
+            <div className="wn-overview-emergency">
+              <span className="wn-utility-icon"><UserRound /></span>
+              <EmergencyContactEditor clientId={client.id} initialName={client.emergency_contact_name} initialRelationship={client.emergency_contact_relationship} initialPhone={client.emergency_contact_phone} overview />
+            </div>
+          </div>
 
-      <div className="mt-5">
-        <JourneyProgressBar milestones={milestones} />
+          <div className="wn-overview-section wn-overview-journey">
+            <h2>Client relationship</h2>
+            <dl className="wn-overview-text-grid">
+              <ProfileFact label="Client since" value={formatDate(client.created_at)} />
+              <ProfileFact label="Referral source" value={referral?.name ?? "Direct inquiry"} />
+              <ProfileFact label="Package" value={client.package_name ?? "Not assigned"} />
+            </dl>
+          </div>
+
+          <div className="wn-overview-section wn-overview-operations">
+            <h2>Operational</h2>
+            <dl className="wn-overview-field-list">
+              <OverviewFact icon={<CalendarDays />} label="Next session" value={nextSessionLabel} />
+              <OverviewFact
+                icon={<CircleDollarSign />}
+                label="Payment status"
+                value={paymentLabel}
+                note={`${formatCurrency(client.amount_paid)} of ${formatCurrency(client.package_value)}`}
+                action={<RecordPaymentButton clientId={client.id} outstanding={balance} />}
+              />
+              <OverviewFact
+                icon={client.portal_password_hash ? <CheckCircle2 /> : <KeyRound />}
+                label="Portal access"
+                value={client.portal_password_hash ? "Account active" : "Not set up"}
+                note={client.portal_email}
+                action={client.portal_password_hash ? <ResetPortalPasswordButton clientId={client.id} clientName={client.full_name} inline /> : undefined}
+              />
+            </dl>
+          </div>
+
+          <footer className="wn-overview-actions">
+            <div className="wn-overview-action-buttons">
+              <HoldControl kind="client" recordId={client.id} name={client.full_name} onHold={Boolean(client.on_hold_at)} followUpAt={client.hold_follow_up_at} reason={client.hold_reason} />
+              <QuickNoteButton clientId={client.id} clientName={client.full_name} />
+              <DeleteClientButton clientId={client.id} clientName={client.full_name} />
+            </div>
+          </footer>
+        </div>
+      )}
+    </section>
+  );
+}
+
+function ProfileFact({ label, value }: { label: string; value: string }) {
+  return <div><dt>{label}</dt><dd>{value}</dd></div>;
+}
+
+function OverviewFact({ icon, iconAction, label, value, note, href, action }: {
+  icon: React.ReactElement;
+  iconAction?: React.ReactNode;
+  label: string;
+  value: string;
+  note?: string;
+  href?: string;
+  action?: React.ReactNode;
+}) {
+  return (
+    <div className="wn-overview-fact">
+      {iconAction ?? <span className="wn-utility-icon">{icon}</span>}
+      <div className="min-w-0">
+        <dt>{label}</dt>
+        <dd title={value}>{href ? <a href={href}>{value}</a> : value}</dd>
+        {note && <small>{note}</small>}
+        {action}
       </div>
+    </div>
+  );
+}
 
-      <div className="mt-4">
-        {/* Shared with every stage page — see ClientPhaseNav. This page is
-            the overview, so the Overview pill is the lit one here. */}
-        <PhaseNavPills
-          clientId={client.id}
-          sessions={sessions}
-          activePhase={activePhase}
-          growthPlanDone={growthPlanDone}
-          current="overview"
-        />
+function CompactFact({ label, value, href, tone }: { label: string; value: string; href?: string; tone?: "success" | "warning" }) {
+  return (
+    <div className="wn-compact-fact" data-tone={tone} style={{ paddingInline: 8 }}>
+      <div>
+        <small>{label}</small>
+        <strong title={value}>{href ? <a href={href}>{value}</a> : value}</strong>
       </div>
     </div>
   );

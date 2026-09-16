@@ -1,0 +1,4 @@
+Tool: built-in image_gen
+Reference: codex-clipboard-76feecd3-5b6e-4b16-96da-74a49374a15e.png
+
+Create a transparent PNG sidebar illustration: two delicate dusty rose (#b78387) outline mushrooms, one tall on the right and one small on the left, matching the botanical engraving style of the reference. Add detailed radial gills, fine cap stippling and thin organic stems with tiny base sprigs. Vertical composition, tightly framed, legible at 100 × 192 pixels. Genuine transparent alpha background including inside the line drawing. No background rectangle, no text, no UI, no watermark. Reference image is style and composition guidance only.

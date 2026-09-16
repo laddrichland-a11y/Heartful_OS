@@ -2,7 +2,7 @@ import { createHash } from "crypto";
 import { store } from "@/lib/mock/store";
 import { nextId } from "@/lib/mock/seed";
 import { isFirebaseConfigured, getBucket } from "@/lib/firebaseAdmin";
-import { isGeneralPaperwork } from "@/lib/utils";
+import { isGeneralPaperwork, isPastDue } from "@/lib/utils";
 import {
   allDocs,
   deleteDoc,
@@ -16,6 +16,7 @@ import {
   updateDocById,
 } from "@/lib/firestoreRepo";
 import {
+  AiConversationMessage,
   AiSummary,
   AiSummaryType,
   CheckIn,
@@ -237,6 +238,18 @@ const SESSION_COMPLETED_PROGRESS: Partial<Record<SessionType, SessionProgressRul
   integration_2: { status: "integration_2_complete", phase: "closed", milestoneKey: "integration_2_complete" },
 };
 
+// Where a client returns when the practitioner undoes a session completion.
+// This is applied only while the client is still exactly at the state caused
+// by that completion, so reopening an older session never erases later work.
+const SESSION_REOPEN_PROGRESS: Partial<Record<SessionType, SessionProgressRule>> = {
+  intake_assessment: { status: "intake_scheduled", phase: "intake" },
+  preparation: { status: "preparation", phase: "preparation" },
+  harm_reduction_support: { status: "journey_scheduled", phase: "harm_reduction_session" },
+  check_in_12hr: { status: "journey_complete", phase: "post_journey_check_in" },
+  integration_1: { status: "integration_1", phase: "integration_1" },
+  integration_2: { status: "integration_2", phase: "integration_2" },
+};
+
 async function applyJourneyProgress(clientId: string, rule?: SessionProgressRule) {
   if (!rule) return;
   const c = await getClient(clientId);
@@ -251,6 +264,35 @@ async function applyJourneyProgress(clientId: string, rule?: SessionProgressRule
   }
   if (Object.keys(patch).length > 0) await updateClient(clientId, patch);
   if (rule.milestoneKey) await completeMilestone(clientId, rule.milestoneKey);
+}
+
+async function revertJourneyProgressForSession(session: Session) {
+  const completedRule = SESSION_COMPLETED_PROGRESS[session.session_type];
+  const reopenRule = SESSION_REOPEN_PROGRESS[session.session_type];
+  if (!completedRule || !reopenRule) return;
+
+  const sessions = await listWhere(store.sessions, "sessions", "client_id", session.client_id);
+  const hasAnotherCompletedSession = sessions.some(
+    (candidate) =>
+      candidate.id !== session.id &&
+      candidate.session_type === session.session_type &&
+      candidate.status === "completed"
+  );
+  if (hasAnotherCompletedSession) return;
+
+  const client = await getClient(session.client_id);
+  if (!client) return;
+  const completionIsCurrent =
+    client.status === completedRule.status && client.current_phase === completedRule.phase;
+  if (!completionIsCurrent) return;
+
+  await updateClient(session.client_id, {
+    status: reopenRule.status,
+    current_phase: reopenRule.phase,
+  });
+  if (completedRule.milestoneKey) {
+    await uncompleteMilestone(session.client_id, completedRule.milestoneKey);
+  }
 }
 
 // Document types that are NOT (yet) backed by a Form Library template —
@@ -829,8 +871,9 @@ async function withClientNames<T extends { client_id: string }>(
 
 export async function getUpcomingSessions(limit = 10): Promise<(Session & { client_name: string })[]> {
   const all = await listAll(store.sessions, "sessions");
+  const now = Date.now();
   const upcoming = all
-    .filter((s) => s.status === "scheduled" && s.scheduled_at)
+    .filter((s) => s.status === "scheduled" && s.scheduled_at && new Date(s.scheduled_at).getTime() >= now)
     .sort((a, b) => (a.scheduled_at! < b.scheduled_at! ? -1 : 1))
     .slice(0, limit);
   return withClientNames(upcoming);
@@ -954,6 +997,14 @@ export async function clearSessionGoogleEvent(sessionId: string): Promise<void> 
 
 export async function completeSession(sessionId: string) {
   return updateSession(sessionId, { status: "completed" });
+}
+
+export async function reopenCompletedSession(sessionId: string) {
+  const existing = await findById(store.sessions, "sessions", sessionId);
+  if (!existing || existing.status !== "completed") return existing;
+  const reopened = await patchById<Session>(store.sessions, "sessions", sessionId, { status: "scheduled" });
+  await revertJourneyProgressForSession(existing);
+  return reopened;
 }
 
 // Practitioner-only UI state on the per-client AI Copilot list — kept as a
@@ -1219,6 +1270,28 @@ export async function addAiSummary(
     created_at: new Date().toISOString(),
   };
   return create(store.aiSummaries, "aiSummaries", summary);
+}
+
+export async function getAiConversationMessages(clientId: string): Promise<AiConversationMessage[]> {
+  const messages = await listWhere(store.aiConversationMessages, "aiConversationMessages", "client_id", clientId);
+  return messages.sort((a, b) => (a.created_at < b.created_at ? -1 : 1));
+}
+
+export async function addAiConversationMessage(
+  clientId: string,
+  role: AiConversationMessage["role"],
+  body: string,
+  model?: string
+): Promise<AiConversationMessage> {
+  const message: AiConversationMessage = {
+    id: nextId("aichat"),
+    client_id: clientId,
+    role,
+    body,
+    ...(model ? { model } : {}),
+    created_at: new Date().toISOString(),
+  };
+  return create(store.aiConversationMessages, "aiConversationMessages", message);
 }
 
 export async function getMemory(clientId: string): Promise<ClientMemoryItem[]> {
@@ -1630,24 +1703,35 @@ export async function addPayment(
   return create(store.payments, "payments", p);
 }
 
+export async function updatePayment(
+  paymentId: string,
+  patch: Partial<Pick<Payment, "amount" | "paid_at" | "method" | "notes">>
+) {
+  return patchById<Payment>(store.payments, "payments", paymentId, patch);
+}
+
 // ---------------------------------------------------------------------------
 // AGGREGATES — dashboard, reporting, search
 // ---------------------------------------------------------------------------
 
 const ACTIVE_STATUSES: ClientStatus[] = [
-  "inquiry",             // added to system, not yet started
+  "inquiry",
   "intake_scheduled",
   "intake_complete",
   "preparation",
   "preparation_complete",
   "journey_scheduled",
-  "journey_complete",
   "check_in_complete",
   "integration_1",
   "integration_1_complete",
   "integration_2",
   "integration_2_complete", // still active until journey is formally closed
 ];
+
+export async function getActiveClientCount(): Promise<number> {
+  const clients = await getClients();
+  return clients.filter((client) => ACTIVE_STATUSES.includes(client.status)).length;
+}
 
 export async function getDashboardSummary() {
   // Working views (counts, active list, referral mix) exclude clients on hold.
@@ -1665,7 +1749,22 @@ export async function getDashboardSummary() {
     getOutstandingForms(),
     getUnreadMessagesSummary(),
   ]);
-  const outstandingItems = [...outstandingTasks, ...outstandingForms];
+  const urgencyReference = Date.now();
+  const urgencyRank = (item: (typeof outstandingTasks)[number] | (typeof outstandingForms)[number]) => {
+    if (item.status === "overdue") return 0;
+    if (!item.due_at) return 3;
+    const dueTime = new Date(item.due_at).getTime();
+    if (dueTime < urgencyReference) return 0;
+    if (dueTime <= urgencyReference + 3 * 24 * 60 * 60 * 1000) return 1;
+    return 2;
+  };
+  const outstandingItems = [...outstandingTasks, ...outstandingForms].sort((a, b) => {
+    const rankDifference = urgencyRank(a) - urgencyRank(b);
+    if (rankDifference !== 0) return rankDifference;
+    const aDue = a.due_at ? new Date(a.due_at).getTime() : Number.POSITIVE_INFINITY;
+    const bDue = b.due_at ? new Date(b.due_at).getTime() : Number.POSITIVE_INFINITY;
+    return aDue - bDue;
+  });
   const upcomingSessions = await getUpcomingSessions(6);
   const payments = await getPayments();
   const now = new Date();
@@ -1703,9 +1802,14 @@ export async function getDashboardSummary() {
   return {
     totalClients: clients.length,
     activeClients: activeClients.length,
+    activeClientRecords: activeClients,
     awaitingIntegration: awaitingIntegration.length,
     outstandingTasksCount: outstandingItems.length,
-    outstandingTasks: outstandingItems.slice(0, 6),
+    outstandingFormsCount: outstandingForms.length,
+    openTasksCount: outstandingTasks.length,
+    overdueTasksCount: outstandingTasks.filter((task) => task.status === "overdue" || isPastDue(task)).length,
+    pendingCheckInsCount: outstandingTasks.filter((task) => /check[ -]?in/i.test(task.title)).length,
+    outstandingTasks: outstandingItems.slice(0, 8),
     unreadMessageCount: unreadMessages.totalUnread,
     unreadMessageThreads: unreadMessages.threads,
     upcomingSessions,
@@ -1726,6 +1830,118 @@ export async function getJourneyCompletionRate() {
   return Math.round((closed / total) * 100);
 }
 
+export async function getReportsSummary() {
+  const [clients, clientsForRevenue, payments] = await Promise.all([
+    getClients(), getClientsIncludingOnHold(), getPayments(),
+  ]);
+  const [milestonesByClient, sessionsByClient] = await Promise.all([
+    Promise.all(clients.map((client) => getMilestones(client.id))),
+    Promise.all(clients.map((client) => getSessions(client.id))),
+  ]);
+  const now = new Date();
+  const currentYear = now.getFullYear().toString();
+  const currentYearMonth = `${currentYear}-${String(now.getMonth() + 1).padStart(2, "0")}`;
+  const revenueTotal = clientsForRevenue.reduce((sum, client) => sum + (client.amount_paid ?? 0), 0);
+  const datedTotal = payments.reduce((sum, payment) => sum + payment.amount, 0);
+  const averagePayment = payments.length ? datedTotal / payments.length : 0;
+  const legacyRevenue = Math.max(0, revenueTotal - datedTotal);
+  const revenueMTD = payments.filter((payment) => payment.paid_at.startsWith(currentYearMonth)).reduce((sum, payment) => sum + payment.amount, 0);
+  const revenueYTD = legacyRevenue + payments.filter((payment) => payment.paid_at.startsWith(currentYear)).reduce((sum, payment) => sum + payment.amount, 0);
+  const expectedTotal = clientsForRevenue.reduce((sum, client) => sum + (client.package_value ?? 0), 0);
+  const outstandingBalance = clientsForRevenue.reduce((sum, client) => sum + Math.max(0, (client.package_value ?? 0) - (client.amount_paid ?? 0)), 0);
+  const monthKeys = Array.from({ length: 12 }, (_, index) => {
+    const date = new Date(now.getFullYear(), now.getMonth() - 11 + index, 1);
+    const nextMonth = new Date(date.getFullYear(), date.getMonth() + 1, 1);
+    return {
+      key: `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, "0")}`,
+      name: date.toLocaleDateString("en-US", { month: "short" }),
+      endAt: nextMonth.getTime(),
+    };
+  });
+  const closedAtByClient = new Map(clients.map((client, index) => [
+    client.id,
+    milestonesByClient[index].find((milestone) => milestone.milestone_key === "journey_closed")?.completed_at,
+  ]));
+  const revenueByMonth = monthKeys.map((month) => ({
+    key: month.key,
+    name: month.name,
+    value: payments.filter((payment) => payment.paid_at.startsWith(month.key)).reduce((sum, payment) => sum + payment.amount, 0),
+    activeClients: clients.filter((client) => {
+      const isCurrentlyActive = ACTIVE_STATUSES.includes(client.status);
+      const hasHistoricalClosedJourney = client.status === "journey_closed";
+      if ((!isCurrentlyActive && !hasHistoricalClosedJourney) || new Date(client.created_at).getTime() >= month.endAt) return false;
+      const closedAt = closedAtByClient.get(client.id);
+      return !closedAt || new Date(closedAt).getTime() >= month.endAt;
+    }).length,
+  }));
+  const clientGrowth = monthKeys.map((month) => ({ name: month.name, value: clients.filter((client) => client.created_at.startsWith(month.key)).length }));
+  const referralSources = await getReferralSources();
+  const referralCounts = new Map<string, number>();
+  for (const client of clients) {
+    const source = referralSources.find((item) => item.id === client.referral_source_id);
+    const name = source?.name ?? "Direct / unknown";
+    referralCounts.set(name, (referralCounts.get(name) ?? 0) + 1);
+  }
+  const completedJourneys = clients.filter((client) => client.status === "journey_closed").length;
+  const activeClients = clients.filter((client) => ACTIVE_STATUSES.includes(client.status)).length;
+  const averageCompletionRate = milestonesByClient.length
+    ? Math.round(milestonesByClient.reduce((total, milestones) => total + (milestones.length ? milestones.filter((milestone) => milestone.completed).length / milestones.length : 0), 0) / milestonesByClient.length * 100)
+    : 0;
+  const completionDurations = clients.flatMap((client, index) => {
+    const closedAt = milestonesByClient[index].find((milestone) => milestone.milestone_key === "journey_closed")?.completed_at;
+    if (!closedAt) return [];
+    const duration = Math.floor((new Date(closedAt).getTime() - new Date(client.created_at).getTime()) / 86_400_000);
+    return duration > 0 ? [duration] : [];
+  });
+  const completedJourneySessionCounts = clients.flatMap((client, index) => {
+    if (client.status !== "journey_closed") return [];
+    const closedAt = milestonesByClient[index].find((milestone) => milestone.milestone_key === "journey_closed")?.completed_at;
+    const completedSessions = sessionsByClient[index].filter((session) => {
+      if (session.status !== "completed") return false;
+      return !closedAt || !session.scheduled_at || new Date(session.scheduled_at).getTime() <= new Date(closedAt).getTime();
+    });
+    return [completedSessions.length];
+  });
+  const sessionIntervalsInDays = sessionsByClient.flatMap((sessions) => {
+    const datedSessions = sessions
+      .filter((session) => session.status === "completed" && session.scheduled_at)
+      .sort((a, b) => a.scheduled_at!.localeCompare(b.scheduled_at!));
+    return datedSessions.slice(1).flatMap((session, index) => {
+      const previous = datedSessions[index];
+      const interval = (new Date(session.scheduled_at!).getTime() - new Date(previous.scheduled_at!).getTime()) / 86_400_000;
+      return interval >= 0 ? [interval] : [];
+    });
+  });
+  const clientNames = new Map(clientsForRevenue.map((client) => [client.id, client.full_name]));
+  const outstandingPayments = clientsForRevenue.map((client) => ({
+    clientId: client.id, client: client.full_name,
+    amount: Math.max(0, (client.package_value ?? 0) - (client.amount_paid ?? 0)),
+    dueDate: client.payment_due_date ?? null, status: "Outstanding" as const,
+  })).filter((payment) => payment.amount > 0).sort((a, b) => b.amount - a.amount);
+  const recentPayments = [...payments].sort((a, b) => b.paid_at.localeCompare(a.paid_at)).slice(0, 8).map((payment) => ({
+    id: payment.id, clientId: payment.client_id, client: clientNames.get(payment.client_id) ?? "Unknown client",
+    amount: payment.amount, date: payment.paid_at, method: payment.method, notes: payment.notes, status: "Paid" as const,
+  }));
+  return {
+    totalClients: clients.length, activeClients,
+    journeyCompletionRate: clients.length ? Math.round((completedJourneys / clients.length) * 100) : 0,
+    revenueTotal, revenueMTD, revenueYTD, expectedTotal, outstandingBalance, averagePayment, revenueByMonth,
+    revenuePayments: payments.map((payment) => ({ date: payment.paid_at, amount: payment.amount })), clientGrowth,
+    referralBreakdown: Array.from(referralCounts.entries()).map(([name, count]) => ({ name, count })).sort((a, b) => b.count - a.count),
+    journeyPerformance: {
+      completed: completedJourneys, inProgress: activeClients, averageCompletionRate,
+      averageDaysToCompletion: completionDurations.length ? Math.round(completionDurations.reduce((sum, days) => sum + days, 0) / completionDurations.length) : null,
+      averageDaysBetweenSessions: sessionIntervalsInDays.length
+        ? Math.round(sessionIntervalsInDays.reduce((sum, days) => sum + days, 0) / sessionIntervalsInDays.length)
+        : null,
+      averageSessionsPerJourney: completedJourneySessionCounts.length
+        ? completedJourneySessionCounts.reduce((sum, count) => sum + count, 0) / completedJourneySessionCounts.length
+        : null,
+    },
+    outstandingPayments, recentPayments, clients,
+  };
+}
+
 export interface SearchResult {
   type: "client" | "transcript" | "session_note" | "theme" | "intention" | "action_item" | "insight";
   clientId: string;
@@ -1738,11 +1954,11 @@ export interface SearchResult {
 // PROSPECTS — pre-client CRM records for introductory calls
 // ---------------------------------------------------------------------------
 
-// In-memory mock fallback (empty until records are created). These parallel
-// the store.* arrays used elsewhere; prospects aren't seeded since there are
-// no mock prospects.
-const mockProspects: Prospect[] = [];
-const mockProspectCalls: ProspectCall[] = [];
+// Keep prospect data on the shared mock-store singleton. Server actions and
+// dynamic route modules can be evaluated by separate dev bundles; module-local
+// arrays made a newly created prospect disappear before its detail page loaded.
+const mockProspects = store.prospects;
+const mockProspectCalls = store.prospectCalls;
 
 async function allProspects(): Promise<Prospect[]> {
   const prospects = await listAll(mockProspects, "prospects");
@@ -1979,7 +2195,7 @@ export async function deleteProspectCall(callId: string): Promise<void> {
 // practitioner record a second (or third) call before converting.
 // ---------------------------------------------------------------------------
 
-const mockProspectTranscripts: ProspectTranscript[] = [];
+const mockProspectTranscripts = store.prospectTranscripts;
 
 export async function getProspectTranscripts(prospectId: string): Promise<ProspectTranscript[]> {
   const list = await listWhere(mockProspectTranscripts, "prospectTranscripts", "prospect_id", prospectId);

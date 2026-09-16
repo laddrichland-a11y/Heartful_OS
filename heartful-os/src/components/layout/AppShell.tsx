@@ -6,7 +6,15 @@ import { useRole } from "@/components/RoleContext";
 import Sidebar from "./Sidebar";
 import Topbar from "./Topbar";
 
-export default function AppShell({ title, children }: { title: string; children: React.ReactNode }) {
+export default function AppShell({
+  title,
+  children,
+  variant,
+}: {
+  title: string;
+  children: React.ReactNode;
+  variant?: "wellnest-client";
+}) {
   const { role, hydrated } = useRole();
   const router = useRouter();
 
@@ -26,11 +34,14 @@ export default function AppShell({ title, children }: { title: string; children:
   if (hydrated && role === "client") return null;
 
   return (
-    <div className="flex min-h-screen bg-[var(--background)]">
+    <div
+      className={`app-frame heartful-site-shell flex min-h-screen ${variant === "wellnest-client" ? "wellnest-client-screen" : ""}${title === "Clients" ? " app-frame--clients-typography" : ""}`}
+      data-shell-variant={variant ?? "practitioner"}
+    >
       <Sidebar />
-      <div className="flex-1 min-w-0">
-        <Topbar title={title} />
-        <main className="px-4 md:px-6 py-6 max-w-7xl mx-auto">{children}</main>
+      <div className="app-workspace-frame flex-1 min-w-0">
+        <Topbar title={title} showClientSwitcher={variant === "wellnest-client"} />
+        <main className={`app-workspace px-4 py-5 md:px-7 md:py-7 max-w-7xl mx-auto${title === "Prep Center" ? " app-workspace--wide" : ""}`}>{children}</main>
       </div>
     </div>
   );

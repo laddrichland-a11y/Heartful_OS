@@ -1,77 +1,85 @@
 import AppShell from "@/components/layout/AppShell";
-import { getDashboardSummary, getJourneyCompletionRate } from "@/lib/data";
+import { ClientGrowthChart, ReferralBarChart, StatusDonutChart } from "@/components/reports/ReportsCharts";
+import ReportsNav from "@/components/reports/ReportsNav";
+import { getReportsSummary } from "@/lib/data";
 import { STATUS_LABELS } from "@/lib/types";
-import StatCard from "@/components/ui/StatCard";
-import { ReferralBarChart, StatusPieChart, RevenueBarChart } from "@/components/reports/ReportsCharts";
-import { formatCurrency } from "@/lib/utils";
-import { Users, TrendingUp, DollarSign, ClipboardList } from "lucide-react";
+import { ClipboardList, TrendingUp, Users } from "lucide-react";
 
 export const dynamic = "force-dynamic";
 
-export default async function ReportsPage() {
-  const [summary, completionRate] = await Promise.all([getDashboardSummary(), getJourneyCompletionRate()]);
-
+export default async function ReportsOverviewPage() {
+  const summary = await getReportsSummary();
   const statusCounts = new Map<string, number>();
-  for (const c of summary.clients) {
-    const label = STATUS_LABELS[c.status];
+  for (const client of summary.clients) {
+    const label = STATUS_LABELS[client.status];
     statusCounts.set(label, (statusCounts.get(label) ?? 0) + 1);
   }
-  const statusData = Array.from(statusCounts.entries()).map(([name, value]) => ({ name, value }));
-
-  const revenueData = [
-    { name: "Collected", value: summary.revenueTotal },
-    { name: "Outstanding", value: summary.outstandingBalance },
-    { name: "Expected Total", value: summary.expectedTotal },
+  const statusData = Array.from(statusCounts.entries()).map(([name, value]) => ({ name, value })).sort((a, b) => b.value - a.value);
+  const journeyMetrics = [
+    { label: "Journeys completed", value: summary.journeyPerformance.completed },
+    {
+      label: "Average days between sessions",
+      value: summary.journeyPerformance.averageDaysBetweenSessions === null
+        ? "—"
+        : `${summary.journeyPerformance.averageDaysBetweenSessions} days`,
+      note: summary.journeyPerformance.averageDaysBetweenSessions === null
+        ? "Available after a client completes two dated sessions"
+        : "Average pace across completed client sessions",
+    },
+    {
+      label: "Average sessions per journey",
+      value: summary.journeyPerformance.averageSessionsPerJourney === null
+        ? "—"
+        : summary.journeyPerformance.averageSessionsPerJourney.toFixed(1),
+      note: summary.journeyPerformance.averageSessionsPerJourney === null
+        ? "Available after the first completed journey"
+        : "Completed sessions before journey close",
+    },
+    {
+      label: "Average time to completion",
+      value: summary.journeyPerformance.averageDaysToCompletion ? `${summary.journeyPerformance.averageDaysToCompletion} days` : "—",
+      note: summary.journeyPerformance.averageDaysToCompletion ? undefined : "Available as completion history grows",
+    },
   ];
 
-  return (
-    <AppShell title="Reports">
-      <div className="grid sm:grid-cols-2 lg:grid-cols-4 gap-4 mb-6">
-        <StatCard label="Total Clients" value={summary.totalClients} icon={Users} accent="clay" />
-        <StatCard label="Active Clients" value={summary.activeClients} icon={TrendingUp} accent="sage" />
-        <StatCard label="Journey Completion Rate" value={`${completionRate}%`} icon={ClipboardList} accent="plum" />
-        <StatCard label="Revenue Collected" value={formatCurrency(summary.revenueTotal)} icon={DollarSign} accent="clay" />
-      </div>
+  return <AppShell title="Reports">
+    <header className="reports-header">
+      <div><h2 className="app-section-title text-ink-900">Practice analytics</h2><p>Understand how your practice is performing over time.</p></div>
+      <ReportsNav current="overview" />
+    </header>
+    <section className="reports-kpi-grid" aria-label="Practice overview">
+      <ReportMetric label="Total clients" value={summary.totalClients} icon={Users} tone="clay" />
+      <ReportMetric label="Active clients" value={summary.activeClients} icon={TrendingUp} tone="sage" />
+      <ReportMetric label="Journey completion rate" value={`${summary.journeyCompletionRate}%`} icon={ClipboardList} tone="vanilla" />
+      <ReportMetric
+        label="Average journey progress"
+        value={`${summary.journeyPerformance.averageCompletionRate}%`}
+        icon={TrendingUp}
+        tone="sage"
+      />
+    </section>
+    <div className="reports-grid reports-grid--balanced">
+      <ReportCard title="Client growth" description="New clients over the last 12 months"><ClientGrowthChart data={summary.clientGrowth} /></ReportCard>
+      <ReportCard title="Clients by journey status" description="Current distribution across the client journey"><StatusDonutChart data={statusData} /></ReportCard>
+    </div>
+    <div className="reports-grid reports-grid--referrals">
+      <ReportCard title="Referral sources" description="Where current client relationships began"><ReferralBarChart data={summary.referralBreakdown} /></ReportCard>
+      <ReportCard title="Journey performance" description="Aggregate progress across all client journeys">
+        <div className="journey-performance-grid">
+          {journeyMetrics.map((metric) => <div key={metric.label} className="journey-performance-metric"><strong>{metric.value}</strong><span>{metric.label}</span>{metric.note && <small>{metric.note}</small>}</div>)}
+        </div>
+      </ReportCard>
+    </div>
+  </AppShell>;
+}
 
-      <div className="grid lg:grid-cols-2 gap-6 mb-6">
-        <div className="card p-5">
-          <h2 className="font-semibold text-ink-900 mb-3">Referral Sources</h2>
-          <ReferralBarChart data={summary.referralBreakdown} />
-        </div>
-        <div className="card p-5">
-          <h2 className="font-semibold text-ink-900 mb-3">Clients by Journey Status</h2>
-          <StatusPieChart data={statusData} />
-        </div>
-      </div>
+function ReportMetric({ label, value, icon: Icon, tone }: { label: string; value: string | number; icon: typeof Users; tone: "clay" | "sage" | "vanilla" }) {
+  return <div className="report-metric report-metric--with-icon">
+    <span className={`report-metric-icon report-metric-icon--${tone}`}><Icon aria-hidden="true" /></span>
+    <span className="report-metric-copy"><strong>{value}</strong><span>{label}</span></span>
+  </div>;
+}
 
-      <div className="grid lg:grid-cols-2 gap-6">
-        <div className="card p-5">
-          <h2 className="font-semibold text-ink-900 mb-3">Revenue Overview</h2>
-          <RevenueBarChart data={revenueData} />
-        </div>
-        <div className="card p-5">
-          <h2 className="font-semibold text-ink-900 mb-3">Upcoming Sessions</h2>
-          <ul className="space-y-2">
-            {summary.upcomingSessions.map((s) => (
-              <li key={s.id} className="flex items-center justify-between text-sm border-b border-ink-100 pb-2 last:border-0">
-                <span className="text-ink-800">{s.client_name}</span>
-                <span className="text-ink-400 text-xs capitalize">{s.session_type.replace(/_/g, " ")}</span>
-              </li>
-            ))}
-            {summary.upcomingSessions.length === 0 && <p className="text-sm text-ink-400">Nothing scheduled.</p>}
-          </ul>
-          <h2 className="font-semibold text-ink-900 mt-5 mb-3">Outstanding Forms &amp; Tasks ({summary.outstandingTasksCount})</h2>
-          <ul className="space-y-2">
-            {summary.outstandingTasks.map((t) => (
-              <li key={t.id} className="flex items-center justify-between text-sm border-b border-ink-100 pb-2 last:border-0">
-                <span className="text-ink-800">{t.title}</span>
-                <span className="text-ink-400 text-xs">{t.client_name}</span>
-              </li>
-            ))}
-            {summary.outstandingTasks.length === 0 && <p className="text-sm text-ink-400">Nothing outstanding.</p>}
-          </ul>
-        </div>
-      </div>
-    </AppShell>
-  );
+function ReportCard({ title, description, children }: { title: string; description: string; children: React.ReactNode }) {
+  return <section className="card report-card"><div className="report-card-heading"><h2>{title}</h2><p>{description}</p></div>{children}</section>;
 }

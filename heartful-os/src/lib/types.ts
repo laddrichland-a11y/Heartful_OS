@@ -101,6 +101,7 @@ export type AiSummaryType =
   | "journey_manual_notes_summary";
 
 export type MemoryItemType =
+  | "note"
   | "intention"
   | "insight"
   | "theme"
@@ -129,6 +130,17 @@ export interface Profile {
   // Venmo username (no @), used to build a payment link for client-facing
   // emails (e.g. https://venmo.com/<venmo_handle>). Optional — set in Settings.
   venmo_handle?: string;
+  /** Payment instructions configured by the practitioner for use in client communications. */
+  payment_methods?: PaymentMethod[];
+}
+
+export type PaymentMethodKind = "venmo" | "paypal" | "cash_app" | "zelle" | "bank_transfer" | "other";
+
+export interface PaymentMethod {
+  id: string;
+  kind: PaymentMethodKind;
+  label: string;
+  details: string;
 }
 
 export interface ReferralSource {
@@ -157,6 +169,7 @@ export interface Client extends OnHoldFields {
   package_name?: string;
   package_value?: number;
   amount_paid?: number;
+  payment_due_date?: string;
   // Client-chosen portal login. The client sets these themselves the first
   // time they open their private portal link (see actions.ts
   // createPortalAccountAction) — the practitioner never sees the password,
@@ -347,6 +360,15 @@ export interface AiSummary {
   summary_type: AiSummaryType;
   title: string;
   content: Record<string, unknown>;
+  model?: string;
+  created_at: string;
+}
+
+export interface AiConversationMessage {
+  id: string;
+  client_id: string;
+  role: "practitioner" | "assistant";
+  body: string;
   model?: string;
   created_at: string;
 }

@@ -13,8 +13,8 @@ export default function manifest(): MetadataRoute.Manifest {
     // practitioners get the in-app picker as before.
     start_url: "/portal",
     display: "standalone",
-    background_color: "#faf7f2",
-    theme_color: "#b5663f",
+    background_color: "#F7F7F6",
+    theme_color: "#F3774D",
     icons: [
       { src: "/icon", sizes: "64x64", type: "image/png" },
       { src: "/apple-icon", sizes: "180x180", type: "image/png" },

@@ -414,3 +414,37 @@ ${clientRecordDump}
 """`,
   };
 }
+
+export function buildAiConversationPrompt(
+  clientName: string,
+  clientRecordDump: string,
+  conversationHistory: string,
+  practitionerMessage: string
+): PromptPair {
+  return {
+    system: BASE_SYSTEM_FRAME,
+    user: `You are in an ongoing conversation with a practitioner about their client, "${clientName}".
+
+Answer the practitioner's latest message directly and helpfully. Use the client context below when it is relevant, name uncertainty when the record does not contain an answer, and never invent client details. This is a working conversation, not a formal summary, so keep the response focused and practical. The practitioner may ask about preparation, session planning, progress, open threads, forms, or next steps.
+
+Return JSON with exactly one key:
+{
+  "reply": ""
+}
+
+Client context:
+"""
+${clientRecordDump}
+"""
+
+Conversation so far:
+"""
+${conversationHistory || "No previous conversation."}
+"""
+
+Latest practitioner message:
+"""
+${practitionerMessage}
+"""`,
+  };
+}

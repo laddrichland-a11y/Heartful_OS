@@ -39,7 +39,7 @@ export default function NewProspectButton() {
 
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/30 backdrop-blur-sm p-4">
-      <div className="bg-white rounded-2xl shadow-xl p-6 w-full max-w-md space-y-4">
+      <div className="new-prospect-dialog bg-white rounded-2xl shadow-xl p-6 w-full max-w-md space-y-4">
         <div className="flex items-center justify-between">
           <h2 className="font-semibold text-ink-900">New Prospect</h2>
           <button onClick={() => setOpen(false)} className="text-ink-400 hover:text-ink-600">

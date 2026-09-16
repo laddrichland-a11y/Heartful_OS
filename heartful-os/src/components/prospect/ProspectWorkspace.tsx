@@ -23,6 +23,9 @@ import {
   AlertTriangle,
   Pencil,
   PauseCircle,
+  ChevronRight,
+  CalendarDays,
+  Circle,
 } from "lucide-react";
 import {
   updateProspectAction,
@@ -39,7 +42,7 @@ import {
   ScheduleConflict,
 } from "@/lib/actions";
 import { Prospect, ProspectCall, ProspectTranscript, PROSPECT_STATUS_LABELS } from "@/lib/types";
-import { cx, formatDateTime } from "@/lib/utils";
+import { cx, formatDate, formatDateTime } from "@/lib/utils";
 import SummaryCard from "@/components/ai/SummaryCard";
 import ProspectSummaryEmailModal from "@/components/prospect/ProspectSummaryEmailModal";
 import HoldControl from "@/components/HoldControl";
@@ -72,12 +75,16 @@ export default function ProspectWorkspace({
 
   // Notes
   const [notes, setNotes] = useState(prospect.notes ?? "");
-  const [notesSaving, setNotesSaving] = useState(false);
-  const [notesSaved, setNotesSaved] = useState(false);
+  const [notesSaveState, setNotesSaveState] = useState<"idle" | "saving" | "saved">("idle");
+  const savedNotesRef = useRef(prospect.notes ?? "");
+  const latestNotesRef = useRef(prospect.notes ?? "");
+  const notesRef = useRef<HTMLTextAreaElement>(null);
 
   // Transcript
   const [transcript, setTranscript] = useState(prospect.fathom_transcript ?? "");
+  const [savedTranscript, setSavedTranscript] = useState(prospect.fathom_transcript ?? "");
   const [transcriptSaving, setTranscriptSaving] = useState(false);
+  const transcriptRef = useRef<HTMLTextAreaElement>(null);
 
   // AI summary
   const [summaryBusy, setSummaryBusy] = useState(false);
@@ -108,17 +115,27 @@ export default function ProspectWorkspace({
   // Convert busy
   const [convertBusy, setConvertBusy] = useState(false);
 
-  async function saveNotes() {
-    setNotesSaving(true);
-    await updateProspectAction(prospect.id, { notes });
-    setNotesSaving(false);
-    setNotesSaved(true);
-    setTimeout(() => setNotesSaved(false), 2000);
-  }
+  useAutoResizeTextarea(notesRef, notes, 84);
+  useAutoResizeTextarea(transcriptRef, transcript, 112);
+
+  useEffect(() => {
+    latestNotesRef.current = notes;
+    if (notes === savedNotesRef.current) return;
+    setNotesSaveState("idle");
+    const timer = window.setTimeout(async () => {
+      const valueToSave = notes;
+      setNotesSaveState("saving");
+      await updateProspectAction(prospect.id, { notes: valueToSave });
+      savedNotesRef.current = valueToSave;
+      if (latestNotesRef.current === valueToSave) setNotesSaveState("saved");
+    }, 700);
+    return () => window.clearTimeout(timer);
+  }, [notes, prospect.id]);
 
   async function saveTranscript() {
     setTranscriptSaving(true);
     await updateProspectAction(prospect.id, { fathom_transcript: transcript });
+    setSavedTranscript(transcript);
     setTranscriptSaving(false);
   }
 
@@ -218,16 +235,37 @@ export default function ProspectWorkspace({
   const upcomingCalls = calls.filter(
     (c) => c.status === "scheduled" && new Date(c.scheduled_at) >= new Date()
   );
-  const pastCalls = calls.filter(
-    (c) => c.status !== "scheduled" || new Date(c.scheduled_at) < new Date()
-  );
+  const nextCall = [...upcomingCalls].sort((a, b) => a.scheduled_at.localeCompare(b.scheduled_at))[0];
+  const transcriptDirty = transcript !== savedTranscript;
+  const category = prospect.referral_source ?? "Not specified";
+  const lastActivityAt = [
+    prospect.updated_at,
+    ...calls.map((call) => call.created_at),
+    ...initialTranscripts.map((item) => item.updated_at),
+  ].filter(Boolean).sort().at(-1) ?? prospect.created_at;
+
+  const nextStep = prospect.status === "converted"
+    ? { title: "Open the client record", detail: "Continue their care from the client workspace.", label: "View client", action: () => undefined }
+    : !nextCall
+      ? { title: "Schedule an introductory call", detail: "Choose a time to learn what support they’re looking for.", label: "Schedule call", action: () => setShowCallForm(true) }
+      : !transcript.trim()
+        ? { title: "Add the call transcript", detail: "Paste the conversation after the introductory call.", label: "Add transcript", action: () => transcriptRef.current?.focus() }
+        : transcriptDirty
+          ? { title: "Save the call transcript", detail: "Save your changes before generating a summary.", label: "Save transcript", action: saveTranscript }
+          : !summaryContent
+            ? { title: "Generate the call summary", detail: "Turn the saved transcript into a concise practitioner brief.", label: "Generate summary", action: generateSummary }
+            : { title: "Convert prospect to client", detail: "The call is documented and this prospect is ready to move forward.", label: "Convert to client", action: handleConvert };
 
   return (
-    <div className="space-y-5 max-w-2xl">
-      {/* Header */}
-      <div className="card p-5">
+    <div className="prospect-workspace">
+      <Link href="/prospects" className="prospect-breadcrumb">
+        <ArrowRight className="rotate-180" aria-hidden="true" />
+        Prospects
+      </Link>
+
+      <header className="prospect-header">
         {prospect.on_hold_at && (
-          <div className="mb-4 flex flex-wrap items-center gap-2 rounded-lg border border-amber-200 bg-amber-50 px-3 py-2 text-xs text-amber-900">
+          <div className="prospect-hold-banner">
             <PauseCircle className="h-4 w-4 shrink-0" />
             <span className="font-medium">On hold</span>
             {prospect.hold_reason && <span>— {prospect.hold_reason}</span>}
@@ -236,102 +274,73 @@ export default function ProspectWorkspace({
                 · follow up {new Date(prospect.hold_follow_up_at).toLocaleDateString()}
               </span>
             )}
-            <span className="text-amber-700">· hidden from your prospect list</span>
           </div>
         )}
-        <div className="flex items-start justify-between gap-4 mb-4">
-          <div>
-            <div className="flex items-center gap-2 mb-1">
-              <h2 className="text-xl font-semibold text-ink-900">{prospect.full_name}</h2>
-              <span className={cx("badge text-xs", STATUS_COLORS[prospect.status])}>
+        <div className="prospect-header-row">
+          <div className="min-w-0">
+            <div className="prospect-title-row">
+              <h1>{prospect.full_name}</h1>
+              <button type="button" className="prospect-title-edit" aria-label="Edit prospect information" title="Edit prospect information" onClick={() => setEditOpen(true)}>
+                <Pencil aria-hidden="true" />
+              </button>
+              <span className={cx("badge", STATUS_COLORS[prospect.status])}>
                 {PROSPECT_STATUS_LABELS[prospect.status]}
               </span>
             </div>
-            <div className="space-y-1 text-sm text-ink-500">
-              {prospect.email && (
-                <div className="flex items-center gap-2">
-                  <Mail className="h-3.5 w-3.5 shrink-0" />
-                  <a href={`mailto:${prospect.email}`} className="hover:text-clay-600">{prospect.email}</a>
-                </div>
-              )}
-              {prospect.phone && (
-                <div className="flex items-center gap-2">
-                  <Phone className="h-3.5 w-3.5 shrink-0" />
-                  <span>{prospect.phone}</span>
-                </div>
-              )}
-              {prospect.referral_source && (
-                <div className="flex items-center gap-2">
-                  <Tag className="h-3.5 w-3.5 shrink-0" />
-                  <span>{prospect.referral_source}</span>
-                </div>
-              )}
-            </div>
+            <p className="prospect-category"><Tag aria-hidden="true" /> {category}</p>
           </div>
-          <div className="flex gap-2 flex-wrap justify-end">
+          <div className="prospect-header-actions">
             {prospect.status !== "converted" && (
-              <button
-                onClick={() => setShowCallForm(true)}
-                className="btn-secondary text-sm px-3 py-1.5 flex items-center gap-1.5"
-              >
-                <CalendarPlus className="h-3.5 w-3.5" />
-                Schedule Call
-              </button>
-            )}
-            <button
-              onClick={() => setEditOpen(!editOpen)}
-              className="btn-ghost text-sm px-3 py-1.5"
-            >
-              Edit
-            </button>
-            {prospect.status !== "converted" && (
-              <HoldControl
-                kind="prospect"
-                recordId={prospect.id}
-                name={prospect.full_name}
-                onHold={Boolean(prospect.on_hold_at)}
-                followUpAt={prospect.hold_follow_up_at}
-                reason={prospect.hold_reason}
-              />
-            )}
-            {prospect.status !== "converted" && (
-              <button
-                disabled={convertBusy}
-                onClick={handleConvert}
-                className="btn-primary text-sm px-3 py-1.5 flex items-center gap-1.5"
-              >
-                {convertBusy ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <ArrowRight className="h-3.5 w-3.5" />}
-                Convert to Client
-              </button>
+              <>
+                <HoldControl
+                  kind="prospect"
+                  recordId={prospect.id}
+                  name={prospect.full_name}
+                  onHold={Boolean(prospect.on_hold_at)}
+                  followUpAt={prospect.hold_follow_up_at}
+                  reason={prospect.hold_reason}
+                />
+                <button
+                  type="button"
+                  disabled={convertBusy}
+                  onClick={handleConvert}
+                  className="btn-primary"
+                >
+                  {convertBusy ? <Loader2 className="animate-spin" /> : <ArrowRight />}
+                  Convert to Client
+                </button>
+              </>
             )}
             {prospect.converted_client_id && (
               <Link
                 href={`/clients/${prospect.converted_client_id}`}
-                className="btn-secondary text-sm px-3 py-1.5 flex items-center gap-1.5"
+                className="btn-primary"
               >
-                <User className="h-3.5 w-3.5" /> View Client Record
+                <User /> View Client Record
               </Link>
             )}
           </div>
         </div>
+      </header>
 
-        {/* Edit form */}
-        {editOpen && (
-          <div className="border-t border-ink-100 pt-4 mt-4 space-y-3">
-            <div className="grid grid-cols-2 gap-3">
+      {editOpen && (
+        <section className="prospect-edit-panel">
+          <div className="prospect-section-heading">
+            <div><span>Prospect details</span><h2>Edit information</h2></div>
+            <button type="button" className="prospect-icon-button" aria-label="Close edit panel" onClick={() => setEditOpen(false)}><X /></button>
+          </div>
+          <div className="prospect-edit-grid">
               <div>
-                <label className="text-xs font-medium text-ink-600 block mb-1">Name</label>
+                <label>Name</label>
                 <input
                   autoComplete="off"
-                  className="w-full border border-ink-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-clay-300"
                   value={editName}
                   onChange={(e) => setEditName(e.target.value)}
                 />
               </div>
               <div>
-                <label className="text-xs font-medium text-ink-600 block mb-1">Status</label>
+                <label>Status</label>
                 <select
-                  className="w-full border border-ink-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-clay-300"
                   value={editStatus}
                   onChange={(e) => setEditStatus(e.target.value as Prospect["status"])}
                 >
@@ -341,118 +350,106 @@ export default function ProspectWorkspace({
                 </select>
               </div>
               <div>
-                <label className="text-xs font-medium text-ink-600 block mb-1">Email</label>
+                <label>Email</label>
                 <input
                   type="email"
                   autoComplete="off"
-                  className="w-full border border-ink-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-clay-300"
                   value={editEmail}
                   onChange={(e) => setEditEmail(e.target.value)}
                 />
               </div>
               <div>
-                <label className="text-xs font-medium text-ink-600 block mb-1">Phone</label>
+                <label>Phone</label>
                 <input
                   autoComplete="off"
-                  className="w-full border border-ink-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-clay-300"
                   value={editPhone}
                   onChange={(e) => setEditPhone(e.target.value)}
                 />
               </div>
-              <div className="col-span-2">
-                <label className="text-xs font-medium text-ink-600 block mb-1">Referral Source</label>
+              <div className="prospect-edit-wide">
+                <label>Interest / category</label>
                 <input
                   autoComplete="off"
-                  className="w-full border border-ink-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-clay-300"
-                  placeholder="e.g. Word of mouth, Psychology Today…"
+                  placeholder="e.g. Psychology"
                   value={editReferral}
                   onChange={(e) => setEditReferral(e.target.value)}
                 />
               </div>
-            </div>
-            <div className="flex items-center justify-between gap-2 pt-1">
+          </div>
+          <div className="prospect-edit-actions">
               <button
                 onClick={handleDelete}
-                className="text-xs text-red-500 hover:text-red-700 flex items-center gap-1"
+                className="prospect-delete-action"
               >
-                <Trash2 className="h-3.5 w-3.5" /> Delete record
+                <Trash2 /> Delete record
               </button>
               <div className="flex gap-2">
-                <button onClick={() => setEditOpen(false)} className="btn-ghost text-sm px-3 py-1.5">Cancel</button>
+                <button onClick={() => setEditOpen(false)} className="btn-secondary">Cancel</button>
                 <button
                   disabled={editSaving}
                   onClick={saveEdit}
-                  className="btn-primary text-sm px-3 py-1.5 flex items-center gap-1.5"
+                  className="btn-primary"
                 >
-                  {editSaving ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Save className="h-3.5 w-3.5" />}
-                  Save
+                  {editSaving ? <Loader2 className="animate-spin" /> : <Save />} Save changes
                 </button>
               </div>
-            </div>
           </div>
-        )}
-      </div>
+        </section>
+      )}
 
-      {/* Notes */}
-      <div className="card p-4">
-        <h3 className="font-medium text-sm text-ink-800 mb-3 flex items-center gap-2">
-          <MessageSquare className="h-4 w-4 text-ink-400" />
-          Notes
-        </h3>
-        <textarea
-          className="w-full border border-ink-200 rounded-lg px-3 py-2.5 text-sm text-ink-800 placeholder:text-ink-300 focus:outline-none focus:ring-2 focus:ring-clay-300 resize-none"
-          rows={5}
-          placeholder="Free-form notes about this prospect…"
-          value={notes}
-          onChange={(e) => setNotes(e.target.value)}
-        />
-        <div className="flex items-center justify-end gap-2 mt-2">
-          {notesSaved && <span className="text-xs text-sage-600">Saved</span>}
-          <button
-            disabled={notesSaving}
-            onClick={saveNotes}
-            className="btn-primary text-sm px-3 py-1.5 flex items-center gap-1.5"
-          >
-            {notesSaving ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Save className="h-3.5 w-3.5" />}
-            Save Notes
-          </button>
-        </div>
-      </div>
+      <div className="prospect-page-grid">
+        <main className="prospect-main-canvas">
+          <section className="prospect-content-section">
+            <div className="prospect-section-heading">
+              <div><span>Private workspace</span><h2><MessageSquare /> Notes</h2></div>
+              <p className={cx("prospect-save-status", notesSaveState === "saved" && "is-saved")} aria-live="polite">
+                {notesSaveState === "saving" ? "Saving…" : notesSaveState === "saved" ? "Saved" : "Autosaves as you type"}
+              </p>
+            </div>
+            <textarea
+              ref={notesRef}
+              className="prospect-notes-input"
+              rows={3}
+              placeholder="Add context, preferences, or anything to remember…"
+              value={notes}
+              onChange={(e) => setNotes(e.target.value)}
+            />
+          </section>
 
-      {/* Transcript + AI Summary */}
-      <div className="card p-4 space-y-4">
-        <h3 className="font-medium text-sm text-ink-800 flex items-center gap-2">
-          <FileText className="h-4 w-4 text-ink-400" />
-          Call Transcript
-        </h3>
-        <textarea
-          className="w-full border border-ink-200 rounded-lg px-3 py-2.5 text-sm text-ink-800 placeholder:text-ink-300 focus:outline-none focus:ring-2 focus:ring-clay-300 resize-none font-mono"
-          rows={8}
-          placeholder="Paste your Fathom transcript here…"
-          value={transcript}
-          onChange={(e) => setTranscript(e.target.value)}
-        />
-        <div className="flex items-center gap-2 flex-wrap">
-          <button
-            disabled={transcriptSaving || !transcript.trim()}
-            onClick={saveTranscript}
-            className="btn-ghost text-sm px-3 py-1.5 flex items-center gap-1.5"
-          >
-            {transcriptSaving ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Save className="h-3.5 w-3.5" />}
-            Save Transcript
-          </button>
-          <button
-            disabled={summaryBusy || !transcript.trim()}
-            onClick={generateSummary}
-            className="btn-primary text-sm px-3 py-1.5 flex items-center gap-1.5"
-          >
-            {summaryBusy ? <Loader2 className="h-4 w-4 animate-spin" /> : <Sparkles className="h-4 w-4" />}
-            Generate AI Summary
-          </button>
-        </div>
+          <section className="prospect-content-section prospect-transcript-section">
+            <div className="prospect-section-heading">
+              <div><span>Introductory call</span><h2><FileText /> Call transcript</h2></div>
+              {savedTranscript.trim() && !transcriptDirty && <span className="prospect-saved-pill"><CheckCircle2 /> Saved</span>}
+            </div>
+            <p className="prospect-section-description">Add and save the transcript before generating an AI summary.</p>
+            <textarea
+              ref={transcriptRef}
+              className="prospect-transcript-input"
+              rows={4}
+              placeholder="Paste the call transcript here…"
+              value={transcript}
+              onChange={(e) => setTranscript(e.target.value)}
+            />
+            <AdditionalTranscripts prospectId={prospect.id} initialTranscripts={initialTranscripts} primaryActions={<>
+              <button
+                disabled={transcriptSaving || !transcript.trim() || !transcriptDirty}
+                onClick={saveTranscript}
+                className="btn-secondary"
+              >
+                {transcriptSaving ? <Loader2 className="animate-spin" /> : <Save />} Save transcript
+              </button>
+              <button
+                disabled={summaryBusy || !savedTranscript.trim() || transcriptDirty}
+                onClick={generateSummary}
+                className="btn-primary"
+                title={transcriptDirty ? "Save the transcript before generating a summary" : undefined}
+              >
+                {summaryBusy ? <Loader2 className="animate-spin" /> : <Sparkles />} Generate AI summary
+              </button>
+            </>} />
 
-        {summaryContent && (
-          <div className="pt-2">
+            {summaryContent && (
+              <div className="prospect-summary-wrap">
             <SummaryCard
               title="Intro Call Summary (Practitioner)"
               content={summaryContent}
@@ -464,89 +461,91 @@ export default function ProspectWorkspace({
                 Generated {formatDateTime(prospect.ai_summary_generated_at)}
               </p>
             )}
-          </div>
-        )}
+              </div>
+            )}
 
-        {clientSummaryContent && (
-          <div className="pt-2">
+            {clientSummaryContent && (
+              <div className="prospect-summary-wrap">
             <SummaryCard
               title="Summary for the Client"
               content={clientSummaryContent}
               model={clientSummaryModel}
               onDelete={deleteClientSummary}
             />
-            <div className="flex justify-end mt-2">
+                <div className="flex justify-end mt-2">
               <button
                 onClick={() => setEmailModalOpen(true)}
-                className="btn-primary text-sm px-3 py-1.5 flex items-center gap-1.5"
+                    className="btn-secondary"
               >
-                <Mail className="h-3.5 w-3.5" /> Email Prospect This Summary
+                    <Mail /> Email prospect
               </button>
-            </div>
-          </div>
-        )}
-      </div>
+                </div>
+              </div>
+            )}
 
-      {/* Additional call transcripts — e.g. a second call before conversion */}
-      <AdditionalTranscripts prospectId={prospect.id} initialTranscripts={initialTranscripts} />
+          </section>
+        </main>
 
-      {/* Follow-up Calls */}
-      <div className="card p-4">
-        <div className="flex items-center justify-between mb-3">
-          <h3 className="font-medium text-sm text-ink-800 flex items-center gap-2">
-            <Clock className="h-4 w-4 text-ink-400" />
-            Calls
-          </h3>
-          {prospect.status !== "converted" && (
-            <button
-              onClick={() => setShowCallForm(true)}
-              className="btn-ghost text-xs px-2.5 py-1.5 flex items-center gap-1"
-            >
-              <CalendarPlus className="h-3.5 w-3.5" />
-              Schedule
-            </button>
+        <aside className="prospect-context-rail" aria-label="Prospect context">
+          <section className="prospect-next-step">
+            <span className="prospect-rail-eyebrow">Next step</span>
+            <h2>{nextStep.title}</h2>
+            <p>{nextStep.detail}</p>
+            {prospect.status === "converted" && prospect.converted_client_id ? (
+              <Link href={`/clients/${prospect.converted_client_id}`} className="prospect-next-action">
+                {nextStep.label} <ChevronRight />
+              </Link>
+            ) : (
+              <button type="button" onClick={nextStep.action} className="prospect-next-action">
+                {nextStep.label} <ChevronRight />
+              </button>
+            )}
+          </section>
+
+          <section className="prospect-rail-card">
+            <div className="prospect-rail-heading"><CalendarDays /><h2>Next call</h2></div>
+            {nextCall ? (
+              <div className="prospect-next-call">
+                <strong>{nextCall.call_type === "intro_call" ? "Introductory call" : "Follow-up call"}</strong>
+                <time dateTime={nextCall.scheduled_at}>{formatDateTime(nextCall.scheduled_at)}</time>
+                <span className="prospect-call-status"><Circle /> Scheduled</span>
+              </div>
+            ) : (
+              <p className="prospect-rail-empty">No call scheduled</p>
+            )}
+            {calls.some((call) => call.id !== nextCall?.id) && (
+              <div className="prospect-call-list">
+                {calls.filter((call) => call.id !== nextCall?.id).slice(0, 4).map((call) => (
+                  <CallRow
+                    key={call.id}
+                    call={call}
+                    onComplete={() => markCallComplete(call.id)}
+                    onCancel={() => cancelCall(call.id)}
+                    onDelete={() => removeCall(call.id)}
+                  />
+                ))}
+              </div>
+            )}
+          </section>
+
+          <section className="prospect-rail-card">
+            <div className="prospect-rail-heading"><User /><h2>Prospect context</h2></div>
+            <dl className="prospect-context-list">
+              <div><dt>Created</dt><dd>{formatDate(prospect.created_at)}</dd></div>
+              <div><dt>Last activity</dt><dd>{formatDate(lastActivityAt)}</dd></div>
+            </dl>
+          </section>
+
+          {(prospect.email || prospect.phone) && (
+            <section className="prospect-rail-card">
+              <div className="prospect-rail-heading"><Mail /><h2>Contact</h2></div>
+              <div className="prospect-contact-list">
+                {prospect.email && <a href={`mailto:${prospect.email}`}><Mail /> <span>{prospect.email}</span></a>}
+                {prospect.phone && <a href={`tel:${prospect.phone}`}><Phone /> <span>{prospect.phone}</span></a>}
+              </div>
+            </section>
           )}
-        </div>
-
-        {/* Upcoming */}
-        {upcomingCalls.length > 0 && (
-          <div className="mb-3">
-            <p className="text-xs font-medium text-ink-500 uppercase tracking-wide mb-2">Upcoming</p>
-            <div className="space-y-2">
-              {upcomingCalls.map((call) => (
-                <CallRow
-                  key={call.id}
-                  call={call}
-                  onComplete={() => markCallComplete(call.id)}
-                  onCancel={() => cancelCall(call.id)}
-                  onDelete={() => removeCall(call.id)}
-                />
-              ))}
-            </div>
-          </div>
-        )}
-
-        {/* Past */}
-        {pastCalls.length > 0 && (
-          <div>
-            <p className="text-xs font-medium text-ink-500 uppercase tracking-wide mb-2">Past</p>
-            <div className="space-y-2">
-              {pastCalls.map((call) => (
-                <CallRow
-                  key={call.id}
-                  call={call}
-                  onComplete={() => markCallComplete(call.id)}
-                  onCancel={() => cancelCall(call.id)}
-                  onDelete={() => removeCall(call.id)}
-                />
-              ))}
-            </div>
-          </div>
-        )}
-
-        {calls.length === 0 && (
-          <p className="text-sm text-ink-400">No calls scheduled yet.</p>
-        )}
+        </aside>
       </div>
 
       {/* Schedule call modal */}
@@ -575,6 +574,19 @@ export default function ProspectWorkspace({
       )}
     </div>
   );
+}
+
+function useAutoResizeTextarea(
+  ref: React.RefObject<HTMLTextAreaElement | null>,
+  value: string,
+  minHeight: number
+) {
+  useEffect(() => {
+    const element = ref.current;
+    if (!element) return;
+    element.style.height = "0px";
+    element.style.height = `${Math.max(minHeight, element.scrollHeight)}px`;
+  }, [minHeight, ref, value]);
 }
 
 // ---------------------------------------------------------------------------
@@ -865,15 +877,19 @@ function CallRow({
 function AdditionalTranscripts({
   prospectId,
   initialTranscripts,
+  primaryActions,
 }: {
   prospectId: string;
   initialTranscripts: ProspectTranscript[];
+  primaryActions: React.ReactNode;
 }) {
   const [transcripts, setTranscripts] = useState(initialTranscripts);
   const [adding, setAdding] = useState(false);
   const [draftLabel, setDraftLabel] = useState("");
   const [draftText, setDraftText] = useState("");
   const [addSaving, setAddSaving] = useState(false);
+  const draftRef = useRef<HTMLTextAreaElement>(null);
+  useAutoResizeTextarea(draftRef, draftText, 96);
 
   function defaultLabel() {
     return `Call ${transcripts.length + 2}`; // +2: the original transcript above counts as "Call 1"
@@ -901,33 +917,24 @@ function AdditionalTranscripts({
   }
 
   return (
-    <div className="card p-4 space-y-4">
-      <div className="flex items-center justify-between">
-        <h3 className="font-medium text-sm text-ink-800 flex items-center gap-2">
-          <FileText className="h-4 w-4 text-ink-400" />
-          Additional Call Transcripts
-        </h3>
+    <div className="prospect-additional-transcripts">
+      <div className="prospect-transcript-actions prospect-transcript-main-actions">
         {!adding && (
           <button
+            type="button"
             onClick={() => {
               setDraftLabel(defaultLabel());
               setAdding(true);
             }}
-            className="btn-ghost text-xs px-2.5 py-1.5 flex items-center gap-1"
+            className="prospect-add-transcript"
           >
-            <Plus className="h-3.5 w-3.5" />
-            Add Transcript
+            <Plus /> Add another transcript
           </button>
         )}
+        {primaryActions}
       </div>
 
-      {transcripts.length === 0 && !adding && (
-        <p className="text-sm text-ink-400">
-          No additional transcripts yet. Add one if you have a second call with this prospect before converting.
-        </p>
-      )}
-
-      <div className="space-y-4">
+      {transcripts.length > 0 && <div className="prospect-transcript-list">
         {transcripts.map((t) => (
           <TranscriptEntry
             key={t.id}
@@ -937,38 +944,36 @@ function AdditionalTranscripts({
             onDelete={() => removeTranscript(t.id)}
           />
         ))}
-      </div>
+      </div>}
 
       {adding && (
-        <div className="bg-ink-50 rounded-xl p-3 space-y-3">
+        <div className="prospect-transcript-draft">
           <div>
-            <label className="text-xs font-medium text-ink-600 block mb-1">Label</label>
+            <label>Label</label>
             <input
-              className="w-full border border-ink-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-clay-300"
               placeholder={defaultLabel()}
               value={draftLabel}
               onChange={(e) => setDraftLabel(e.target.value)}
             />
           </div>
           <div>
-            <label className="text-xs font-medium text-ink-600 block mb-1">Transcript</label>
+            <label>Transcript</label>
             <textarea
-              className="w-full border border-ink-200 rounded-lg px-3 py-2.5 text-sm text-ink-800 placeholder:text-ink-300 focus:outline-none focus:ring-2 focus:ring-clay-300 resize-none font-mono"
-              rows={6}
+              ref={draftRef}
+              rows={4}
               placeholder="Paste the transcript for this call…"
               value={draftText}
               onChange={(e) => setDraftText(e.target.value)}
             />
           </div>
-          <div className="flex gap-2 justify-end">
-            <button onClick={() => setAdding(false)} className="btn-ghost text-sm px-3 py-1.5">Cancel</button>
+          <div className="prospect-transcript-actions">
+            <button onClick={() => setAdding(false)} className="btn-secondary">Cancel</button>
             <button
               disabled={addSaving || !draftText.trim()}
               onClick={addTranscript}
-              className="btn-primary text-sm px-3 py-1.5 flex items-center gap-1.5"
+              className="btn-secondary"
             >
-              {addSaving ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Save className="h-3.5 w-3.5" />}
-              Save Transcript
+              {addSaving ? <Loader2 className="animate-spin" /> : <Save />} Save transcript
             </button>
           </div>
         </div>
@@ -993,7 +998,9 @@ function TranscriptEntry({
   const [text, setText] = useState(transcript.raw_text);
   const [saving, setSaving] = useState(false);
   const [summaryBusy, setSummaryBusy] = useState(false);
+  const textareaRef = useRef<HTMLTextAreaElement>(null);
   const dirty = text !== transcript.raw_text;
+  useAutoResizeTextarea(textareaRef, text, 96);
 
   async function save() {
     setSaving(true);
@@ -1040,7 +1047,7 @@ function TranscriptEntry({
   }
 
   return (
-    <div className="border border-ink-100 rounded-xl p-3 space-y-3">
+    <div className="prospect-transcript-entry">
       <div className="flex items-center justify-between gap-2">
         {editingLabel ? (
           <input
@@ -1073,8 +1080,8 @@ function TranscriptEntry({
       </div>
 
       <textarea
-        className="w-full border border-ink-200 rounded-lg px-3 py-2.5 text-sm text-ink-800 placeholder:text-ink-300 focus:outline-none focus:ring-2 focus:ring-clay-300 resize-none font-mono"
-        rows={6}
+        ref={textareaRef}
+        rows={4}
         value={text}
         onChange={(e) => setText(e.target.value)}
       />
@@ -1083,15 +1090,15 @@ function TranscriptEntry({
         <button
           disabled={saving || !dirty}
           onClick={save}
-          className="btn-ghost text-sm px-3 py-1.5 flex items-center gap-1.5"
+          className="btn-secondary"
         >
           {saving ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Save className="h-3.5 w-3.5" />}
           Save
         </button>
         <button
-          disabled={summaryBusy || !text.trim()}
+          disabled={summaryBusy || !text.trim() || dirty}
           onClick={generateSummary}
-          className="btn-primary text-sm px-3 py-1.5 flex items-center gap-1.5"
+          className="btn-primary"
         >
           {summaryBusy ? <Loader2 className="h-4 w-4 animate-spin" /> : <Sparkles className="h-4 w-4" />}
           Generate AI Summary

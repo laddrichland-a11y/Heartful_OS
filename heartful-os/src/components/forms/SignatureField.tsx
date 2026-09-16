@@ -49,7 +49,7 @@ export default function SignatureField({
     if (!ctx) return;
     ctx.lineWidth = 2;
     ctx.lineCap = "round";
-    ctx.strokeStyle = "#292524";
+    ctx.strokeStyle = "#27293D";
     if (value?.drawnDataUrl) {
       const img = new Image();
       img.onload = () => ctx.drawImage(img, 0, 0);

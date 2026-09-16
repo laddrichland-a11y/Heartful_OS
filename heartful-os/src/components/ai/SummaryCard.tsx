@@ -50,7 +50,7 @@ export default function SummaryCard({
       <div className="flex items-center justify-between mb-2 gap-2">
         <span className="font-medium text-sm text-plum-800">{title}</span>
         <div className="flex items-center gap-2 shrink-0">
-          {model && !editing && <span className="text-[10px] text-plum-400">{model}</span>}
+          {model && !editing && <span className="text-xs text-plum-400">{model}</span>}
           {editing ? (
             <>
               <button
@@ -106,7 +106,7 @@ export default function SummaryCard({
         <div className="space-y-3">
           {Object.entries(draft).map(([k, v]) => (
             <div key={k}>
-              <label className="text-[11px] uppercase tracking-wide text-plum-500">{k.replace(/_/g, " ")}</label>
+              <label className="text-xs uppercase tracking-wide text-plum-500">{k.replace(/_/g, " ")}</label>
               <textarea
                 value={v}
                 onChange={(e) => setDraft((prev) => ({ ...prev, [k]: e.target.value }))}
@@ -120,7 +120,7 @@ export default function SummaryCard({
         <dl className="space-y-2">
           {Object.entries(content).map(([k, v]) => (
             <div key={k}>
-              <dt className="text-[11px] uppercase tracking-wide text-plum-500">{k.replace(/_/g, " ")}</dt>
+              <dt className="text-xs uppercase tracking-wide text-plum-500">{k.replace(/_/g, " ")}</dt>
               <dd className="text-sm text-ink-800 whitespace-pre-line">{Array.isArray(v) ? v.join(", ") : String(v)}</dd>
             </div>
           ))}

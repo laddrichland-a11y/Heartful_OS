@@ -116,3 +116,9 @@ export function mockLivingJourneySummary(clientName: string) {
     open_threads: "What remains open or unresolved heading into the next phase.",
   };
 }
+
+export function mockAiConversationReply(clientName: string, practitionerMessage: string) {
+  return {
+    reply: `I’m looking at ${clientName}'s journey context. For “${practitionerMessage}”, I can help you connect the open threads, prepare for the relevant session, or turn what is already recorded into practical next steps. With the current record, I would start by checking the latest session notes, forms, and unresolved commitments before deciding what to carry forward.`,
+  };
+}

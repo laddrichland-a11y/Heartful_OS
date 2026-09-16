@@ -7,8 +7,14 @@ import { ReferralSource } from "@/lib/types";
 
 const OTHER_VALUE = "__other__";
 
-export default function NewClientButton({ referralSources: initial }: { referralSources: ReferralSource[] }) {
-  const [open, setOpen] = useState(false);
+export default function NewClientButton({
+  referralSources: initial,
+  initialOpen = false,
+}: {
+  referralSources: ReferralSource[];
+  initialOpen?: boolean;
+}) {
+  const [open, setOpen] = useState(initialOpen);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [fullName, setFullName] = useState("");
@@ -42,7 +48,7 @@ export default function NewClientButton({ referralSources: initial }: { referral
       </button>
 
       {open && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-ink-900/40 p-4">
+        <div className="new-client-backdrop fixed inset-0 z-50 flex items-center justify-center bg-ink-900/40 p-4">
           <div className="card w-full max-w-md p-6 bg-white">
             <div className="flex items-center justify-between mb-4">
               <h2 className="font-medium text-ink-900">New Client</h2>

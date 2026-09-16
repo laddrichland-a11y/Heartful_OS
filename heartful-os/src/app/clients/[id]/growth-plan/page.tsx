@@ -18,13 +18,13 @@ export default async function GrowthPlanPage({ params }: { params: Promise<{ id:
   const milestone = milestones.find((m) => m.milestone_key === "growth_action_plan_complete");
 
   return (
-    <AppShell title={`Growth Action Plan — ${client.full_name}`}>
+    <AppShell title={client.full_name} variant="wellnest-client">
       <ClientPhaseNav clientId={id} current="growth_action_plan" />
-      <p className="text-xs uppercase tracking-wide text-ink-400 mb-4">Growth Action Plan · final step</p>
       <MilestoneToggleBanner
         clientId={id}
         milestoneKey="growth_action_plan_complete"
         label="Growth Action Plan"
+        meta="Phase 7 · Final step"
         initialCompleted={milestone?.completed ?? false}
       />
       <PhasePrepareMe clientId={id} sessionTypeLabel="Growth Action Plan" />

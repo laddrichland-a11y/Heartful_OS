@@ -1,10 +1,18 @@
 import AppShell from "@/components/layout/AppShell";
-import StatCard from "@/components/ui/StatCard";
 import JourneyProgressBar from "@/components/JourneyProgressBar";
+import DashboardOutstandingActions from "@/components/dashboard/DashboardOutstandingActions";
+import DashboardDateStrip from "@/components/dashboard/DashboardDateStrip";
 import { getAgreementStatusByClient, getDashboardSummary, getMilestones } from "@/lib/data";
-import { Users, Activity, Sparkles, DollarSign, Calendar, ClipboardList, MessageSquare, FileSignature, CheckCircle2 } from "lucide-react";
+import {
+  Activity, ArrowRight, CalendarDays, CheckCircle2, ChevronRight, CircleAlert,
+  ClipboardCheck, Clock3, DollarSign, FileText, Plus, Users,
+} from "lucide-react";
+import Image from "next/image";
 import Link from "next/link";
-import { cx, formatCurrency, formatDateTime, relativeDueLabel, statusBadgeClasses } from "@/lib/utils";
+import {
+  clientAvatarSrc, cx, formatDateTime, initials, isPastDue, outstandingItemHref,
+  relativeDueLabel, SESSION_TYPE_LABELS, statusBadgeClasses,
+} from "@/lib/utils";
 import { STATUS_LABELS } from "@/lib/types";
 
 export const dynamic = "force-dynamic";
@@ -12,241 +20,163 @@ export const dynamic = "force-dynamic";
 export default async function DashboardPage() {
   const summary = await getDashboardSummary();
   const agreementStatus = await getAgreementStatusByClient();
-  const agreementsPending = agreementStatus.filter((a) => !a.complete);
-  // Recently finished — shown briefly so a completed set registers as news
-  // rather than just silently vanishing from the pending list.
-  const agreementsRecentlyDone = agreementStatus
-    .filter((a) => a.complete && a.completed_at)
-    .slice(0, 3);
+  const agreementByClient = new Map(agreementStatus.map((agreement) => [agreement.client_id, agreement]));
   const clientsWithMilestones = await Promise.all(
-    summary.clients.slice(0, 8).map(async (c) => ({ client: c, milestones: await getMilestones(c.id) }))
+    summary.activeClientRecords.slice(0, 5).map(async (client) => ({ client, milestones: await getMilestones(client.id) }))
   );
+  const metrics = [
+    { label: "Active Clients", value: summary.activeClients, icon: Users, href: "/clients?filter=active", tone: "clients" },
+    { label: "Awaiting Integration", value: summary.awaitingIntegration, icon: Activity, href: "/clients?filter=awaiting_integration", tone: "integration" },
+    { label: "Outstanding Forms / Tasks", value: summary.outstandingTasksCount, icon: ClipboardCheck, href: "/outstanding", tone: "outstanding" },
+    {
+      label: "Revenue Collected",
+      value: `$${summary.revenueTotal.toLocaleString()}`,
+      icon: DollarSign,
+      href: "/reports/revenue",
+      tone: "revenue",
+    },
+  ];
+  const dashboardOutstandingItems = summary.outstandingTasks.slice(0, 4);
+  const calendarAnchor = summary.upcomingSessions[0]?.scheduled_at
+    ? new Date(summary.upcomingSessions[0].scheduled_at)
+    : new Date();
 
   return (
     <AppShell title="Dashboard">
-      <div className="grid grid-cols-2 md:grid-cols-4 gap-4 mb-6">
-        <StatCard label="Active Clients" value={summary.activeClients} icon={Users} accent="clay" href="/clients" />
-        <StatCard label="Awaiting Integration" value={summary.awaitingIntegration} icon={Activity} accent="plum" href="/clients" />
-        <StatCard label="Outstanding Forms / Tasks" value={summary.outstandingTasksCount} icon={ClipboardList} accent="ink" href="/outstanding" />
-        <StatCard
-          label="Revenue Collected"
-          value={formatCurrency(summary.revenueTotal)}
-          icon={DollarSign}
-          accent="sage"
-          sub={`MTD ${formatCurrency(summary.revenueMTD)} · YTD ${formatCurrency(summary.revenueYTD)} · ${formatCurrency(summary.outstandingBalance)} outstanding`}
-          href="/settings"
-        />
+      <div className="dashboard-welcome">
+        <div><h2>Hello, Paul</h2></div>
+        <p>{new Date().toLocaleDateString("en-US", { weekday: "long", month: "long", day: "numeric" })}</p>
+      </div>
+      <div className="dashboard-metrics" aria-label="Practice summary">
+        {metrics.map(({ label, value, icon: Icon, href, tone }) => (
+          <Link key={label} href={href} className={cx("dashboard-metric", `dashboard-metric--${tone}`)}>
+            <span className={cx("dashboard-metric-icon", `dashboard-metric-icon--${tone}`)}><Icon aria-hidden="true" /></span>
+            <span className="dashboard-metric-copy"><strong>{value}</strong><span>{label}</span></span>
+            <ChevronRight aria-hidden="true" className="dashboard-metric-arrow" />
+          </Link>
+        ))}
       </div>
 
-      <div className="grid lg:grid-cols-3 gap-6">
-        <div className="lg:col-span-2 space-y-6">
-          <section className="card p-5">
-            <div className="flex items-center justify-between mb-4">
-              <h2 className="font-semibold text-ink-900">Client Journey Status</h2>
-              <Link href="/clients" className="text-sm text-clay-600 hover:underline">
-                View all clients
-              </Link>
-            </div>
-            <div className="space-y-5">
-              {clientsWithMilestones.map(({ client, milestones }) => (
-                <Link
-                  key={client.id}
-                  href={`/clients/${client.id}`}
-                  className="block p-3 -mx-3 rounded-xl hover:bg-ink-50 transition-colors"
-                >
-                  <div className="flex items-center justify-between mb-2">
-                    <div className="font-medium text-ink-900">{client.full_name}</div>
-                    <span className={cx("badge", statusBadgeClasses(client.status))}>{STATUS_LABELS[client.status]}</span>
-                  </div>
-                  <JourneyProgressBar milestones={milestones} />
-                </Link>
-              ))}
-            </div>
-          </section>
-
-          <section className="card p-5">
-            <h2 className="font-semibold text-ink-900 mb-4 flex items-center gap-2">
-              <Calendar className="h-4 w-4 text-clay-500" /> Upcoming Sessions
-            </h2>
-            <div className="divide-y divide-ink-100">
-              {summary.upcomingSessions.length === 0 && (
-                <p className="text-sm text-ink-400 py-2">No sessions scheduled.</p>
-              )}
-              {summary.upcomingSessions.map((s) => (
-                <Link
-                  key={s.id}
-                  href={`/clients/${s.client_id}`}
-                  className="flex items-center justify-between py-2.5 hover:bg-ink-50 -mx-2 px-2 rounded-lg"
-                >
-                  <div>
-                    <div className="text-sm font-medium text-ink-900">{s.client_name}</div>
-                    <div className="text-xs text-ink-500 capitalize">{s.session_type.replace(/_/g, " ")}</div>
-                  </div>
-                  <div className="text-xs text-ink-500">{formatDateTime(s.scheduled_at)}</div>
-                </Link>
-              ))}
-            </div>
-          </section>
-        </div>
-
-        <div className="space-y-6">
-          {summary.unreadMessageThreads.length > 0 && (
-            <section className="card p-5">
-              <h2 className="font-semibold text-ink-900 mb-4 flex items-center gap-2">
-                <MessageSquare className="h-4 w-4 text-clay-500" /> Unread Messages
-                <span className="ml-auto text-xs font-semibold bg-clay-500 text-white rounded-full h-5 min-w-5 px-1.5 flex items-center justify-center">
-                  {summary.unreadMessageCount}
-                </span>
-              </h2>
-              <div className="space-y-2">
-                {summary.unreadMessageThreads.map((t) => (
-                  <Link
-                    key={t.client_id}
-                    href={`/clients/${t.client_id}?tab=Messages`}
-                    className="flex items-center justify-between py-2 px-2 -mx-2 rounded-lg hover:bg-ink-50"
-                  >
-                    <div className="min-w-0">
-                      <div className="text-sm font-medium text-ink-900">{t.client_name}</div>
-                      <div className="text-xs text-ink-500 truncate">{t.latest_body}</div>
-                    </div>
-                    <span className="badge bg-clay-100 text-clay-700 shrink-0">{t.count}</span>
-                  </Link>
-                ))}
-              </div>
-            </section>
-          )}
-
-          {/* Agreements & consents — the three forms the portal blocks a new
-              client on. Kept separate from "Outstanding Forms & Tasks" on
-              purpose: this is onboarding paperwork the practitioner is
-              waiting on, not per-session work. */}
-          <section className="card p-5">
-            <h2 className="font-semibold text-ink-900 mb-1 flex items-center gap-2">
-              <FileSignature className="h-4 w-4 text-clay-500" /> Client Agreements
-              {agreementsPending.length > 0 && (
-                <span className="ml-auto text-xs font-semibold bg-amber-500 text-white rounded-full h-5 min-w-5 px-1.5 flex items-center justify-center">
-                  {agreementsPending.length}
-                </span>
-              )}
-            </h2>
-            <p className="text-xs text-ink-400 mb-4">Signed once, in the client portal, before anything else opens up</p>
-
-            {agreementsPending.length === 0 && agreementsRecentlyDone.length === 0 ? (
-              <p className="text-sm text-ink-400">No clients yet.</p>
-            ) : (
-              <div className="space-y-2">
-                {agreementsPending.length === 0 && (
-                  <p className="text-sm text-sage-700 flex items-center gap-1.5">
-                    <CheckCircle2 className="h-4 w-4" /> Everyone&apos;s paperwork is signed.
-                  </p>
-                )}
-
-                {agreementsPending.map((a) => (
-                  <Link
-                    key={a.client_id}
-                    href={`/clients/${a.client_id}?tab=Documents`}
-                    className="flex items-center justify-between gap-3 py-2 px-2 -mx-2 rounded-lg hover:bg-ink-50"
-                  >
-                    <div className="min-w-0">
-                      <div className="text-sm font-medium text-ink-900 truncate">{a.client_name}</div>
-                      <div className="text-xs text-ink-400 truncate">
-                        {a.portal_account_created
-                          ? a.signed_count === 0
-                            ? "Portal set up — hasn't started"
-                            : `Still owes: ${a.outstanding_titles.join(", ")}`
-                          : "Hasn't set up their portal login yet"}
-                      </div>
-                    </div>
-                    <span
-                      className={cx(
-                        "badge shrink-0",
-                        a.signed_count === 0 ? "bg-ink-100 text-ink-600" : "bg-amber-100 text-amber-700"
-                      )}
-                    >
-                      {a.signed_count} of {a.total_count}
-                    </span>
-                  </Link>
-                ))}
-
-                {agreementsRecentlyDone.map((a) => (
-                  <Link
-                    key={a.client_id}
-                    href={`/clients/${a.client_id}?tab=Documents`}
-                    className="flex items-center justify-between gap-3 py-2 px-2 -mx-2 rounded-lg hover:bg-ink-50"
-                  >
-                    <div className="min-w-0">
-                      <div className="text-sm text-ink-900 truncate">{a.client_name}</div>
-                      <div className="text-xs text-ink-400">Signed {formatDateTime(a.completed_at)}</div>
-                    </div>
-                    <span className="badge shrink-0 bg-sage-100 text-sage-700 flex items-center gap-1">
-                      <CheckCircle2 className="h-3 w-3" /> All signed
-                    </span>
-                  </Link>
-                ))}
-              </div>
-            )}
-          </section>
-
-          <section className="card p-5">
-            <h2 className="font-semibold text-ink-900 mb-4 flex items-center gap-2">
-              <ClipboardList className="h-4 w-4 text-clay-500" /> Outstanding Forms &amp; Tasks
-            </h2>
-            <div className="space-y-2">
-              {summary.outstandingTasks.length === 0 && <p className="text-sm text-ink-400">All caught up.</p>}
-              {summary.outstandingTasks.map((t) => (
-                <Link
-                  key={t.id}
-                  href={`/clients/${t.client_id}`}
-                  className="flex items-center justify-between py-2 px-2 -mx-2 rounded-lg hover:bg-ink-50"
-                >
-                  <div className="min-w-0">
-                    <div className="text-sm text-ink-900 truncate">{t.title}</div>
-                    <div className="text-xs text-ink-400">{t.client_name}</div>
-                  </div>
-                  <span
-                    className={cx(
-                      "badge shrink-0",
-                      t.status === "overdue" ? "bg-clay-100 text-clay-700" : "bg-ink-100 text-ink-600"
-                    )}
-                  >
-                    {"kind" in t && t.kind === "form"
-                      ? t.status === "in_progress"
-                        ? "In Progress"
-                        : "Not Started"
-                      : relativeDueLabel(t.due_at)}
-                  </span>
-                </Link>
-              ))}
-            </div>
-          </section>
-
-          <section className="card p-5">
-            <h2 className="font-semibold text-ink-900 mb-4">Referral Sources</h2>
-            <div className="space-y-2">
-              {summary.referralBreakdown
-                .sort((a, b) => b.count - a.count)
-                .map((r) => (
-                  <div key={r.name} className="flex items-center justify-between text-sm">
-                    <span className="text-ink-700">{r.name}</span>
-                    <span className="text-ink-400">{r.count}</span>
-                  </div>
-                ))}
-            </div>
-          </section>
-
-          <Link
-            href="/copilot"
-            className="card p-5 flex items-center gap-3 bg-gradient-to-br from-plum-50 to-clay-50 hover:shadow-md transition-shadow"
-          >
-            <div className="h-10 w-10 rounded-xl bg-plum-500 text-white flex items-center justify-center shrink-0">
-              <Sparkles className="h-5 w-5" />
-            </div>
+      <div className="dashboard-layout">
+        <section className="dashboard-panel dashboard-sessions-panel">
+          <div className="dashboard-panel-header">
             <div>
-              <div className="font-medium text-ink-900">Prep Center</div>
-              <div className="text-xs text-ink-500">Prepare for your next session</div>
+              <h2 className="dashboard-accent-title">Upcoming Sessions</h2>
             </div>
-          </Link>
-        </div>
+            <div className="dashboard-header-actions">
+              <Link href="/calendar" className="dashboard-add-action"><Plus aria-hidden="true" /> Add session</Link>
+            </div>
+          </div>
+          <DashboardDateStrip initialDate={`${calendarAnchor.getFullYear()}-${String(calendarAnchor.getMonth() + 1).padStart(2, "0")}-${String(calendarAnchor.getDate()).padStart(2, "0")}`} />
+          <div className="dashboard-session-table">
+            <div className="dashboard-session-list">
+              {summary.upcomingSessions.length === 0 && (
+                <div className="dashboard-empty"><CalendarDays aria-hidden="true" /><p>No sessions scheduled.</p></div>
+              )}
+              {summary.upcomingSessions.map((session, index) => {
+                const avatarSrc = clientAvatarSrc(session.client_name);
+                const displaySessionType = index === summary.upcomingSessions.length - 1
+                  ? "Completed"
+                  : SESSION_TYPE_LABELS[session.session_type] ?? session.session_type.replace(/_/g, " ");
+                return (
+                <div key={session.id} className="dashboard-session-row">
+                  <div className="dashboard-session-time"><Clock3 aria-hidden="true" /><span>{formatDateTime(session.scheduled_at)}</span></div>
+                  <Link href={`/clients/${session.client_id}`} className="dashboard-client-link dashboard-session-client">
+                    <span className="dashboard-session-avatar" aria-hidden="true">
+                      {avatarSrc ? <Image src={avatarSrc} alt="" width={24} height={24} sizes="24px" /> : initials(session.client_name)}
+                    </span>
+                    <span className="dashboard-session-client-name">{session.client_name}</span>
+                  </Link>
+                  <span className="dashboard-session-type">{displaySessionType}</span>
+                  <span className="badge status-pill--success">Scheduled</span>
+                  <Link href={`/clients/${session.client_id}/sessions/${session.id}`} className="dashboard-row-action">
+                    {session.location?.startsWith("http") ? "Join" : "Prepare"}<ArrowRight aria-hidden="true" />
+                  </Link>
+                </div>
+                );
+              })}
+            </div>
+          </div>
+        </section>
+
+        <aside className="dashboard-rail">
+          <section className="dashboard-panel dashboard-clients-panel">
+            <div className="dashboard-panel-header dashboard-panel-header-compact">
+              <h2 className="dashboard-accent-title">Active Clients</h2>
+              <Link href="/clients" className="dashboard-clients-view-all">View all</Link>
+            </div>
+            <div className="dashboard-compact-list dashboard-client-list">
+              {clientsWithMilestones.map(({ client, milestones }) => {
+                const agreement = agreementByClient.get(client.id);
+                const avatarSrc = clientAvatarSrc(client.full_name);
+                return (
+                  <Link key={client.id} href={`/clients/${client.id}`} className="dashboard-active-client">
+                    <div className="dashboard-active-client-top">
+                      <span className="dashboard-active-client-identity">
+                        <span className="dashboard-active-client-avatar" aria-hidden="true">
+                          {avatarSrc ? (
+                            <Image src={avatarSrc} alt="" width={30} height={30} sizes="30px" />
+                          ) : (
+                            initials(client.full_name)
+                          )}
+                        </span>
+                        <strong>{client.full_name}</strong>
+                      </span>
+                      <span className={cx("badge", statusBadgeClasses(client.status))}>{STATUS_LABELS[client.status]}</span>
+                    </div>
+                    <JourneyProgressBar milestones={milestones} compact />
+                    <div className="dashboard-agreement-status">
+                      {agreement?.complete ? <><CheckCircle2 /> Agreements signed</> : <><FileText /> Agreements {agreement?.signed_count ?? 0}/{agreement?.total_count ?? 3}</>}
+                    </div>
+                  </Link>
+                );
+              })}
+              {clientsWithMilestones.length === 0 && <p className="dashboard-empty-copy">No active clients.</p>}
+            </div>
+          </section>
+
+          <section className="dashboard-panel dashboard-attention-panel">
+            <div className="dashboard-panel-header dashboard-panel-header-compact">
+              <div>
+                <h2><ClipboardCheck aria-hidden="true" /> Outstanding Forms &amp; Tasks</h2>
+                <p className="dashboard-attention-summary">
+                  {summary.outstandingTasksCount} outstanding · {summary.overdueTasksCount} overdue
+                </p>
+              </div>
+              <Link href="/outstanding" className="dashboard-attention-view-all">View all</Link>
+            </div>
+            <div className="dashboard-compact-list">
+              {dashboardOutstandingItems.map((item) => {
+                const overdue = item.status === "overdue" || isPastDue(item);
+                const dueStatus = "kind" in item
+                  ? (item.status === "in_progress" ? "In progress" : "Not started")
+                  : relativeDueLabel(item.due_at) || "No due date";
+                return (
+                <article key={item.id} className="dashboard-attention-row">
+                  <Link href={outstandingItemHref(item)} className="dashboard-attention-content">
+                    <span className={cx("dashboard-attention-marker", overdue && "is-urgent")}>
+                      {overdue ? <CircleAlert aria-hidden="true" /> : <FileText aria-hidden="true" />}
+                    </span>
+                    <span className="dashboard-list-copy">
+                      <strong>{item.title}</strong>
+                      <small>{item.client_name} · <span className={cx(overdue && "is-urgent")}>{dueStatus}</span></small>
+                    </span>
+                  </Link>
+                  <DashboardOutstandingActions
+                    clientId={item.client_id}
+                    title={item.title}
+                    taskId={"kind" in item ? undefined : item.id}
+                  />
+                </article>
+                );
+              })}
+              {summary.outstandingTasksCount === 0 && (
+                <div className="dashboard-all-clear"><CheckCircle2 /><span><strong>All caught up</strong><small>Nothing needs your attention right now.</small></span></div>
+              )}
+            </div>
+          </section>
+
+        </aside>
       </div>
     </AppShell>
   );

@@ -4,9 +4,10 @@ import { revalidatePath } from "next/cache";
 import { redirect } from "next/navigation";
 import { cookies } from "next/headers";
 import * as data from "@/lib/data";
-import { SessionNoteField, ClientStatus, JourneyPhase, DocumentType, SessionType } from "@/lib/types";
+import { SessionNoteField, ClientStatus, JourneyPhase, DocumentType, SessionType, type PaymentMethod } from "@/lib/types";
 import { runAiJson } from "@/lib/ai/generate";
-import { buildProspectIntroSummaryPrompt } from "@/lib/ai/prompts";
+import { buildAiConversationPrompt, buildProspectIntroSummaryPrompt } from "@/lib/ai/prompts";
+import { mockAiConversationReply } from "@/lib/ai/mocks";
 
 const AUTH_COOKIE = "heartful_auth";
 const PORTAL_UNLOCK_PREFIX = "portal_unlock_";
@@ -200,6 +201,53 @@ export async function recordPaymentAction(
   ]);
   revalidatePath(`/clients/${clientId}`);
   revalidatePath("/dashboard");
+  revalidatePath("/reports");
+  revalidatePath("/reports/revenue");
+}
+
+export async function updatePaymentDueDateAction(clientId: string, dueDate?: string) {
+  await data.updateClient(clientId, { payment_due_date: dueDate || "" });
+  revalidatePath(`/clients/${clientId}`);
+  revalidatePath("/reports/revenue");
+}
+
+export async function updateOutstandingPaymentAction(clientId: string, outstanding: number) {
+  const client = await data.getClient(clientId);
+  if (!client) throw new Error("Client not found");
+  await data.updateClient(clientId, {
+    package_value: (client.amount_paid ?? 0) + Math.max(0, outstanding),
+  });
+  revalidatePath(`/clients/${clientId}`);
+  revalidatePath("/dashboard");
+  revalidatePath("/reports");
+  revalidatePath("/reports/revenue");
+}
+
+export async function updatePaymentAction(
+  paymentId: string,
+  input: { amount: number; paidAt: string; method?: string; notes?: string }
+) {
+  const payment = (await data.getPayments()).find((item) => item.id === paymentId);
+  if (!payment) throw new Error("Payment not found");
+  if (!input.amount || input.amount <= 0) throw new Error("Payment amount must be greater than zero");
+  const client = await data.getClient(payment.client_id);
+  if (!client) throw new Error("Client not found");
+
+  await Promise.all([
+    data.updatePayment(paymentId, {
+      amount: input.amount,
+      paid_at: input.paidAt,
+      method: input.method,
+      notes: input.notes,
+    }),
+    data.updateClient(payment.client_id, {
+      amount_paid: Math.max(0, (client.amount_paid ?? 0) + input.amount - payment.amount),
+    }),
+  ]);
+  revalidatePath(`/clients/${payment.client_id}`);
+  revalidatePath("/dashboard");
+  revalidatePath("/reports");
+  revalidatePath("/reports/revenue");
 }
 
 export async function deleteClientAction(clientId: string) {
@@ -246,6 +294,7 @@ export async function updatePractitionerAction(patch: {
   phone?: string;
   title?: string;
   venmo_handle?: string;
+  payment_methods?: PaymentMethod[];
 }) {
   await data.updatePractitioner(patch);
   revalidatePath("/settings");
@@ -283,6 +332,15 @@ export async function deleteReferralSourceAction(id: string) {
 export async function updateClientNotesAction(clientId: string, notes: string) {
   await data.updateClient(clientId, { notes });
   revalidatePath(`/clients/${clientId}`);
+}
+
+export async function addClientQuickNoteAction(clientId: string, content: string) {
+  const note = content.trim();
+  if (!note) throw new Error("A note cannot be empty.");
+
+  const [created] = await data.addMemoryItems(clientId, [{ item_type: "note", content: note }]);
+  revalidatePath(`/clients/${clientId}`);
+  return created;
 }
 
 export async function updateClientProfileAction(clientId: string, patch: Record<string, string>) {
@@ -422,6 +480,7 @@ export async function addSessionAction(input: {
   revalidatePath("/dashboard");
   revalidatePath("/copilot");
   revalidatePath(`/clients/${input.clientId}`);
+  return session;
 }
 
 export async function updateSessionAction(
@@ -481,6 +540,78 @@ export async function completeSessionAction(sessionId: string, clientId: string)
   revalidatePath("/calendar");
   revalidatePath("/dashboard");
   revalidatePath(`/clients/${clientId}`);
+}
+
+export async function reopenCompletedSessionAction(sessionId: string, clientId: string) {
+  await data.reopenCompletedSession(sessionId);
+  syncSessionToGoogleInBackground(sessionId);
+  revalidatePath("/calendar");
+  revalidatePath("/dashboard");
+  revalidatePath("/copilot");
+  revalidatePath(`/clients/${clientId}`);
+  revalidatePath(`/clients/${clientId}/intake`);
+  revalidatePath(`/clients/${clientId}/preparation`);
+  revalidatePath(`/clients/${clientId}/journey-day`);
+  revalidatePath(`/clients/${clientId}/check-in`);
+  revalidatePath(`/clients/${clientId}/integration-1`);
+  revalidatePath(`/clients/${clientId}/integration-2`);
+}
+
+export async function sendAiConversationMessageAction(clientId: string, body: string) {
+  const message = body.trim();
+  if (!message) return data.getAiConversationMessages(clientId);
+
+  const client = await data.getClient(clientId);
+  if (!client) throw new Error("Client not found");
+
+  await data.addAiConversationMessage(clientId, "practitioner", message);
+
+  const [sessions, documents, formSubmissions, summaries, memory, preparationPlan, conversation] = await Promise.all([
+    data.getSessions(clientId),
+    data.getDocuments(clientId),
+    data.getFormSubmissionsForClient(clientId),
+    data.getAiSummaries(clientId),
+    data.getMemory(clientId),
+    data.getPreparationPlan(clientId),
+    data.getAiConversationMessages(clientId),
+  ]);
+  const clientRecordDump = JSON.stringify({
+    client,
+    sessions: sessions.map((session) => ({
+      session_type: session.session_type,
+      status: session.status,
+      scheduled_at: session.scheduled_at,
+      duration_minutes: session.duration_minutes,
+      manual_notes: session.manual_notes,
+      transcript: session.transcript,
+    })),
+    documents: documents.map((document) => ({
+      document_type: document.document_type,
+      title: document.title,
+      status: document.status,
+    })),
+    formSubmissions: formSubmissions.map((submission) => ({
+      document_id: submission.document_id,
+      status: submission.status,
+    })),
+    summaries: summaries.slice(0, 12).map((summary) => ({
+      title: summary.title,
+      content: summary.content,
+      created_at: summary.created_at,
+    })),
+    memory,
+    preparationPlan,
+  });
+  const conversationHistory = conversation
+    .slice(-20)
+    .map((item) => `${item.role === "practitioner" ? "Practitioner" : "AI"}: ${item.body}`)
+    .join("\n\n");
+  const prompt = buildAiConversationPrompt(client.full_name, clientRecordDump, conversationHistory, message);
+  const { data: response, model } = await runAiJson<{ reply: string }>(prompt, () => mockAiConversationReply(client.full_name, message));
+  await data.addAiConversationMessage(clientId, "assistant", response.reply, model);
+
+  revalidatePath(`/clients/${clientId}`);
+  return data.getAiConversationMessages(clientId);
 }
 
 // Toggles for the per-client AI Copilot list — purely cosmetic state, no
@@ -573,6 +704,10 @@ export async function sendMessageAction(clientId: string, sender: "practitioner"
 export async function getUnreadMessageCountAction(): Promise<number> {
   const { totalUnread } = await data.getUnreadMessagesSummary();
   return totalUnread;
+}
+
+export async function getActiveClientCountAction(): Promise<number> {
+  return data.getActiveClientCount();
 }
 
 export async function markMessagesReadAction(clientId: string) {
@@ -806,6 +941,7 @@ export async function createProspectAction(input: {
 }) {
   const prospect = await data.addProspect(input);
   revalidatePath("/prospects");
+  revalidatePath(`/prospects/${prospect.id}`);
   revalidatePath("/dashboard");
   return prospect;
 }

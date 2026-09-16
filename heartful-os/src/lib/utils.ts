@@ -135,12 +135,24 @@ export function initials(name: string) {
     .toUpperCase();
 }
 
+export function clientAvatarSrc(clientName: string): string | undefined {
+  const avatarByName: Record<string, string> = {
+    "Maya Chen": "/images/clients/maya-chen.webp",
+    "Daniel Ortiz": "/images/clients/daniel-ortiz.webp",
+    "Priya Patel": "/images/clients/priya-patel.webp",
+    "Marcus Webb": "/images/clients/marcus-webb.webp",
+    "Sarah Klein": "/images/clients/sarah-klein.webp",
+  };
+
+  return avatarByName[clientName];
+}
+
 export function statusBadgeClasses(status: ClientStatus): string {
   if (status === "journey_closed") return "bg-sage-100 text-sage-800";
   if (status === "inactive") return "bg-ink-100 text-ink-600";
   if (status.startsWith("integration")) return "bg-plum-100 text-plum-700";
-  if (status === "journey_complete" || status === "check_in_complete") return "bg-clay-100 text-clay-700";
-  if (status === "preparation" || status === "preparation_complete") return "bg-sage-100 text-sage-700";
+  if (status === "journey_complete" || status === "check_in_complete") return "bg-sage-100 text-sage-700";
+  if (status === "preparation" || status === "preparation_complete") return "client-status--preparation";
   return "bg-ink-100 text-ink-600";
 }
 
@@ -185,10 +197,70 @@ export function phaseForStatus(status: ClientStatus, fallback: JourneyPhase): Jo
 export function relativeDueLabel(iso?: string) {
   if (!iso) return "";
   const diffMs = new Date(iso).getTime() - Date.now();
-  const diffHrs = diffMs / (1000 * 60 * 60);
-  if (diffHrs < 0) return `Overdue by ${Math.abs(Math.round(diffHrs))}h`;
-  if (diffHrs < 24) return `Due in ${Math.round(diffHrs)}h`;
-  return `Due in ${Math.round(diffHrs / 24)}d`;
+  const hourMs = 1000 * 60 * 60;
+  const dayMs = hourMs * 24;
+  const overdue = diffMs < 0;
+  const absoluteMs = Math.abs(diffMs);
+  const hours = Math.max(1, Math.ceil(absoluteMs / hourMs));
+
+  if (hours < 24) return overdue ? `${hours}h overdue` : `Due in ${hours}h`;
+
+  const days = Math.max(1, Math.round(absoluteMs / dayMs));
+  if (days < 60) {
+    return overdue
+      ? `${days} day${days === 1 ? "" : "s"} overdue`
+      : `Due in ${days} day${days === 1 ? "" : "s"}`;
+  }
+
+  const months = Math.max(2, Math.floor(days / 30));
+  return overdue
+    ? `${months} month${months === 1 ? "" : "s"} overdue`
+    : `Due in ${months} month${months === 1 ? "" : "s"}`;
+}
+
+export interface ActionableOutstandingItem {
+  id: string;
+  client_id: string;
+  title: string;
+  status: string;
+  due_at?: string;
+  kind?: "form";
+  task_type?: "form" | "reminder" | "reflection" | "session_prep" | "follow_up";
+  assigned_to?: string;
+}
+
+export function isPastDue(item: Pick<ActionableOutstandingItem, "due_at">) {
+  return Boolean(item.due_at && new Date(item.due_at).getTime() < Date.now());
+}
+
+export function outstandingItemHref(item: ActionableOutstandingItem) {
+  return item.kind === "form"
+    ? `/clients/${item.client_id}/forms/${item.id}`
+    : `/clients/${item.client_id}/tasks/${item.id}`;
+}
+
+export function outstandingActionLabel(item: ActionableOutstandingItem) {
+  if (item.kind === "form") return item.status === "in_progress" ? "Review" : "Request";
+
+  const title = item.title.toLocaleLowerCase();
+  if (item.task_type === "session_prep" || title.includes("schedule") || title.includes(" call")) {
+    return "Schedule";
+  }
+
+  const clientOwned = item.assigned_to === "client";
+  const reminderRelevant =
+    item.task_type === "form" ||
+    item.task_type === "reminder" ||
+    item.task_type === "reflection" ||
+    title.includes("check-in") ||
+    title.includes("document") ||
+    title.includes("collect");
+  if (clientOwned && reminderRelevant && (item.status === "overdue" || isPastDue(item))) {
+    return "Send reminder";
+  }
+  if (title.includes("document") || title.includes("collect")) return "Request";
+  if (clientOwned && reminderRelevant) return "Send reminder";
+  return "Open";
 }
 
 // ---------------------------------------------------------------------------

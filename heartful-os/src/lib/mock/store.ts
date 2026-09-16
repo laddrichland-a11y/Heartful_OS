@@ -1,6 +1,7 @@
 import { buildSeedData, PRACTITIONER, REFERRAL_SOURCES, SeedBundle } from "./seed";
 import { buildFormTemplates } from "./formTemplates";
 import {
+  AiConversationMessage,
   AiSummary,
   CheckIn,
   Client,
@@ -15,6 +16,9 @@ import {
   PortalAssignment,
   PostIntegrationForm,
   PreparationPlan,
+  Prospect,
+  ProspectCall,
+  ProspectTranscript,
   Recording,
   Session,
   SessionNote,
@@ -46,6 +50,7 @@ class MockStore {
   transcripts: Transcript[] = [];
   recordings: Recording[] = [];
   aiSummaries: AiSummary[] = [];
+  aiConversationMessages: AiConversationMessage[] = [];
   memory: ClientMemoryItem[] = [];
   sessionNotes: SessionNote[] = [];
   preparationPlans: PreparationPlan[] = [];
@@ -60,6 +65,9 @@ class MockStore {
   formSubmissions: FormSubmission[] = [];
   emailLogs: EmailLog[] = [];
   smsLogs: SmsLog[] = [];
+  prospects: Prospect[] = [];
+  prospectCalls: ProspectCall[] = [];
+  prospectTranscripts: ProspectTranscript[] = [];
 
   constructor() {
     this.seed();
@@ -95,6 +103,7 @@ class MockStore {
     this.sessions = [];
     this.transcripts = [];
     this.aiSummaries = [];
+    this.aiConversationMessages = [];
     this.memory = [];
     this.sessionNotes = [];
     this.preparationPlans = [];
@@ -108,6 +117,9 @@ class MockStore {
     this.formTemplates = [];
     this.formSubmissions = [];
     this.emailLogs = [];
+    this.prospects = [];
+    this.prospectCalls = [];
+    this.prospectTranscripts = [];
     this.seed();
   }
 }
@@ -126,4 +138,8 @@ export const store: MockStore =
 // relying on everyone remembering to fully restart (not just hot-reload).
 if (store.formTemplates === undefined) store.formTemplates = buildFormTemplates();
 if (store.formSubmissions === undefined) store.formSubmissions = [];
+if (store.aiConversationMessages === undefined) store.aiConversationMessages = [];
 if (store.emailLogs === undefined) store.emailLogs = [];
+if (store.prospects === undefined) store.prospects = [];
+if (store.prospectCalls === undefined) store.prospectCalls = [];
+if (store.prospectTranscripts === undefined) store.prospectTranscripts = [];

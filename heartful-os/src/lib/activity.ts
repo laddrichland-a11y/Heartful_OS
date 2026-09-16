@@ -314,9 +314,9 @@ export function buildClientActivity(input: {
       id: mem.id,
       at: mem.created_at,
       kind: "memory_item",
-      title: `Memory item added (${mem.item_type.replace(/_/g, " ")})`,
+      title: mem.item_type === "note" ? "Quick note added" : `Memory item added (${mem.item_type.replace(/_/g, " ")})`,
       detail: mem.content.length > 100 ? `${mem.content.slice(0, 100)}…` : mem.content,
-      tab: "AI Copilot",
+      ...(mem.item_type === "note" ? {} : { tab: "AI Copilot" }),
     });
   }
 

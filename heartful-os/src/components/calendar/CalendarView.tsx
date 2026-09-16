@@ -7,19 +7,20 @@ import {
   addSessionAction,
   cancelSessionAction,
   completeSessionAction,
+  reopenCompletedSessionAction,
   updateSessionAction,
   checkScheduleConflictsAction,
   ScheduleConflict,
 } from "@/lib/actions";
 import { Session, SessionType, ProspectCall, ExternalCalendarEvent } from "@/lib/types";
-import { cx, formatDateTime, occupiesCalendarSlot } from "@/lib/utils";
+import { clientAvatarSrc, cx, formatDateTime, initials, occupiesCalendarSlot } from "@/lib/utils";
+import Image from "next/image";
 import {
   ChevronLeft,
   ChevronRight,
   Plus,
   X,
   CalendarDays,
-  User,
   Clock,
   MapPin,
   ExternalLink,
@@ -29,6 +30,10 @@ import {
   Loader2,
   Sparkles,
   AlertTriangle,
+  History,
+  RotateCcw,
+  Copy,
+  MoreHorizontal,
 } from "lucide-react";
 type SessionWithClient = Session & { client_name: string };
 type ClientOption = { id: string; full_name: string };
@@ -116,7 +121,9 @@ export default function CalendarView({
   // Create/edit form
   const [formOpen, setFormOpen] = useState(false);
   const [editing, setEditing] = useState<SessionWithClient | null>(null);
+  const [duplicateOf, setDuplicateOf] = useState<SessionWithClient | null>(null);
   const [prefillDate, setPrefillDate] = useState<string | undefined>(undefined);
+  const [completionUndo, setCompletionUndo] = useState<{ id: string; clientId: string } | null>(null);
 
   const [, startTransition] = useTransition();
 
@@ -175,10 +182,13 @@ export default function CalendarView({
   const todayKey = localDateKey(today);
 
   const upcoming = localSessions
-    .filter((s) => s.status === "scheduled" && s.scheduled_at && new Date(s.scheduled_at) >= today)
+    // A scheduled appointment stays actionable until it is explicitly
+    // completed or cancelled. Using only the clock here incorrectly buried
+    // still-scheduled sessions in Past Sessions after their date passed.
+    .filter((s) => s.status === "scheduled" && s.scheduled_at)
     .sort((a, b) => (a.scheduled_at! < b.scheduled_at! ? -1 : 1));
   const past = localSessions
-    .filter((s) => !(s.status === "scheduled" && s.scheduled_at && new Date(s.scheduled_at) >= today))
+    .filter((s) => s.status !== "scheduled" || !s.scheduled_at)
     .sort((a, b) => ((a.scheduled_at ?? "") > (b.scheduled_at ?? "") ? -1 : 1));
 
   function openDetail(s: SessionWithClient) {
@@ -189,6 +199,7 @@ export default function CalendarView({
   function openCreate(dateForDay?: string) {
     setSelected(null);
     setEditing(null);
+    setDuplicateOf(null);
     setPrefillDate(dateForDay);
     setFormOpen(true);
   }
@@ -196,6 +207,15 @@ export default function CalendarView({
   function openEdit(s: SessionWithClient) {
     setSelected(null);
     setEditing(s);
+    setDuplicateOf(null);
+    setPrefillDate(undefined);
+    setFormOpen(true);
+  }
+
+  function openDuplicate(s: SessionWithClient) {
+    setSelected(null);
+    setEditing(null);
+    setDuplicateOf(s);
     setPrefillDate(undefined);
     setFormOpen(true);
   }
@@ -204,6 +224,7 @@ export default function CalendarView({
     setSelected(null);
     setFormOpen(false);
     setEditing(null);
+    setDuplicateOf(null);
   }
 
   function applyStatusChange(id: string, status: Session["status"]) {
@@ -282,13 +303,14 @@ export default function CalendarView({
                       key={s.id}
                       onClick={(e) => { e.stopPropagation(); openDetail(s); }}
                       className={cx(
-                        "w-full text-left text-[10px] leading-tight px-1.5 py-0.5 rounded truncate",
+                        "flex w-full items-center gap-1 text-left text-xs leading-tight px-1.5 py-0.5 rounded",
                         statusBadgeClass(s.status),
                         selected?.id === s.id && "ring-1 ring-offset-0 ring-clay-400"
                       )}
                       title={`${s.client_name} — ${typeLabel(s.session_type)}`}
                     >
-                      {s.client_name}
+                      <ClientAvatar clientName={s.client_name} compact />
+                      <span className="truncate">{s.client_name}</span>
                     </button>
                   ))}
                   {dayProspectCalls.slice(0, 1).map((c) => (
@@ -297,7 +319,7 @@ export default function CalendarView({
                       href={prospectCallHref(c)}
                       onClick={(e) => e.stopPropagation()}
                       className={cx(
-                        "w-full block text-left text-[10px] leading-tight px-1.5 py-0.5 rounded truncate",
+                        "w-full block text-left text-xs leading-tight px-1.5 py-0.5 rounded truncate",
                         c.call_type === "hold_follow_up"
                           ? "bg-amber-100 text-amber-800 hover:bg-amber-200"
                           : "bg-plum-100 text-plum-700 hover:bg-plum-200"
@@ -312,14 +334,14 @@ export default function CalendarView({
                       <div
                         key={e.id}
                         onClick={(ev) => ev.stopPropagation()}
-                        className="w-full block text-left text-[10px] leading-tight px-1.5 py-0.5 rounded truncate bg-ink-100 text-ink-500"
+                        className="w-full block text-left text-xs leading-tight px-1.5 py-0.5 rounded truncate bg-ink-100 text-ink-500"
                         title={`${e.title} (Google Calendar) — ${formatDateTime(e.start_at)}`}
                       >
                         ● {e.title}
                       </div>
                     ))}
                   {totalItems > 3 && (
-                    <div className="text-[10px] text-ink-400 px-1">+{totalItems - 3} more</div>
+                    <div className="text-xs text-ink-400 px-1">+{totalItems - 3} more</div>
                   )}
                 </div>
               </div>
@@ -330,11 +352,12 @@ export default function CalendarView({
 
       {/* Session detail modal */}
       {selected && (
-        <Modal onClose={closeAll}>
+        <Modal onClose={closeAll} overflowVisible>
           <SessionDetailPanel
             session={selected}
             onClose={closeAll}
             onEdit={() => openEdit(selected)}
+            onDuplicate={() => openDuplicate(selected)}
             onGoToClient={() => router.push(`/clients/${selected.client_id}?tab=Sessions`)}
             onCancel={() =>
               startTransition(async () => {
@@ -343,9 +366,14 @@ export default function CalendarView({
               })
             }
             onComplete={() =>
-              startTransition(async () => {
-                await completeSessionAction(selected.id, selected.client_id);
+              completeSessionAction(selected.id, selected.client_id).then(() => {
                 applyStatusChange(selected.id, "completed");
+                setCompletionUndo({ id: selected.id, clientId: selected.client_id });
+              })
+            }
+            onUndoComplete={() =>
+              reopenCompletedSessionAction(selected.id, selected.client_id).then(() => {
+                applyStatusChange(selected.id, "scheduled");
               })
             }
           />
@@ -358,10 +386,37 @@ export default function CalendarView({
           <SessionForm
             clients={clients}
             editing={editing}
+            duplicateOf={duplicateOf}
             prefillDate={prefillDate}
+            onSessionCreated={(created) => {
+              const client = clients.find((item) => item.id === created.client_id);
+              setLocalSessions((current) => [...current, { ...created, client_name: client?.full_name ?? "Client" }]);
+            }}
             onClose={closeAll}
           />
         </Modal>
+      )}
+
+      {completionUndo && (
+        <div className="fixed bottom-5 left-1/2 z-[60] flex -translate-x-1/2 items-center gap-3 rounded-xl border border-ink-200 bg-white px-4 py-3 text-sm text-ink-700 shadow-lg" role="status">
+          <span>Session marked complete</span>
+          <button
+            className="font-semibold text-clay-600 hover:text-clay-700 hover:underline"
+            onClick={() => {
+              const undo = completionUndo;
+              startTransition(async () => {
+                await reopenCompletedSessionAction(undo.id, undo.clientId);
+                applyStatusChange(undo.id, "scheduled");
+                setCompletionUndo(null);
+              });
+            }}
+          >
+            Undo
+          </button>
+          <button aria-label="Dismiss completion message" className="text-ink-400 hover:text-ink-700" onClick={() => setCompletionUndo(null)}>
+            <X className="h-4 w-4" />
+          </button>
+        </div>
       )}
 
       {/* Upcoming / Past lists */}
@@ -421,7 +476,9 @@ export default function CalendarView({
           )}
         </div>
         <div className="card p-5">
-          <h3 className="font-semibold text-ink-900 mb-3">Past Sessions</h3>
+          <h3 className="font-semibold text-ink-900 mb-3 flex items-center gap-2">
+            <History className="h-4 w-4 text-ink-400" /> Past Sessions
+          </h3>
           <div className="space-y-2 max-h-[420px] overflow-y-auto pr-1">
             {past.length === 0 && <p className="text-sm text-ink-400">No past sessions yet.</p>}
             {past.slice(0, 30).map((s) => (
@@ -449,7 +506,7 @@ export default function CalendarView({
 // to land on this backdrop and close the whole modal before the user could
 // submit.
 // ---------------------------------------------------------------------------
-function Modal({ children, onClose }: { children: React.ReactNode; onClose: () => void }) {
+function Modal({ children, onClose, overflowVisible = false }: { children: React.ReactNode; onClose: () => void; overflowVisible?: boolean }) {
   const ref = useRef<HTMLDivElement>(null);
 
   // Close on Escape key
@@ -468,7 +525,7 @@ function Modal({ children, onClose }: { children: React.ReactNode; onClose: () =
     >
       <div
         ref={ref}
-        className="w-full max-w-md bg-white rounded-2xl shadow-2xl overflow-hidden"
+        className={cx("w-full max-w-md bg-white rounded-2xl shadow-2xl", overflowVisible ? "overflow-visible" : "overflow-hidden")}
       >
         {children}
       </div>
@@ -483,18 +540,23 @@ function SessionDetailPanel({
   session,
   onClose,
   onEdit,
+  onDuplicate,
   onGoToClient,
   onCancel,
   onComplete,
+  onUndoComplete,
 }: {
   session: SessionWithClient;
   onClose: () => void;
   onEdit: () => void;
+  onDuplicate: () => void;
   onGoToClient: () => void;
   onCancel: () => void;
-  onComplete: () => void;
+  onComplete: () => void | Promise<void>;
+  onUndoComplete: () => void | Promise<void>;
 }) {
-  const [busy, setBusy] = useState<"cancel" | "complete" | null>(null);
+  const [busy, setBusy] = useState<"cancel" | "complete" | "undo" | null>(null);
+  const [managementMenuOpen, setManagementMenuOpen] = useState(false);
   const isScheduled = session.status === "scheduled";
 
   async function handleCancel() {
@@ -509,33 +571,71 @@ function SessionDetailPanel({
     setBusy(null);
   }
 
+  async function handleUndoComplete() {
+    setBusy("undo");
+    await onUndoComplete();
+    setBusy(null);
+  }
+
   return (
     <div className="p-5">
-      <div className="flex items-center justify-between mb-3">
+      <div className="flex items-center justify-between mb-2">
         <span className="text-sm font-semibold text-ink-700">Session Details</span>
-        <button
-          onClick={onClose}
-          className="p-1 rounded hover:bg-ink-50 text-ink-400"
-        >
-          <X className="h-4 w-4" />
-        </button>
+        <div className="flex items-center gap-1">
+          {isScheduled && (
+            <div className="relative">
+              <button
+                aria-label="Session management actions"
+                title="Session actions"
+                onClick={() => setManagementMenuOpen((open) => !open)}
+                className="btn-ghost inline-grid min-h-8 min-w-8 place-items-center text-ink-400 hover:bg-ink-50 hover:text-ink-600"
+              >
+                <MoreHorizontal className="h-4 w-4" />
+              </button>
+              {managementMenuOpen && (
+                <div className="absolute right-0 top-full z-10 mt-1 w-52 rounded-lg border border-ink-100 bg-white p-1 shadow-lg">
+                  <button onClick={onEdit} className="flex w-full items-center gap-2 whitespace-nowrap rounded-md px-2.5 py-2 text-left text-sm text-ink-700 hover:bg-ink-50">
+                    <Pencil className="h-3.5 w-3.5" />
+                    Edit Session
+                  </button>
+                  <button onClick={onDuplicate} className="flex w-full items-center gap-2 whitespace-nowrap rounded-md px-2.5 py-2 text-left text-sm text-ink-700 hover:bg-ink-50">
+                    <Copy className="h-3.5 w-3.5" />
+                    Duplicate Event
+                  </button>
+                  <button disabled={busy === "complete"} onClick={handleComplete} className="flex w-full items-center gap-2 whitespace-nowrap rounded-md px-2.5 py-2 text-left text-sm text-ink-700 hover:bg-ink-50">
+                    {busy === "complete" ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <CheckCircle2 className="h-3.5 w-3.5" />}
+                    Mark Complete
+                  </button>
+                  <div className="my-1 border-t border-ink-100" />
+                  <button disabled={busy === "cancel"} onClick={handleCancel} className="flex w-full items-center gap-2 whitespace-nowrap rounded-md px-2.5 py-2 text-left text-sm text-red-600/80 hover:bg-red-50 hover:text-red-600">
+                    {busy === "cancel" ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <XCircle className="h-3.5 w-3.5" />}
+                    Cancel Session
+                  </button>
+                </div>
+              )}
+            </div>
+          )}
+          <button onClick={onClose} className="p-1 rounded hover:bg-ink-50 text-ink-400">
+            <X className="h-4 w-4" />
+          </button>
+        </div>
       </div>
 
-      <div className="flex flex-col gap-4">
+      <div className="flex flex-col gap-3">
         {/* Session info */}
         <div className="flex-1 space-y-2">
-          <div className="flex items-center gap-2 flex-wrap">
-            <span className={cx("badge", statusBadgeClass(session.status))}>{session.status}</span>
+          <div className="flex items-center gap-2 flex-wrap pt-1">
             <span className="text-sm font-semibold text-ink-900">{typeLabel(session.session_type)}</span>
+            <span className={cx("badge", statusBadgeClass(session.status))}>{session.status.charAt(0).toUpperCase() + session.status.slice(1)}</span>
           </div>
 
           <div className="space-y-1 text-sm text-ink-600">
             {/* Client name — clickable link to their chart */}
             <div className="flex items-center gap-2">
-              <User className="h-3.5 w-3.5 text-ink-400 shrink-0" />
+              <ClientAvatar clientName={session.client_name} compact />
               <Link
                 href={`/clients/${session.client_id}?tab=Sessions`}
-                className="font-medium text-clay-600 hover:text-clay-700 hover:underline"
+                className="font-medium text-ink-800 hover:text-clay-600 hover:underline"
               >
                 {session.client_name}
               </Link>
@@ -561,60 +661,50 @@ function SessionDetailPanel({
         </div>
 
         {/* Action buttons */}
-        <div className="flex flex-col gap-2">
-          <button
-            onClick={onGoToClient}
-            className="btn-primary text-xs px-3 py-1.5 flex items-center gap-1.5"
-          >
-            <ExternalLink className="h-3.5 w-3.5" />
-            Open Client Record
-          </button>
-
-          {isScheduled && (
-            <Link
-              href={`/clients/${session.client_id}/sessions/${session.id}`}
-              className="btn-secondary text-xs px-3 py-1.5 flex items-center gap-1.5"
+        <div className={cx(
+          "flex gap-1.5",
+          session.status === "completed" ? "flex-row items-center" : "flex-col"
+        )}>
+          {session.status === "completed" && (
+            <button
+              disabled={busy === "undo"}
+              onClick={handleUndoComplete}
+              className="btn-secondary flex min-h-11 min-w-0 flex-1 items-center justify-center gap-2 px-3 text-xs"
             >
-              <Sparkles className="h-3.5 w-3.5 text-plum-500" />
-              Prepare Me
-            </Link>
+              {busy === "undo" ? (
+                <Loader2 className="h-3.5 w-3.5 animate-spin" />
+              ) : (
+                <RotateCcw className="h-3.5 w-3.5" />
+              )}
+              Undo complete
+            </button>
+          )}
+
+          {session.status !== "scheduled" && (
+            <button
+              onClick={onGoToClient}
+              className={cx(
+                "btn-primary flex min-h-11 items-center gap-2 px-3 text-xs",
+                session.status === "completed" && "min-w-0 flex-1 justify-center"
+              )}
+            >
+              <ExternalLink className="h-3.5 w-3.5" />
+              Open Client Record
+            </button>
           )}
 
           {isScheduled && (
             <>
-              <button
-                onClick={onEdit}
-                className="btn-secondary text-xs px-3 py-1.5 flex items-center gap-1.5"
-              >
-                <Pencil className="h-3.5 w-3.5" />
-                Edit Session
-              </button>
-
-              <button
-                disabled={busy === "complete"}
-                onClick={handleComplete}
-                className="btn-ghost text-xs px-3 py-1.5 flex items-center gap-1.5 text-sage-700 hover:bg-sage-50"
-              >
-                {busy === "complete" ? (
-                  <Loader2 className="h-3.5 w-3.5 animate-spin" />
-                ) : (
-                  <CheckCircle2 className="h-3.5 w-3.5" />
-                )}
-                Mark Complete
-              </button>
-
-              <button
-                disabled={busy === "cancel"}
-                onClick={handleCancel}
-                className="btn-ghost text-xs px-3 py-1.5 flex items-center gap-1.5 text-red-600 hover:bg-red-50"
-              >
-                {busy === "cancel" ? (
-                  <Loader2 className="h-3.5 w-3.5 animate-spin" />
-                ) : (
-                  <XCircle className="h-3.5 w-3.5" />
-                )}
-                Cancel Session
-              </button>
+              <div className="flex gap-2">
+                <button onClick={onGoToClient} className="btn-primary flex min-h-11 flex-1 items-center justify-center gap-2 px-3 text-xs">
+                  <ExternalLink className="h-3.5 w-3.5" />
+                  Open Client Record
+                </button>
+                <Link href={`/clients/${session.client_id}/sessions/${session.id}`} className="btn-secondary flex min-h-11 flex-1 items-center justify-center gap-2 px-3 text-xs">
+                  <Sparkles className="h-3.5 w-3.5 text-plum-500" />
+                  Prepare Me
+                </Link>
+              </div>
             </>
           )}
         </div>
@@ -649,6 +739,7 @@ function SessionRow({
     >
       <button onClick={onSelect} className="text-left min-w-0 flex-1">
         <div className="flex items-center gap-2 min-w-0">
+          <ClientAvatar clientName={session.client_name} />
           {/* Client name — clicking row opens detail panel; name is also a direct link */}
           <Link
             href={`/clients/${session.client_id}?tab=Sessions`}
@@ -695,31 +786,62 @@ function SessionRow({
   );
 }
 
+function ClientAvatar({ clientName, compact = false }: { clientName: string; compact?: boolean }) {
+  const src = clientAvatarSrc(clientName);
+  const size = compact ? 16 : 28;
+
+  return src ? (
+    <Image
+      src={src}
+      alt=""
+      width={size}
+      height={size}
+      className={cx("shrink-0 rounded-full object-cover", compact ? "h-4 w-4" : "h-7 w-7")}
+    />
+  ) : (
+    <span
+      className={cx(
+        "inline-flex shrink-0 items-center justify-center rounded-full bg-ink-100 text-ink-500 font-semibold",
+        compact ? "h-4 w-4 text-xs" : "h-7 w-7 text-xs"
+      )}
+      aria-hidden="true"
+    >
+      {initials(clientName)}
+    </span>
+  );
+}
+
 // ---------------------------------------------------------------------------
 // Create / edit form
 // ---------------------------------------------------------------------------
 function SessionForm({
   clients,
   editing,
+  duplicateOf,
   prefillDate,
+  onSessionCreated,
   onClose,
 }: {
   clients: ClientOption[];
   editing: SessionWithClient | null;
+  duplicateOf: SessionWithClient | null;
   prefillDate?: string;
+  onSessionCreated?: (session: Session) => void;
   onClose: () => void;
 }) {
-  const existingDate = editing?.scheduled_at ? new Date(editing.scheduled_at) : undefined;
-  const [clientId, setClientId] = useState(editing?.client_id ?? clients[0]?.id ?? "");
-  const [sessionType, setSessionType] = useState<SessionType>(editing?.session_type ?? "preparation");
+  const sourceSession = editing ?? duplicateOf;
+  const isDuplicate = Boolean(duplicateOf);
+  const existingDate = sourceSession?.scheduled_at ? new Date(sourceSession.scheduled_at) : undefined;
+  const [clientId, setClientId] = useState(sourceSession?.client_id ?? clients[0]?.id ?? "");
+  const [sessionType, setSessionType] = useState<SessionType>(sourceSession?.session_type ?? "preparation");
   const [date, setDate] = useState(
     existingDate
       ? existingDate.toISOString().slice(0, 10)
       : prefillDate ?? new Date().toISOString().slice(0, 10)
   );
   const [time, setTime] = useState(existingDate ? existingDate.toTimeString().slice(0, 5) : "10:00");
-  const [duration, setDuration] = useState(editing?.duration_minutes ?? 60);
-  const [location, setLocation] = useState(editing?.location ?? "");
+  const [duration, setDuration] = useState(sourceSession?.duration_minutes ?? 60);
+  const [location, setLocation] = useState(sourceSession?.location ?? "");
   const [busy, setBusy] = useState(false);
   const [checkingConflicts, setCheckingConflicts] = useState(false);
   const [conflicts, setConflicts] = useState<ScheduleConflict[] | null>(null);
@@ -733,7 +855,7 @@ function SessionForm({
   return (
     <div className="p-5">
       <div className="flex items-center justify-between mb-4">
-        <h3 className="font-semibold text-ink-900">{editing ? "Edit Session" : "Schedule Session"}</h3>
+        <h3 className="font-semibold text-ink-900">{editing ? "Edit Session" : isDuplicate ? "Duplicate Event" : "Schedule Session"}</h3>
         <button onClick={onClose} className="p-1 rounded hover:bg-ink-50 text-ink-400">
           <X className="h-4 w-4" />
         </button>
@@ -750,6 +872,13 @@ function SessionForm({
               {editing.client_name}
             </Link>
           </span>
+        </div>
+      )}
+
+      {isDuplicate && duplicateOf && (
+        <div className="mb-3 grid grid-cols-2 gap-3 rounded-lg bg-ink-50 p-3 text-sm">
+          <div><span className="block text-xs text-ink-500">Client</span><span className="font-medium text-ink-800">{duplicateOf.client_name}</span></div>
+          <div><span className="block text-xs text-ink-500">Session type</span><span className="font-medium text-ink-800">{typeLabel(duplicateOf.session_type)}</span></div>
         </div>
       )}
 
@@ -779,19 +908,20 @@ function SessionForm({
               location: location || undefined,
             });
           } else {
-            await addSessionAction({
+            const created = await addSessionAction({
               clientId,
               sessionType,
               scheduledAt,
               durationMinutes: duration,
               location: location || undefined,
             });
+            if (created) onSessionCreated?.(created);
           }
           setBusy(false);
           onClose();
         }}
       >
-        {!editing && (
+        {!editing && !isDuplicate && (
           <div className="sm:col-span-2">
             <label className="text-xs font-medium text-ink-600">Client</label>
             <select
@@ -892,7 +1022,7 @@ function SessionForm({
             Cancel
           </button>
           <button type="submit" disabled={busy || checkingConflicts || !clientId} className="btn-primary text-sm px-4 py-1.5">
-            {checkingConflicts ? "Checking…" : busy ? "Saving..." : editing ? "Save Changes" : "Schedule"}
+            {checkingConflicts ? "Checking…" : busy ? "Saving..." : editing ? "Save Changes" : isDuplicate ? "Duplicate Session" : "Schedule"}
           </button>
         </div>
       </form>

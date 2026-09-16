@@ -17,6 +17,7 @@ export default function ClientHeaderActions({
   packageValue,
   amountDue,
   venmoHandle,
+  compact = false,
 }: {
   autoOpenIntro: boolean;
   clientId: string;
@@ -29,6 +30,7 @@ export default function ClientHeaderActions({
   packageValue?: number;
   amountDue?: number;
   venmoHandle?: string;
+  compact?: boolean;
 }) {
   const [open, setOpen] = useState(autoOpenIntro);
   const router = useRouter();
@@ -46,9 +48,11 @@ export default function ClientHeaderActions({
       <button
         type="button"
         onClick={() => setOpen(true)}
-        className="btn-secondary text-xs px-3 py-1.5 flex items-center gap-1.5"
+        className={`btn-secondary wn-intro-email-button text-xs px-3 py-1.5 flex items-center gap-1.5${compact ? " is-compact" : ""}`}
+        aria-label={compact ? `Send intro email to ${clientName}` : undefined}
+        title={compact ? "Send intro email" : undefined}
       >
-        <Mail className="h-3.5 w-3.5" /> Send Intro Email
+        <Mail className="h-3.5 w-3.5" /> <span>Send Intro Email</span>
       </button>
       <IntroEmailModal
         open={open}

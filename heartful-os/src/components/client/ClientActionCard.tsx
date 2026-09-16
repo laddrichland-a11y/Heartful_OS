@@ -66,121 +66,134 @@ export default function ClientActionCard({
   if (!hasAnything) return null;
 
   return (
-    <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4 mb-6">
-      {/* Upcoming Sessions */}
-      {upcomingSessions.length > 0 && (
-        <Section
-          icon={<CalendarClock className="h-4 w-4 text-clay-500" />}
-          title="Upcoming Sessions"
-          tab="AI Copilot"
-          clientId={clientId}
-        >
-          {upcomingSessions.map((s) => (
-            <Item key={s.id} href={`/clients/${clientId}/sessions/${s.id}`}>
-              <span className="font-medium">
-                {SESSION_TYPE_LABELS[s.session_type] ?? s.session_type}
-              </span>
-              <span className="text-ink-400">{formatDateTime(s.scheduled_at)}</span>
-            </Item>
-          ))}
-        </Section>
-      )}
+    <section className="client-surface mb-5 overflow-hidden" aria-labelledby="whats-next-heading">
+      <div className="flex items-baseline gap-3 border-b border-ink-100 px-4 py-2.5 sm:px-5">
+        <p className="client-eyebrow shrink-0">Overview</p>
+        <h2 id="whats-next-heading" className="text-sm font-semibold text-ink-900">
+          What&apos;s next
+        </h2>
+      </div>
+      <div className="divide-y divide-ink-100">
+        {/* Upcoming Sessions */}
+        {upcomingSessions.map((s) => (
+          <ActionRow
+            key={s.id}
+            icon={<CalendarClock className="h-4 w-4" />}
+            label="Upcoming session"
+            labelHref={`/clients/${clientId}?tab=${encodeURIComponent("AI Copilot")}`}
+            href={`/clients/${clientId}/sessions/${s.id}`}
+            title={SESSION_TYPE_LABELS[s.session_type] ?? s.session_type}
+            meta={formatDateTime(s.scheduled_at)}
+            tone="clay"
+          />
+        ))}
 
-      {/* Outstanding Forms */}
-      {outstandingForms.length > 0 && (
-        <Section
-          icon={<FileWarning className="h-4 w-4 text-amber-500" />}
-          title={`Outstanding Forms (${outstandingForms.length})`}
-          tab="Documents"
-          clientId={clientId}
-        >
-          {outstandingForms.map((d) => (
-            <Item key={d.id}>
-              <span className="font-medium">{d.title}</span>
-              <span className={`capitalize ${d.status === "missing" ? "text-amber-600" : "text-ink-400"}`}>
-                {d.status === "missing" ? "Not started" : "In progress"}
-              </span>
-            </Item>
-          ))}
-        </Section>
-      )}
+        {/* Outstanding Forms */}
+        {outstandingForms.map((d) => (
+          <ActionRow
+            key={d.id}
+            icon={<FileWarning className="h-4 w-4" />}
+            label="Outstanding form"
+            labelHref={`/clients/${clientId}?tab=${encodeURIComponent("Documents")}`}
+            title={d.title}
+            meta={d.status === "missing" ? "Not started" : "In progress"}
+            tone="amber"
+          />
+        ))}
 
-      {/* Open Tasks */}
-      {openTasks.length > 0 && (
-        <Section
-          icon={<ClipboardList className="h-4 w-4 text-plum-500" />}
-          title={`Open Tasks (${openTasks.length})`}
-          tab="Sessions"
-          clientId={clientId}
-        >
-          {openTasks.slice(0, 5).map((t) => (
-            <Item key={t.id} href={`/clients/${clientId}/tasks/${t.id}`}>
-              <span className="font-medium">{t.title}</span>
-              {t.due_at && (
-                <span className="text-ink-400">Due {formatDate(t.due_at)}</span>
-              )}
-            </Item>
-          ))}
-        </Section>
-      )}
+        {/* Open Tasks */}
+        {openTasks.slice(0, 5).map((t) => (
+          <ActionRow
+            key={t.id}
+            icon={<ClipboardList className="h-4 w-4" />}
+            label="Open task"
+            labelHref={`/clients/${clientId}?tab=${encodeURIComponent("Sessions")}`}
+            href={`/clients/${clientId}/tasks/${t.id}`}
+            title={t.title}
+            meta={t.due_at ? `Due ${formatDate(t.due_at)}` : undefined}
+            tone="plum"
+          />
+        ))}
 
-      {/* Incomplete Portal Assignments */}
-      {incompleteAssignments.length > 0 && (
-        <Section
-          icon={<BookOpen className="h-4 w-4 text-sage-600" />}
-          title={`Portal Assignments (${incompleteAssignments.length})`}
-          tab="Sessions"
-          clientId={clientId}
-        >
-          {incompleteAssignments.slice(0, 5).map((a) => (
-            <Item key={a.id} href={`/clients/${clientId}?tab=${encodeURIComponent("Sessions")}`}>
-              <span className="font-medium">{a.title}</span>
-              {a.due_at && (
-                <span className="text-ink-400">Due {formatDate(a.due_at)}</span>
-              )}
-            </Item>
-          ))}
-        </Section>
-      )}
-    </div>
+        {/* Incomplete Portal Assignments */}
+        {incompleteAssignments.slice(0, 5).map((a) => (
+          <ActionRow
+            key={a.id}
+            icon={<BookOpen className="h-4 w-4" />}
+            label="Portal assignment"
+            labelHref={`/clients/${clientId}?tab=${encodeURIComponent("Sessions")}`}
+            href={`/clients/${clientId}?tab=${encodeURIComponent("Sessions")}`}
+            title={a.title}
+            meta={a.due_at ? `Due ${formatDate(a.due_at)}` : undefined}
+            tone="sage"
+          />
+        ))}
+      </div>
+    </section>
   );
 }
 
-function Section({
+function ActionRow({
   icon,
+  label,
+  labelHref,
+  href,
   title,
-  tab,
-  clientId,
-  children,
+  meta,
+  tone,
 }: {
   icon: React.ReactNode;
+  label: string;
+  labelHref: string;
+  href?: string;
   title: string;
-  tab: string;
-  clientId: string;
-  children: React.ReactNode;
+  meta?: string;
+  tone: "clay" | "amber" | "plum" | "sage";
 }) {
+  const toneClasses = {
+    clay: "bg-clay-50 text-clay-600",
+    amber: "bg-amber-50 text-amber-600",
+    plum: "bg-plum-50 text-plum-600",
+    sage: "bg-sage-50 text-sage-600",
+  }[tone];
+
+  const titleClasses =
+    "min-w-0 font-medium text-ink-800 transition-colors hover:text-clay-600";
+
   return (
-    <div className="card p-4 flex flex-col gap-2">
+    <div className="grid min-h-11 grid-cols-[minmax(0,1fr)_auto] items-center gap-x-3 gap-y-0.5 px-4 py-2 sm:grid-cols-[11rem_minmax(0,1fr)_auto] sm:px-5">
       <Link
-        href={`/clients/${clientId}?tab=${encodeURIComponent(tab)}`}
-        className="flex items-center gap-1.5 font-semibold text-sm text-ink-800 hover:text-clay-600 transition-colors"
+        href={labelHref}
+        className="flex min-w-0 items-center gap-2 text-xs font-semibold text-ink-500 hover:text-ink-800"
       >
-        {icon}
-        {title}
+        <span
+          className={`flex h-6 w-6 shrink-0 items-center justify-center rounded ${toneClasses}`}
+          aria-hidden="true"
+        >
+          {icon}
+        </span>
+        <span className="truncate">{label}</span>
+        <span className="hidden text-ink-300 sm:inline" aria-hidden="true">
+          ·
+        </span>
       </Link>
-      <div className="space-y-2">{children}</div>
+      {href ? (
+        <Link
+          href={href}
+          className={`${titleClasses} col-span-2 pl-8 text-sm sm:col-span-1 sm:pl-0`}
+        >
+          {title}
+        </Link>
+      ) : (
+        <span className="col-span-2 min-w-0 pl-8 text-sm font-medium text-ink-800 sm:col-span-1 sm:pl-0">
+          {title}
+        </span>
+      )}
+      {meta && (
+        <span className="col-start-2 row-start-1 whitespace-nowrap text-xs text-ink-400 sm:col-start-3">
+          {meta}
+        </span>
+      )}
     </div>
   );
-}
-
-function Item({ children, href }: { children: React.ReactNode; href?: string }) {
-  const cls = "flex flex-col gap-0.5 text-xs border-l-2 border-ink-100 pl-2 hover:border-clay-300 transition-colors";
-  if (href) {
-    return (
-      <Link href={href} className={cls}>
-        {children}
-      </Link>
-    );
-  }
-  return <div className={cls}>{children}</div>;
 }

@@ -27,21 +27,18 @@ import {
 // has client_0001..client_0005 in it, so the very next "new" record collides
 // with an existing one and you end up looking at someone else's record.
 //
-// Belt-and-suspenders: Next's dev server can also spin up more than one
-// isolated module/worker context in the same process (e.g. separate RSC vs.
-// server-action compilation graphs), each getting its OWN globalThis and
-// therefore its own counter starting back at 1. That produced real duplicate
-// ids (two different "client_0001" records colliding in the UI). A per-context
-// random salt makes ids unique across any such duplicated context, even when
-// the counters themselves collide.
-const globalForId = globalThis as unknown as { __heartfulIdCounter?: number; __heartfulIdSalt?: string };
+// Seed IDs must remain stable across server restarts. A random per-process salt
+// made every bookmarked client/session URL turn into a 404 after each restart.
+// The counter is already kept on globalThis for hot reload safety; a fixed demo
+// namespace keeps the generated seed graph deterministic in every worker.
+const DEMO_ID_NAMESPACE = "demo";
+const globalForId = globalThis as unknown as { __heartfulIdCounter?: number };
 if (globalForId.__heartfulIdCounter === undefined) {
   globalForId.__heartfulIdCounter = 1;
-  globalForId.__heartfulIdSalt = Math.random().toString(36).slice(2, 6);
 }
 export function nextId(prefix: string) {
   const n = globalForId.__heartfulIdCounter!++;
-  return `${prefix}_${globalForId.__heartfulIdSalt}${n.toString().padStart(4, "0")}`;
+  return `${prefix}_${DEMO_ID_NAMESPACE}${n.toString().padStart(4, "0")}`;
 }
 
 const now = new Date("2026-06-23T12:00:00Z");
@@ -214,6 +211,7 @@ function buildMaya(): SeedBundle {
         status: "scheduled",
         location: "Video Call",
       },
+      { id: nextId("sess"), client_id: c.id, practitioner_id: PRACTITIONER.id, session_type: "intake_assessment", scheduled_at: daysFromNow(94), duration_minutes: 90, status: "scheduled", location: "Video Call" },
     ],
     transcripts: [],
     aiSummaries: [],
@@ -364,6 +362,7 @@ function buildDaniel(): SeedBundle {
       { id: nextId("sess"), client_id: c.id, practitioner_id: PRACTITIONER.id, session_type: "intake_assessment", scheduled_at: daysAgo(20), duration_minutes: 90, status: "completed" },
       { id: nextId("sess"), client_id: c.id, practitioner_id: PRACTITIONER.id, session_type: "preparation", scheduled_at: daysAgo(6), duration_minutes: 90, status: "completed" },
       { id: nextId("sess"), client_id: c.id, practitioner_id: PRACTITIONER.id, session_type: "harm_reduction_support", scheduled_at: daysFromNow(4), duration_minutes: 480, status: "scheduled", location: "Journey Space — Sunroom" },
+      { id: nextId("sess"), client_id: c.id, practitioner_id: PRACTITIONER.id, session_type: "harm_reduction_support", scheduled_at: daysFromNow(98), duration_minutes: 480, status: "scheduled", location: "Journey Space — Sunroom" },
     ],
     transcripts: [
       { id: nextId("tr"), client_id: c.id, source: "paste", raw_text: "[Intake transcript excerpt — Daniel discusses his father's passing, work transition, and prior psilocybin experiences...]", created_at: daysAgo(20) },
@@ -444,6 +443,8 @@ function buildPriya(): SeedBundle {
       { id: nextId("sess"), client_id: c.id, practitioner_id: PRACTITIONER.id, session_type: "intake_assessment", scheduled_at: daysAgo(34), duration_minutes: 90, status: "completed" },
       { id: nextId("sess"), client_id: c.id, practitioner_id: PRACTITIONER.id, session_type: "preparation", scheduled_at: daysAgo(20), duration_minutes: 90, status: "completed" },
       { id: nextId("sess"), client_id: c.id, practitioner_id: PRACTITIONER.id, session_type: "harm_reduction_support", scheduled_at: hoursAgo(30), duration_minutes: 480, status: "completed", location: "Journey Space — Garden Room" },
+      { id: nextId("sess"), client_id: c.id, practitioner_id: PRACTITIONER.id, session_type: "integration_1", scheduled_at: daysFromNow(86), duration_minutes: 60, status: "scheduled" },
+      { id: nextId("sess"), client_id: c.id, practitioner_id: PRACTITIONER.id, session_type: "integration_2", scheduled_at: daysFromNow(102), duration_minutes: 60, status: "scheduled" },
     ],
     transcripts: [],
     aiSummaries: [journeySummary],
@@ -537,6 +538,7 @@ function buildMarcus(): SeedBundle {
       { id: nextId("sess"), client_id: c.id, practitioner_id: PRACTITIONER.id, session_type: "preparation", scheduled_at: daysAgo(10), duration_minutes: 90, status: "completed" },
       { id: nextId("sess"), client_id: c.id, practitioner_id: PRACTITIONER.id, session_type: "harm_reduction_support", scheduled_at: daysAgo(5), duration_minutes: 480, status: "completed" },
       { id: nextId("sess"), client_id: c.id, practitioner_id: PRACTITIONER.id, session_type: "integration_1", scheduled_at: daysFromNow(1), duration_minutes: 60, status: "scheduled" },
+      { id: nextId("sess"), client_id: c.id, practitioner_id: PRACTITIONER.id, session_type: "integration_2", scheduled_at: daysFromNow(90), duration_minutes: 60, status: "scheduled" },
     ],
     transcripts: [],
     aiSummaries: [checkInSummary],
@@ -638,6 +640,7 @@ function buildSarah(): SeedBundle {
       "check_in_12hr_complete",
       "integration_1_complete",
       "integration_2_complete",
+      "growth_action_plan_complete",
       "journey_closed",
     ]),
     documents: docSet(c.id, {
@@ -660,8 +663,11 @@ function buildSarah(): SeedBundle {
       { id: nextId("sess"), client_id: c.id, practitioner_id: PRACTITIONER.id, session_type: "harm_reduction_support", scheduled_at: daysAgo(35), duration_minutes: 480, status: "completed" },
       { id: nextId("sess"), client_id: c.id, practitioner_id: PRACTITIONER.id, session_type: "integration_1", scheduled_at: daysAgo(33), duration_minutes: 60, status: "completed" },
       { id: nextId("sess"), client_id: c.id, practitioner_id: PRACTITIONER.id, session_type: "integration_2", scheduled_at: daysAgo(25), duration_minutes: 60, status: "completed" },
+      { id: nextId("sess"), client_id: c.id, practitioner_id: PRACTITIONER.id, session_type: "other", scheduled_at: daysFromNow(105), duration_minutes: 45, status: "scheduled" },
     ],
-    transcripts: [],
+    transcripts: [
+      { id: nextId("transcript"), client_id: c.id, source: "upload", raw_text: "Follow-up integration transcript uploaded for practitioner review.", created_at: daysAgo(24) },
+    ],
     aiSummaries: [growthPlanSummary],
     memory: [
       { id: nextId("mem"), client_id: c.id, item_type: "theme", content: "Pattern of self-shrinking to maintain harmony, especially with family.", phase: "harm_reduction_session", status: "resolved", created_at: daysAgo(35) },
@@ -678,7 +684,7 @@ function buildSarah(): SeedBundle {
     ],
     growthActionPlan: gap,
     tasks: [
-      { id: nextId("task"), client_id: c.id, practitioner_id: PRACTITIONER.id, title: "30-Day Follow-Up Call", task_type: "follow_up", due_at: daysFromNow(22), status: "pending", assigned_to: "practitioner" },
+      { id: nextId("task"), client_id: c.id, practitioner_id: PRACTITIONER.id, title: "30-Day Follow-Up Call", task_type: "follow_up", due_at: daysFromNow(105), status: "pending", assigned_to: "practitioner" },
     ],
     messages: [
       { id: nextId("msg"), client_id: c.id, sender: "client", body: "Wanted to say thank you — the pottery class restart has been such a small, good thing. Feels symbolic.", created_at: daysAgo(3) },

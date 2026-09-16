@@ -203,7 +203,7 @@ function PortalPageInner() {
   // demo picker below keys off portalClientId, which is "" until then, so a
   // returning client would flash the practitioner-only client list.
   if (!hydrated) {
-    return <div className="min-h-screen flex items-center justify-center text-ink-400 text-sm">Loading your portal...</div>;
+    return <div className="portal-shell min-h-screen flex items-center justify-center text-ink-400 text-sm">Loading your portal...</div>;
   }
 
   if (linkInvalid) {
@@ -215,7 +215,7 @@ function PortalPageInner() {
         )}`
       : null;
     return (
-      <div className="min-h-screen flex items-center justify-center bg-[var(--background)] px-4">
+      <div className="auth-shell min-h-screen flex items-center justify-center bg-[var(--background)] px-4">
         <div className="card p-8 max-w-md w-full text-center space-y-4">
           <div className="h-10 w-10 rounded-lg bg-clay-500 text-white flex items-center justify-center mx-auto">
             <HeartHandshake className="h-5 w-5" />
@@ -271,7 +271,7 @@ function PortalPageInner() {
 
   if (!portalClientId) {
     return (
-      <div className="min-h-screen flex items-center justify-center bg-[var(--background)] px-4">
+      <div className="portal-shell min-h-screen flex items-center justify-center bg-[var(--background)] px-4">
         <div className="card p-8 max-w-md w-full text-center space-y-4">
           <div className="h-10 w-10 rounded-lg bg-clay-500 text-white flex items-center justify-center mx-auto">
             <HeartHandshake className="h-5 w-5" />
@@ -316,7 +316,7 @@ function PortalPageInner() {
   }
 
   if (!bundle || !bundle.client) {
-    return <div className="min-h-screen flex items-center justify-center text-ink-400 text-sm">Loading your portal...</div>;
+    return <div className="portal-shell min-h-screen flex items-center justify-center text-ink-400 text-sm">Loading your portal...</div>;
   }
 
   const { client } = bundle;
@@ -373,7 +373,7 @@ function PortalPageInner() {
 
   if (agreementItems.length > 0 && agreementsOutstanding > 0 && !previewSkipGate) {
     return (
-      <div className="min-h-screen bg-[var(--background)]">
+      <div className="portal-shell min-h-screen bg-[var(--background)]">
         <header className="bg-white border-b border-ink-100">
           <div className="max-w-2xl mx-auto px-4 md:px-6 py-3.5 flex items-center gap-2">
             <div className="h-8 w-8 rounded-lg bg-clay-500 text-white flex items-center justify-center">
@@ -381,7 +381,7 @@ function PortalPageInner() {
             </div>
             <div>
               <div className="font-semibold text-ink-900 leading-tight">Heartful OS</div>
-              <div className="text-[11px] text-ink-400 leading-tight">Your Journey Portal</div>
+              <div className="text-xs text-ink-400 leading-tight">Your Journey Portal</div>
             </div>
             {isPreview && (
               <button
@@ -399,7 +399,7 @@ function PortalPageInner() {
             <div className="h-11 w-11 rounded-full bg-clay-100 text-clay-600 flex items-center justify-center mx-auto">
               <FileSignature className="h-5 w-5" />
             </div>
-            <h1 className="text-xl font-semibold text-ink-900">
+            <h1 className="app-page-title text-ink-900">
               Welcome, {client.full_name.split(" ")[0]}
             </h1>
             <p className="text-sm text-ink-500 leading-relaxed">
@@ -462,7 +462,7 @@ function PortalPageInner() {
 
   if (showWelcome) {
     return (
-      <div className="min-h-screen bg-[var(--background)]">
+      <div className="portal-shell min-h-screen bg-[var(--background)]">
         <header className="bg-white border-b border-ink-100">
           <div className="max-w-2xl mx-auto px-4 md:px-6 py-3.5 flex items-center gap-2">
             <div className="h-8 w-8 rounded-lg bg-clay-500 text-white flex items-center justify-center">
@@ -470,7 +470,7 @@ function PortalPageInner() {
             </div>
             <div>
               <div className="font-semibold text-ink-900 leading-tight">Heartful OS</div>
-              <div className="text-[11px] text-ink-400 leading-tight">Your Journey Portal</div>
+              <div className="text-xs text-ink-400 leading-tight">Your Journey Portal</div>
             </div>
           </div>
         </header>
@@ -495,7 +495,7 @@ function PortalPageInner() {
   }
 
   return (
-    <div className="min-h-screen bg-[var(--background)]">
+    <div className="portal-shell min-h-screen bg-[var(--background)]">
       <header className="sticky top-0 z-20 bg-white/90 backdrop-blur border-b border-ink-100">
         <div className="max-w-4xl mx-auto px-4 md:px-6 py-3.5 flex items-center justify-between">
           <button
@@ -508,7 +508,7 @@ function PortalPageInner() {
             </div>
             <div className="text-left">
               <div className="font-semibold text-ink-900 leading-tight">Heartful OS</div>
-              <div className="text-[11px] text-ink-400 leading-tight">Your Journey Portal</div>
+              <div className="text-xs text-ink-400 leading-tight">Your Journey Portal</div>
             </div>
           </button>
           <div className="flex items-center gap-3">
@@ -926,13 +926,13 @@ function SessionRow({
                 <div className="mt-2 space-y-2 text-sm text-ink-700 bg-ink-50/60 rounded-xl p-3">
                   {typeof cs.content.summary === "string" && (
                     <div>
-                      <div className="text-[11px] uppercase tracking-wide text-ink-400 mb-1">Summary</div>
+                      <div className="text-xs uppercase tracking-wide text-ink-400 mb-1">Summary</div>
                       <p className="whitespace-pre-wrap">{cs.content.summary}</p>
                     </div>
                   )}
                   {typeof cs.content.action_items === "string" && cs.content.action_items !== "None mentioned." && (
                     <div>
-                      <div className="text-[11px] uppercase tracking-wide text-ink-400 mb-1">Action Items</div>
+                      <div className="text-xs uppercase tracking-wide text-ink-400 mb-1">Action Items</div>
                       <p className="whitespace-pre-wrap">{cs.content.action_items}</p>
                     </div>
                   )}
@@ -1026,7 +1026,7 @@ function SessionRow({
 function PlanList({ title, items }: { title: string; items: string[] }) {
   return (
     <div>
-      <div className="text-[11px] uppercase tracking-wide text-ink-400 mb-1">{title}</div>
+      <div className="text-xs uppercase tracking-wide text-ink-400 mb-1">{title}</div>
       <ul className="list-disc list-inside text-ink-700 space-y-0.5">
         {items.map((i, idx) => (
           <li key={idx}>{i}</li>
@@ -1180,7 +1180,7 @@ function MessagesPanel({ clientId, messages, onSent }: { clientId: string; messa
         {messages.map((m) => (
           <div key={m.id} className={cx("max-w-[80%] rounded-2xl px-3 py-2 text-sm", m.sender === "client" ? "bg-clay-500 text-white ml-auto" : "bg-ink-100 text-ink-800")}>
             {m.body}
-            <div className={cx("text-[10px] mt-1", m.sender === "client" ? "text-clay-100" : "text-ink-400")}>{formatDate(m.created_at)}</div>
+            <div className={cx("text-xs mt-1", m.sender === "client" ? "text-clay-100" : "text-ink-400")}>{formatDate(m.created_at)}</div>
           </div>
         ))}
         {messages.length === 0 && <p className="text-sm text-ink-400">No messages yet.</p>}
@@ -1228,7 +1228,7 @@ function PortalAuthGate({
   onUnlocked: () => void;
 }) {
   return (
-    <div className="min-h-screen flex items-center justify-center bg-[var(--background)] px-4">
+    <div className="auth-shell min-h-screen flex items-center justify-center bg-[var(--background)] px-4">
       <div className="card p-6 w-full max-w-sm space-y-4 text-center">
         <div className="h-10 w-10 rounded-lg bg-clay-500 text-white flex items-center justify-center mx-auto">
           <HeartHandshake className="h-5 w-5" />

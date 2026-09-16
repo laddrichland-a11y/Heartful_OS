@@ -113,7 +113,7 @@ export default function GrowthActionPlanWorkspace({
 function PlanList({ title, items }: { title: string; items: string[] }) {
   return (
     <div>
-      <div className="text-[11px] uppercase tracking-wide text-ink-400 mb-1">{title}</div>
+      <div className="text-xs uppercase tracking-wide text-ink-400 mb-1">{title}</div>
       <ul className="list-disc list-inside text-ink-700 space-y-0.5">
         {items.map((i, idx) => (
           <li key={idx}>{i}</li>

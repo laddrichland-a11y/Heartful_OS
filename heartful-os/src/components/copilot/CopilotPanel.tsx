@@ -1,10 +1,12 @@
 "use client";
 
-import { useState } from "react";
+import { useRef, useState } from "react";
+import Image from "next/image";
 import Link from "next/link";
-import { Sparkles, Loader2, CalendarClock, ArrowRight, ListChecks } from "lucide-react";
+import { Sparkles, Loader2, CalendarClock, ArrowRight, ChevronRight, ListChecks } from "lucide-react";
 import SummaryCard from "@/components/ai/SummaryCard";
-import { formatDateTime } from "@/lib/utils";
+import FilterSelect from "@/components/client/FilterSelect";
+import { clientAvatarSrc, formatDateTime, initials } from "@/lib/utils";
 
 interface SessionRow {
   id: string;
@@ -20,6 +22,8 @@ interface SummaryResult {
   model?: string;
 }
 
+const UNSCHEDULED = "unscheduled";
+
 export default function CopilotPanel({
   sessions,
   clients,
@@ -27,259 +31,226 @@ export default function CopilotPanel({
   sessions: SessionRow[];
   clients: { id: string; full_name: string }[];
 }) {
-  const [briefingFor, setBriefingFor] = useState<string | null>(null);
+  const prepareRef = useRef<HTMLElement>(null);
+  const [selectedClient, setSelectedClient] = useState("");
+  const [selectedSession, setSelectedSession] = useState("");
   const [briefing, setBriefing] = useState<SummaryResult | null>(null);
-  // Which client the current briefing was saved against — surfaced as a
-  // "Saved to {name}'s record" link so it's clear the briefing isn't just
-  // floating in this panel; it's archived on that client's own record too.
   const [savedTo, setSavedTo] = useState<{ clientId: string; clientName: string } | null>(null);
-  const [busyId, setBusyId] = useState<string | null>(null);
-  // Which client's session stages are expanded in the "Prepare Me" list —
-  // grouped by client instead of one flat row per upcoming session, since a
-  // single client can have several upcoming stages (intake, 12-hr check-in,
-  // integration 1/2, etc.) and a flat list repeated their name once per row.
-  const [expandedClient, setExpandedClient] = useState<string | null>(null);
-
-  const [pickedClient, setPickedClient] = useState("");
+  const [briefingBusy, setBriefingBusy] = useState(false);
+  const [briefingError, setBriefingError] = useState("");
+  const [summaryClient, setSummaryClient] = useState("");
   const [livingSummary, setLivingSummary] = useState<SummaryResult | null>(null);
   const [livingBusy, setLivingBusy] = useState(false);
+  const [summaryError, setSummaryError] = useState("");
 
-  async function prepareMe(
-    busyKey: string,
-    body: { clientId: string; clientName: string; sessionId?: string; sessionTypeLabel: string }
-  ) {
-    setBusyId(busyKey);
-    setBriefingFor(busyKey);
+  const orderedSessions = [...sessions].sort(
+    (a, b) => new Date(a.scheduledAt).getTime() - new Date(b.scheduledAt).getTime()
+  );
+  const clientSessions = orderedSessions.filter((s) => s.clientId === selectedClient);
+  const session = clientSessions.find((s) => s.id === selectedSession);
+  const client = clients.find((c) => c.id === selectedClient);
+  const canBrief = Boolean(client && (session || (selectedSession === UNSCHEDULED && clientSessions.length === 0)));
+
+  function selectUpcoming(s: SessionRow) {
+    setSelectedClient(s.clientId);
+    setSelectedSession(s.id);
+    setBriefing(null);
+    setSavedTo(null);
+    setBriefingError("");
+    prepareRef.current?.scrollIntoView({ behavior: "smooth", block: "start" });
+    requestAnimationFrame(() =>
+      prepareRef.current?.querySelector<HTMLButtonElement>(".prep-select button")?.focus({ preventScroll: true })
+    );
+  }
+
+  async function generateBriefing() {
+    if (!client || !canBrief) return;
+    setBriefingBusy(true);
+    setBriefing(null);
+    setBriefingError("");
     setSavedTo(null);
     try {
       const res = await fetch("/api/ai/generate", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
-          clientId: body.clientId,
+          clientId: client.id,
           summaryType: "prepare_me_briefing",
-          sessionId: body.sessionId,
-          sessionTypeLabel: body.sessionTypeLabel,
+          sessionId: session?.id,
+          sessionTypeLabel: session?.label ?? "Upcoming Session",
         }),
       });
       const json = await res.json();
+      if (!res.ok || !json.summary) throw new Error(json.error ?? "Briefing could not be generated.");
       setBriefing(json.summary);
-      // This briefing is now permanently saved on the client's own record
-      // (AiSummary tied to clientId) — not just sitting in this panel's
-      // local state, so make that visible instead of implying it.
-      setSavedTo({ clientId: body.clientId, clientName: body.clientName });
+      setSavedTo({ clientId: client.id, clientName: client.full_name });
+    } catch (error) {
+      setBriefingError(error instanceof Error ? error.message : "Briefing could not be generated.");
     } finally {
-      setBusyId(null);
+      setBriefingBusy(false);
     }
   }
 
   async function generateLivingSummary() {
-    if (!pickedClient) return;
+    if (!summaryClient) return;
     setLivingBusy(true);
+    setSummaryError("");
     try {
       const res = await fetch("/api/ai/generate", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ clientId: pickedClient, summaryType: "living_journey_summary" }),
+        body: JSON.stringify({ clientId: summaryClient, summaryType: "living_journey_summary" }),
       });
       const json = await res.json();
+      if (!res.ok || !json.summary) throw new Error(json.error ?? "Summary could not be generated.");
       setLivingSummary(json.summary);
+    } catch (error) {
+      setSummaryError(error instanceof Error ? error.message : "Summary could not be generated.");
     } finally {
       setLivingBusy(false);
     }
   }
 
-  // Group the flat session list by client. Seeded from the full client list
-  // (not just clients with a scheduled session) so someone like a brand-new
-  // intake client — who may not have a session entered on the calendar yet —
-  // still shows up in the dropdown and can get a briefing.
-  const byClient = new Map<string, { clientName: string; sessions: SessionRow[] }>();
-  for (const c of clients) {
-    byClient.set(c.id, { clientName: c.full_name, sessions: [] });
-  }
-  for (const s of sessions) {
-    const entry = byClient.get(s.clientId) ?? { clientName: s.clientName, sessions: [] };
-    entry.sessions.push(s);
-    byClient.set(s.clientId, entry);
-  }
-  const clientGroups = [...byClient.entries()]
-    .map(([clientId, v]) => ({ clientId, ...v }))
-    .sort((a, b) => a.clientName.localeCompare(b.clientName));
-
-  function jumpToClient(clientId: string) {
-    setExpandedClient(clientId);
-    document.getElementById("prepare-me-card")?.scrollIntoView({ behavior: "smooth", block: "start" });
-  }
-
   return (
-    <div className="space-y-6">
-      <div className="card p-5">
-        <h2 className="font-semibold text-ink-900 mb-1 flex items-center gap-2">
-          <ListChecks className="h-4 w-4 text-plum-500" /> Next 30 Days
-        </h2>
-        <p className="text-xs text-ink-400 mb-4">
-          Every upcoming stage across your practice, in order — so you know what to prepare for and when. Click a
-          row to jump straight to that client below.
-        </p>
-        {sessions.length === 0 ? (
-          <p className="text-sm text-ink-400">Nothing scheduled in the next 30 days.</p>
+    <div className="prep-center">
+      <section className="card prep-section" aria-labelledby="upcoming-heading">
+        <div className="prep-heading">
+          <h2 id="upcoming-heading"><ListChecks className="h-4 w-4" /> Upcoming Sessions</h2>
+          <p>{sessions.length} {sessions.length === 1 ? "session" : "sessions"} in the next 30 days.</p>
+        </div>
+        {orderedSessions.length === 0 ? (
+          <p className="prep-empty">Nothing scheduled in the next 30 days.</p>
         ) : (
-          <div className="space-y-1.5">
-            {sessions.map((s) => (
+          <div className="prep-session-list">
+            {orderedSessions.map((s, index) => (
               <button
                 key={s.id}
-                onClick={() => jumpToClient(s.clientId)}
-                className="w-full flex items-center justify-between gap-3 bg-ink-50/40 hover:bg-ink-50 rounded-lg px-3 py-2 text-left transition-colors"
+                type="button"
+                onClick={() => selectUpcoming(s)}
+                className="prep-session-row"
+                aria-label={`Prepare for ${s.clientName}, ${s.label}, ${formatDateTime(s.scheduledAt)}`}
               >
-                <div className="flex items-center gap-2 min-w-0">
-                  <span className="text-xs font-medium text-ink-900 truncate">{s.clientName}</span>
-                  <span className="text-xs text-ink-400 shrink-0">·</span>
-                  <span className="text-xs text-ink-600 truncate">{s.label}</span>
-                </div>
-                <span className="text-xs text-ink-400 shrink-0">{formatDateTime(s.scheduledAt)}</span>
+                <span className="prep-session-identity">
+                  <span className="prep-session-avatar" aria-hidden="true">
+                    {clientAvatarSrc(s.clientName) ? (
+                      <Image src={clientAvatarSrc(s.clientName)!} alt="" width={30} height={30} sizes="30px" />
+                    ) : initials(s.clientName)}
+                  </span>
+                  <span className="prep-session-client">{s.clientName}</span>
+                  {index === 0 && <span className="prep-next-badge">Next</span>}
+                </span>
+                <span className="prep-session-type">{s.label}</span>
+                <span className="prep-session-time">{formatDateTime(s.scheduledAt)}</span>
+                <ChevronRight className="prep-session-chevron" aria-hidden="true" />
               </button>
             ))}
           </div>
         )}
-      </div>
+      </section>
 
-      <div id="prepare-me-card" className="card p-5">
-        <h2 className="font-semibold text-ink-900 mb-1 flex items-center gap-2">
-          <CalendarClock className="h-4 w-4 text-clay-500" /> Prepare Me For This Session
-        </h2>
-        <p className="text-xs text-ink-400 mb-4">
-          Generates a structured pre-session briefing — who this client is, why they&apos;re here, intentions, risks,
-          insights, commitments, and focus for today — pulled from their full journey history.
-        </p>
-        {clientGroups.length === 0 ? (
-          <p className="text-sm text-ink-400">No upcoming sessions scheduled.</p>
-        ) : (
-          <div className="space-y-3">
-            <select
-              value={expandedClient ?? ""}
-              onChange={(e) => setExpandedClient(e.target.value || null)}
-              className="w-full border border-ink-200 rounded-xl px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-clay-200"
-            >
-              <option value="">Select a client...</option>
-              {clientGroups.map((group) => (
-                <option key={group.clientId} value={group.clientId}>
-                  {group.clientName}
-                  {group.sessions.length > 0
-                    ? ` (${group.sessions.length} upcoming ${group.sessions.length === 1 ? "stage" : "stages"})`
-                    : ""}
-                </option>
-              ))}
-            </select>
-
-            {expandedClient &&
-              (() => {
-                const group = clientGroups.find((g) => g.clientId === expandedClient);
-                if (!group) return null;
-                const genericKey = `generic:${group.clientId}`;
-                return (
-                  <div className="space-y-2">
-                    {group.sessions.length === 0 && (
-                      <div className="flex items-center justify-between gap-3 bg-ink-50/40 rounded-lg px-3 py-2.5">
-                        <div className="text-xs text-ink-600">No session scheduled on the calendar yet</div>
-                        <button
-                          disabled={busyId === genericKey}
-                          onClick={() =>
-                            prepareMe(genericKey, {
-                              clientId: group.clientId,
-                              clientName: group.clientName,
-                              sessionTypeLabel: "Upcoming Session",
-                            })
-                          }
-                          className="btn-secondary text-xs px-3 py-1.5 flex items-center gap-1.5 shrink-0"
-                        >
-                          {busyId === genericKey ? (
-                            <Loader2 className="h-3.5 w-3.5 animate-spin" />
-                          ) : (
-                            <Sparkles className="h-3.5 w-3.5" />
-                          )}
-                          Prepare Me
-                        </button>
-                      </div>
-                    )}
-                    {group.sessions.map((s) => (
-                      <div key={s.id} className="flex items-center justify-between gap-3 bg-ink-50/40 rounded-lg px-3 py-2.5">
-                        <div className="text-xs text-ink-600">
-                          {s.label} · {formatDateTime(s.scheduledAt)}
-                        </div>
-                        <button
-                          disabled={busyId === s.id}
-                          onClick={() =>
-                            prepareMe(s.id, {
-                              clientId: s.clientId,
-                              clientName: s.clientName,
-                              sessionId: s.id,
-                              sessionTypeLabel: s.label,
-                            })
-                          }
-                          className="btn-secondary text-xs px-3 py-1.5 flex items-center gap-1.5 shrink-0"
-                        >
-                          {busyId === s.id ? (
-                            <Loader2 className="h-3.5 w-3.5 animate-spin" />
-                          ) : (
-                            <Sparkles className="h-3.5 w-3.5" />
-                          )}
-                          Prepare Me
-                        </button>
-                      </div>
-                    ))}
-                    {briefing &&
-                      (briefingFor === genericKey || group.sessions.some((s) => s.id === briefingFor)) && (
-                        <div className="pt-1 space-y-2">
-                          <SummaryCard title="Pre-Session Briefing" content={briefing.content} model={briefing.model} />
-                          {savedTo && (
-                            <Link
-                              href={`/clients/${savedTo.clientId}?tab=${encodeURIComponent("AI Copilot")}`}
-                              className="inline-flex items-center gap-1.5 text-xs text-clay-600 hover:text-clay-700 font-medium"
-                            >
-                              Saved to {savedTo.clientName}&apos;s record <ArrowRight className="h-3 w-3" />
-                            </Link>
-                          )}
-                        </div>
-                      )}
-                  </div>
-                );
-              })()}
+      <section ref={prepareRef} className="card prep-section prep-primary" aria-labelledby="prepare-heading">
+        <div className="prep-heading">
+          <h2 id="prepare-heading"><CalendarClock className="h-4 w-4" /> Prepare for Session</h2>
+        </div>
+        <div className="prep-controls">
+          <div className="prep-field">
+            <span>Client</span>
+            <FilterSelect
+              ariaLabel="Client for session briefing"
+              value={selectedClient}
+              options={[
+                { value: "", label: "Select a client" },
+                ...clients.map((c) => ({ value: c.id, label: c.full_name })),
+              ]}
+              onChange={(value) => {
+                setSelectedClient(value);
+                setSelectedSession("");
+                setBriefing(null);
+                setSavedTo(null);
+                setBriefingError("");
+              }}
+              className="prep-select"
+              menuClassName="prep-select-menu"
+              autoFlip
+            />
           </div>
-        )}
-      </div>
-
-      <div className="card p-5">
-        <h2 className="font-semibold text-ink-900 mb-1 flex items-center gap-2">
-          <Sparkles className="h-4 w-4 text-plum-500" /> Living Journey Summary
-        </h2>
-        <p className="text-xs text-ink-400 mb-4">
-          A continuously updated narrative of a client&apos;s journey — goals, themes, growth, and open threads —
-          synthesized from everything on file.
-        </p>
-        <div className="flex gap-2 mb-3">
-          <select
-            value={pickedClient}
-            onChange={(e) => setPickedClient(e.target.value)}
-            className="flex-1 border border-ink-200 rounded-xl px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-clay-200"
-          >
-            <option value="">Select a client...</option>
-            {clients.map((c) => (
-              <option key={c.id} value={c.id}>
-                {c.full_name}
-              </option>
-            ))}
-          </select>
-          <button
-            disabled={!pickedClient || livingBusy}
-            onClick={generateLivingSummary}
-            className="btn-primary text-sm px-4 flex items-center gap-2 shrink-0 disabled:opacity-60"
-          >
-            {livingBusy ? <Loader2 className="h-4 w-4 animate-spin" /> : <Sparkles className="h-4 w-4" />}
-            Generate
+          <div className="prep-field">
+            <span>Session</span>
+            <FilterSelect
+              ariaLabel="Session for briefing"
+              value={selectedSession}
+              disabled={!selectedClient}
+              options={[
+                { value: "", label: "Select a session" },
+                ...clientSessions.map((s) => ({
+                  value: s.id,
+                  label: `${s.label} · ${formatDateTime(s.scheduledAt)}`,
+                })),
+                ...(selectedClient && clientSessions.length === 0
+                  ? [{ value: UNSCHEDULED, label: "Upcoming Session (not scheduled)" }]
+                  : []),
+              ]}
+              onChange={(value) => {
+                setSelectedSession(value);
+                setBriefing(null);
+                setSavedTo(null);
+                setBriefingError("");
+              }}
+              className="prep-select"
+              menuClassName="prep-select-menu"
+              autoFlip
+            />
+          </div>
+          <button type="button" disabled={!canBrief || briefingBusy} onClick={generateBriefing} className="btn-primary prep-action">
+            {briefingBusy ? <Loader2 className="h-4 w-4 animate-spin" /> : <Sparkles className="h-4 w-4" />}
+            Generate Briefing
           </button>
         </div>
-        {livingSummary && <SummaryCard title="Living Journey Summary" content={livingSummary.content} model={livingSummary.model} />}
-      </div>
+        {briefingError && <p className="prep-error" role="alert">{briefingError}</p>}
+        {briefing && (
+          <div className="prep-result">
+            <SummaryCard title="Pre-Session Briefing" content={briefing.content} model={briefing.model} />
+            {savedTo && (
+              <Link href={`/clients/${savedTo.clientId}?tab=${encodeURIComponent("AI Copilot")}`} className="prep-saved-link">
+                Saved to {savedTo.clientName}&apos;s record <ArrowRight className="h-3 w-3" />
+              </Link>
+            )}
+          </div>
+        )}
+      </section>
+
+      <section className="card prep-section prep-secondary" aria-labelledby="journey-heading">
+        <div className="prep-heading">
+          <h2 id="journey-heading"><Sparkles className="h-4 w-4" /> Living Journey Summary</h2>
+        </div>
+        <div className="prep-controls prep-summary-controls">
+          <div className="prep-field">
+            <span>Client</span>
+            <FilterSelect
+              ariaLabel="Client for journey summary"
+              value={summaryClient}
+              options={[
+                { value: "", label: "Select a client" },
+                ...clients.map((c) => ({ value: c.id, label: c.full_name })),
+              ]}
+              onChange={(value) => {
+                setSummaryClient(value);
+                setLivingSummary(null);
+                setSummaryError("");
+              }}
+              className="prep-select"
+              menuClassName="prep-select-menu"
+              autoFlip
+            />
+          </div>
+          <button type="button" disabled={!summaryClient || livingBusy} onClick={generateLivingSummary} className="btn-secondary prep-action">
+            {livingBusy ? <Loader2 className="h-4 w-4 animate-spin" /> : <Sparkles className="h-4 w-4" />}
+            Generate Summary
+          </button>
+        </div>
+        {summaryError && <p className="prep-error" role="alert">{summaryError}</p>}
+        {livingSummary && <div className="prep-result"><SummaryCard title="Living Journey Summary" content={livingSummary.content} model={livingSummary.model} /></div>}
+      </section>
     </div>
   );
 }

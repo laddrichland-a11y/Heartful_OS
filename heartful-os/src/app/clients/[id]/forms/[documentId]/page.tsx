@@ -43,7 +43,7 @@ export default async function ClientFormPage({
           <ArrowLeft className="h-3.5 w-3.5" /> Back to {client.full_name}
         </Link>
         <div className="mb-4">
-          <h1 className="text-xl font-semibold text-ink-900">{title}</h1>
+          <h1 className="app-page-title text-ink-900">{title}</h1>
           <p className="text-sm text-ink-500 mt-0.5">{client.full_name}</p>
         </div>
         <FullPageForm

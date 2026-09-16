@@ -836,7 +836,7 @@ export default function JourneyDayWorkspace({
 
           {(transcript.trim() || recordings.length > 0) && (
             <div className="rounded-xl border border-ink-100 bg-ink-50/60 p-3 space-y-2">
-              <p className="text-[11px] uppercase tracking-wide text-ink-400">Transcript &amp; Recording Used</p>
+              <p className="text-xs uppercase tracking-wide text-ink-400">Transcript &amp; Recording Used</p>
               {transcript.trim() && (
                 <details className="text-sm">
                   <summary className="cursor-pointer text-ink-600 hover:text-ink-900 text-xs font-medium">

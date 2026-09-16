@@ -66,10 +66,9 @@ export default async function JourneyDayPage({ params }: { params: Promise<{ id:
     .sort((a, b) => (a.scheduled_at! < b.scheduled_at! ? -1 : 1))[0];
 
   return (
-    <AppShell title={`Journey Day — ${client.full_name}`}>
+    <AppShell title={client.full_name} variant="wellnest-client">
       <ClientPhaseNav clientId={id} current="harm_reduction_session" />
-      <div className="flex items-center justify-between gap-3 mb-4">
-        <p className="text-xs uppercase tracking-wide text-ink-400">Phase 3 · Harm Reduction Support Session · 8 hours</p>
+      <div className="mb-4 flex items-center justify-end gap-3">
         <div className="flex items-center gap-2">
           <JourneyPrepEmailButton
             clientId={id}
@@ -94,6 +93,7 @@ export default async function JourneyDayPage({ params }: { params: Promise<{ id:
         clientId={id}
         milestoneKey="journey_complete"
         label="Journey Day"
+        meta="Phase 3 · Harm Reduction Support · 8 hours"
         initialCompleted={milestone?.completed ?? false}
       />
       <PhasePrepareMe clientId={id} sessionTypeLabel="Journey Day" sessionId={session?.id} />
@@ -144,7 +144,7 @@ export default async function JourneyDayPage({ params }: { params: Promise<{ id:
               .filter(([k]) => !["id", "client_id", "updated_at"].includes(k))
               .map(([k, v]) => (
                 <div key={k}>
-                  <dt className="text-[11px] uppercase tracking-wide text-ink-400">{k.replace(/_/g, " ")}</dt>
+                  <dt className="text-xs uppercase tracking-wide text-ink-400">{k.replace(/_/g, " ")}</dt>
                   <dd className="text-sm text-ink-700">{String(v ?? "—")}</dd>
                 </div>
               ))}

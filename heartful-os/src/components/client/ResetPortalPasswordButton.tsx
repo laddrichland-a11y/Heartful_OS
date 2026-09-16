@@ -9,7 +9,15 @@ import { resetPortalPasswordAction } from "@/lib/actions";
 // this is the realistic reset path: the client tells the practitioner, the
 // practitioner clicks this, and the client's portal link then shows the
 // "create your account" form again so they can set a new password.
-export default function ResetPortalPasswordButton({ clientId, clientName }: { clientId: string; clientName: string }) {
+export default function ResetPortalPasswordButton({
+  clientId,
+  clientName,
+  inline = false,
+}: {
+  clientId: string;
+  clientName: string;
+  inline?: boolean;
+}) {
   const [pending, startTransition] = useTransition();
   const [done, setDone] = useState(false);
 
@@ -30,7 +38,9 @@ export default function ResetPortalPasswordButton({ clientId, clientName }: { cl
       type="button"
       onClick={handleClick}
       disabled={pending}
-      className="text-xs text-ink-500 hover:text-clay-600 underline underline-offset-2 flex items-center gap-1 ml-auto disabled:opacity-50"
+      className={inline
+        ? "wn-inline-info-action disabled:opacity-50"
+        : "text-xs text-ink-500 hover:text-clay-600 underline underline-offset-2 flex items-center gap-1 ml-auto disabled:opacity-50"}
     >
       <KeyRound className="h-3 w-3" /> {pending ? "Resetting..." : done ? "Password reset" : "Reset portal password"}
     </button>

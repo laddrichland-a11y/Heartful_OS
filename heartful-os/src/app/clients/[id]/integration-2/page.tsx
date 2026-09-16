@@ -31,13 +31,13 @@ export default async function Integration2Page({ params }: { params: Promise<{ i
   const milestone = milestones.find((m) => m.milestone_key === "integration_2_complete");
 
   return (
-    <AppShell title={`Integration Session Two — ${client.full_name}`}>
+    <AppShell title={client.full_name} variant="wellnest-client">
       <ClientPhaseNav clientId={id} current="integration_2" />
-      <p className="text-xs uppercase tracking-wide text-ink-400 mb-4">Integration · Session Two · within 10 days</p>
       <MilestoneToggleBanner
         clientId={id}
         milestoneKey="integration_2_complete"
         label="Integration Session Two"
+        meta="Phase 6 · Within 10 days"
         initialCompleted={milestone?.completed ?? false}
       />
       <PhasePrepareMe clientId={id} sessionTypeLabel="Integration Session 2" sessionType="integration_2" />

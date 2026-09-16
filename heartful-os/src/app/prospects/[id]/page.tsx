@@ -1,7 +1,6 @@
 import AppShell from "@/components/layout/AppShell";
 import { getProspect, getProspectCalls, getProspectTranscripts, getPractitioner } from "@/lib/data";
 import { notFound } from "next/navigation";
-import BackButton from "@/components/layout/BackButton";
 import ProspectWorkspace from "@/components/prospect/ProspectWorkspace";
 
 export const dynamic = "force-dynamic";
@@ -21,8 +20,7 @@ export default async function ProspectDetailPage({
   if (!prospect) notFound();
 
   return (
-    <AppShell title={prospect.full_name}>
-      <BackButton label="Back to Prospects" />
+    <AppShell title="Prospects">
       <ProspectWorkspace
         prospect={prospect}
         calls={calls}

@@ -7,6 +7,7 @@ import {
   getDocuments,
   getSessions,
   getAiSummaries,
+  getAiConversationMessages,
   getMemory,
   getMessages,
   getPostIntegrationForms,
@@ -19,12 +20,13 @@ import {
   getFormSubmissionsForClient,
   getPractitioner,
   getEmailLogs,
+  getTranscripts,
 } from "@/lib/data";
 import { notFound } from "next/navigation";
 import { headers } from "next/headers";
 import ClientHeader from "@/components/client/ClientHeader";
 import ClientRecordTabs from "@/components/client/ClientRecordTabs";
-import ClientActionCard from "@/components/client/ClientActionCard";
+import ClientContextRail from "@/components/client/ClientContextRail";
 import { TABS, Tab } from "@/lib/utils";
 
 export const dynamic = "force-dynamic";
@@ -47,6 +49,7 @@ export default async function ClientPage({
     documents,
     sessions,
     aiSummaries,
+    aiConversationMessages,
     memory,
     messages,
     postIntegrationForms,
@@ -59,11 +62,13 @@ export default async function ClientPage({
     formSubmissions,
     practitioner,
     emailLogs,
+    transcripts,
   ] = await Promise.all([
     getMilestones(id),
     getDocuments(id),
     getSessions(id),
     getAiSummaries(id),
+    getAiConversationMessages(id),
     getMemory(id),
     getMessages(id),
     getPostIntegrationForms(id),
@@ -76,6 +81,7 @@ export default async function ClientPage({
     getFormSubmissionsForClient(id),
     getPractitioner(),
     getEmailLogs(id),
+    getTranscripts(id),
   ]);
 
   const h = await headers();
@@ -84,45 +90,56 @@ export default async function ClientPage({
   const portalUrl = `${protocol}://${host}/portal?client=${id}`;
 
   return (
-    <AppShell title={client.full_name}>
-      <Link href="/clients" className="text-sm text-ink-400 hover:text-ink-700 flex items-center gap-1 mb-4">
+    <AppShell title={client.full_name} variant="wellnest-client">
+      <Link href="/clients" className="wn-back-link text-sm text-ink-400 hover:text-ink-700 flex items-center gap-1 mb-4">
         <ArrowLeft className="h-3.5 w-3.5" /> All Clients
       </Link>
-      <ClientHeader
-        client={client}
-        milestones={milestones}
-        sessions={sessions}
-        referralSources={referralSources}
-        practitioner={practitioner}
-        portalUrl={portalUrl}
-        autoOpenIntro={intro === "1"}
-      />
-      <ClientActionCard
-        clientId={id}
-        sessions={sessions}
-        documents={documents}
-        tasks={tasks}
-        portalAssignments={portalAssignments}
-        formSubmissions={formSubmissions}
-      />
-      <ClientRecordTabs
-        client={client}
-        documents={documents}
-        sessions={sessions}
-        aiSummaries={aiSummaries}
-        memory={memory}
-        messages={messages}
-        postIntegrationForms={postIntegrationForms}
-        preparationPlan={preparationPlan}
-        checkIns={checkIns}
-        tasks={tasks}
-        portalAssignments={portalAssignments}
-        formTemplates={formTemplates}
-        formSubmissions={formSubmissions}
-        milestones={milestones}
-        emailLogs={emailLogs}
-        defaultTab={tab}
-      />
+      <div className="wn-client-page-grid">
+        <div className="wn-client-primary">
+          <ClientHeader
+            client={client}
+            milestones={milestones}
+            sessions={sessions}
+            referralSources={referralSources}
+            practitioner={practitioner}
+            portalUrl={portalUrl}
+            autoOpenIntro={intro === "1"}
+          />
+          <ClientRecordTabs
+            client={client}
+            documents={documents}
+            sessions={sessions}
+            aiSummaries={aiSummaries}
+            aiConversationMessages={aiConversationMessages}
+            memory={memory}
+            messages={messages}
+            postIntegrationForms={postIntegrationForms}
+            preparationPlan={preparationPlan}
+            checkIns={checkIns}
+            tasks={tasks}
+            portalAssignments={portalAssignments}
+            formTemplates={formTemplates}
+            formSubmissions={formSubmissions}
+            milestones={milestones}
+            emailLogs={emailLogs}
+            defaultTab={tab}
+          />
+        </div>
+        <ClientContextRail
+          client={client}
+          sessions={sessions}
+          milestones={milestones}
+          documents={documents}
+          formSubmissions={formSubmissions}
+          tasks={tasks}
+          portalAssignments={portalAssignments}
+          checkIns={checkIns}
+          postIntegrationForms={postIntegrationForms}
+          transcripts={transcripts}
+          aiSummaries={aiSummaries}
+          messages={messages}
+        />
+      </div>
     </AppShell>
   );
 }

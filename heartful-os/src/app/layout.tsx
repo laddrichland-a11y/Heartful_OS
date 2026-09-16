@@ -1,6 +1,7 @@
 import type { Metadata, Viewport } from "next";
 import "./globals.css";
 import { RoleProvider } from "@/components/RoleContext";
+import { ThemeBootstrap } from "@/components/settings/ThemeSettings";
 
 export const metadata: Metadata = {
   title: "Heartful OS",
@@ -19,7 +20,7 @@ export const metadata: Metadata = {
 };
 
 export const viewport: Viewport = {
-  themeColor: "#b5663f",
+  themeColor: "#F3774D",
 };
 
 export default function RootLayout({
@@ -30,7 +31,10 @@ export default function RootLayout({
   return (
     <html lang="en" className="h-full antialiased">
       <body className="min-h-full flex flex-col">
-        <RoleProvider>{children}</RoleProvider>
+        <RoleProvider>
+          <ThemeBootstrap />
+          {children}
+        </RoleProvider>
       </body>
     </html>
   );
