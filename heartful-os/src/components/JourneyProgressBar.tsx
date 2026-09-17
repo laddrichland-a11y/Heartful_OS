@@ -1,6 +1,6 @@
 import { JourneyMilestone } from "@/lib/types";
 import { cx } from "@/lib/utils";
-import { Check } from "lucide-react";
+import { Check, IntegrationLink } from "@/components/ui/HeartfulIcon";
 
 export default function JourneyProgressBar({
   milestones,
@@ -19,7 +19,7 @@ export default function JourneyProgressBar({
     <div className="w-full">
       {!compact && (
         <div className="mb-1.5 flex items-center justify-between text-xs text-ink-500">
-          <span>Journey Progress</span>
+          <span className="flex items-center gap-1.5"><IntegrationLink className="h-4 w-4" />Journey Progress</span>
           <span>
             {completedCount}/{sorted.length} milestones
           </span>

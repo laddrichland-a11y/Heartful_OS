@@ -4,7 +4,7 @@ import { useState } from "react";
 import { AiSummary, GrowthActionPlan } from "@/lib/types";
 import TranscriptInput from "@/components/ai/TranscriptInput";
 import AiGenerateButton from "@/components/ai/AiGenerateButton";
-import { Trash2 } from "lucide-react";
+import { Trash2 } from "@/components/ui/HeartfulIcon";
 import { deleteGrowthActionPlanAction } from "@/lib/actions";
 
 // Standalone Growth Action Plan step — pulled out of IntegrationWorkspace so

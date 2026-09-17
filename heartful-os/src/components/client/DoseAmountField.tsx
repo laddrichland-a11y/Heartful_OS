@@ -1,6 +1,6 @@
 "use client";
 
-import { Save, Loader2 } from "lucide-react";
+import { Save, Loader2 } from "@/components/ui/HeartfulIcon";
 
 // Small labeled text input + save button for recording a free-text dose
 // amount (e.g. "25mg", "3.5g") — free text since substances and units vary

@@ -1,7 +1,7 @@
 "use client";
 
 import Link from "next/link";
-import { Search, X } from "lucide-react";
+import { Search, X } from "@/components/ui/HeartfulIcon";
 import { useEffect, useRef, useState } from "react";
 import { cx } from "@/lib/utils";
 

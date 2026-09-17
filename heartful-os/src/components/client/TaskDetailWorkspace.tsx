@@ -3,7 +3,7 @@
 import { useState } from "react";
 import { Task } from "@/lib/types";
 import { cx, formatDate } from "@/lib/utils";
-import { CheckCircle2, Clock, User, Tag, Loader2 } from "lucide-react";
+import { CheckCircle2, Clock, User, Tag, Loader2 } from "@/components/ui/HeartfulIcon";
 import { completeTaskAction } from "@/lib/actions";
 
 const TASK_TYPE_LABELS: Record<string, string> = {

@@ -2,6 +2,7 @@
 
 import { useMemo, useState, useTransition, useEffect, useRef } from "react";
 import Link from "next/link";
+import MonthYearPicker from "./MonthYearPicker";
 import { useRouter } from "next/navigation";
 import {
   addSessionAction,
@@ -34,7 +35,7 @@ import {
   RotateCcw,
   Copy,
   MoreHorizontal,
-} from "lucide-react";
+} from "@/components/ui/HeartfulIcon";
 type SessionWithClient = Session & { client_name: string };
 type ClientOption = { id: string; full_name: string };
 
@@ -245,9 +246,7 @@ export default function CalendarView({
           >
             <ChevronLeft className="h-4 w-4" />
           </button>
-          <h2 className="text-lg font-semibold text-ink-900 min-w-[160px] text-center">
-            {month.toLocaleDateString("en-US", { month: "long", year: "numeric" })}
-          </h2>
+          <MonthYearPicker value={month} onChange={setMonth} />
           <button
             className="p-1.5 rounded-lg hover:bg-ink-50 text-ink-500"
             onClick={() => setMonth((m) => new Date(m.getFullYear(), m.getMonth() + 1, 1))}

@@ -2,11 +2,11 @@ import AppShell from "@/components/layout/AppShell";
 import JourneyProgressBar from "@/components/JourneyProgressBar";
 import DashboardOutstandingActions from "@/components/dashboard/DashboardOutstandingActions";
 import DashboardDateStrip from "@/components/dashboard/DashboardDateStrip";
-import { getAgreementStatusByClient, getDashboardSummary, getMilestones } from "@/lib/data";
+import { getAgreementStatusByClient, getAllSessions, getDashboardSummary, getMilestones, getPractitioner } from "@/lib/data";
 import {
-  Activity, ArrowRight, CalendarDays, CheckCircle2, ChevronRight, CircleAlert,
-  ClipboardCheck, Clock3, DollarSign, FileText, Plus, Users,
-} from "lucide-react";
+  ArrowRight, CalendarDays, CheckCircle2, ChevronRight, CircleAlert,
+  Clock3, DollarSign, FileText, IntegrationLink, OutstandingTasks, Plus, Users,
+} from "@/components/ui/HeartfulIcon";
 import ClientAvatarImage from "@/components/client/ClientAvatarImage";
 import Link from "next/link";
 import {
@@ -18,39 +18,43 @@ import { STATUS_LABELS } from "@/lib/types";
 export const dynamic = "force-dynamic";
 
 export default async function DashboardPage() {
-  const summary = await getDashboardSummary();
-  const agreementStatus = await getAgreementStatusByClient();
+  const [summary, practitioner, allSessions] = await Promise.all([
+    getDashboardSummary(),
+    getPractitioner(),
+    getAllSessions(),
+  ]);
+  const activeClientRecords = summary.activeClientRecords.slice(0, 5);
+  const [agreementStatus, clientsWithMilestones] = await Promise.all([
+    getAgreementStatusByClient(activeClientRecords),
+    Promise.all(activeClientRecords.map(async (client) => ({ client, milestones: await getMilestones(client.id) }))),
+  ]);
   const agreementByClient = new Map(agreementStatus.map((agreement) => [agreement.client_id, agreement]));
-  const clientsWithMilestones = await Promise.all(
-    summary.activeClientRecords.slice(0, 5).map(async (client) => ({ client, milestones: await getMilestones(client.id) }))
-  );
   const metrics = [
-    { label: "Active Clients", value: summary.activeClients, icon: Users, href: "/clients?filter=active", tone: "clients" },
-    { label: "Awaiting Integration", value: summary.awaitingIntegration, icon: Activity, href: "/clients?filter=awaiting_integration", tone: "integration" },
-    { label: "Outstanding Forms / Tasks", value: summary.outstandingTasksCount, icon: ClipboardCheck, href: "/outstanding", tone: "outstanding" },
+    { label: "Active Clients", value: summary.activeClients, icon: Users, iconSize: 20, href: "/clients?filter=active", tone: "clients" },
+    { label: "Awaiting Integration", value: summary.awaitingIntegration, icon: IntegrationLink, iconSize: 20, href: "/clients?filter=awaiting_integration", tone: "integration" },
+    { label: "Outstanding Forms / Tasks", value: summary.outstandingTasksCount, icon: OutstandingTasks, iconSize: 20, href: "/outstanding", tone: "outstanding" },
     {
       label: "Revenue Collected",
       value: `$${summary.revenueTotal.toLocaleString()}`,
       icon: DollarSign,
+      iconSize: 20,
       href: "/reports/revenue",
       tone: "revenue",
     },
   ];
   const dashboardOutstandingItems = summary.outstandingTasks.slice(0, 4);
-  const calendarAnchor = summary.upcomingSessions[0]?.scheduled_at
-    ? new Date(summary.upcomingSessions[0].scheduled_at)
-    : new Date();
+  const dashboardSessions = allSessions.filter((session) => session.status === "scheduled");
 
   return (
     <AppShell title="Dashboard">
       <div className="dashboard-welcome">
-        <div><h2>Hello, Paul</h2></div>
+        <div><h2>Hello, {practitioner.full_name}</h2></div>
         <p>{new Date().toLocaleDateString("en-US", { weekday: "long", month: "long", day: "numeric" })}</p>
       </div>
       <div className="dashboard-metrics" aria-label="Practice summary">
-        {metrics.map(({ label, value, icon: Icon, href, tone }) => (
+        {metrics.map(({ label, value, icon: Icon, iconSize, href, tone }) => (
           <Link key={label} href={href} className={cx("dashboard-metric", `dashboard-metric--${tone}`)}>
-            <span className={cx("dashboard-metric-icon", `dashboard-metric-icon--${tone}`)}><Icon aria-hidden="true" /></span>
+            <span className={cx("dashboard-metric-icon", `dashboard-metric-icon--${tone}`)}><Icon aria-hidden="true" width={iconSize} height={iconSize} strokeWidth={1.75} /></span>
             <span className="dashboard-metric-copy"><strong>{value}</strong><span>{label}</span></span>
             <ChevronRight aria-hidden="true" className="dashboard-metric-arrow" />
           </Link>
@@ -59,50 +63,13 @@ export default async function DashboardPage() {
 
       <div className="dashboard-layout">
         <section className="dashboard-panel dashboard-sessions-panel">
-          <div className="dashboard-panel-header">
-            <div>
-              <h2 className="dashboard-accent-title">Upcoming Sessions</h2>
-            </div>
-            <div className="dashboard-header-actions">
-              <Link href="/calendar" className="dashboard-add-action"><Plus aria-hidden="true" /> Add session</Link>
-            </div>
-          </div>
-          <DashboardDateStrip initialDate={`${calendarAnchor.getFullYear()}-${String(calendarAnchor.getMonth() + 1).padStart(2, "0")}-${String(calendarAnchor.getDate()).padStart(2, "0")}`} />
-          <div className="dashboard-session-table">
-            <div className="dashboard-session-list">
-              {summary.upcomingSessions.length === 0 && (
-                <div className="dashboard-empty"><CalendarDays aria-hidden="true" /><p>No sessions scheduled.</p></div>
-              )}
-              {summary.upcomingSessions.map((session, index) => {
-                const avatarSrc = clientAvatarSrc(session.client_name);
-                const displaySessionType = index === summary.upcomingSessions.length - 1
-                  ? "Completed"
-                  : SESSION_TYPE_LABELS[session.session_type] ?? session.session_type.replace(/_/g, " ");
-                return (
-                <div key={session.id} className="dashboard-session-row">
-                  <div className="dashboard-session-time"><Clock3 aria-hidden="true" /><span>{formatDateTime(session.scheduled_at)}</span></div>
-                  <Link href={`/clients/${session.client_id}`} className="dashboard-client-link dashboard-session-client">
-                    <span className="dashboard-session-avatar" aria-hidden="true">
-                      {avatarSrc ? <ClientAvatarImage clientName={session.client_name} src={avatarSrc} width={24} height={24} sizes="24px" /> : initials(session.client_name)}
-                    </span>
-                    <span className="dashboard-session-client-name">{session.client_name}</span>
-                  </Link>
-                  <span className="dashboard-session-type">{displaySessionType}</span>
-                  <span className="badge status-pill--success">Scheduled</span>
-                  <Link href={`/clients/${session.client_id}/sessions/${session.id}`} className="dashboard-row-action">
-                    {session.location?.startsWith("http") ? "Join" : "Prepare"}<ArrowRight aria-hidden="true" />
-                  </Link>
-                </div>
-                );
-              })}
-            </div>
-          </div>
+          <DashboardDateStrip sessions={dashboardSessions} />
         </section>
 
         <aside className="dashboard-rail">
           <section className="dashboard-panel dashboard-clients-panel">
             <div className="dashboard-panel-header dashboard-panel-header-compact">
-              <h2 className="dashboard-accent-title">Active Clients</h2>
+              <h2 className="dashboard-accent-title dashboard-section-title"><span className="dashboard-section-icon"><Users aria-hidden="true" width={20} height={20} strokeWidth={1.75} /></span>Active Clients</h2>
               <Link href="/clients" className="dashboard-clients-view-all">View all</Link>
             </div>
             <div className="dashboard-compact-list dashboard-client-list">
@@ -138,7 +105,7 @@ export default async function DashboardPage() {
           <section className="dashboard-panel dashboard-attention-panel">
             <div className="dashboard-panel-header dashboard-panel-header-compact">
               <div>
-                <h2><ClipboardCheck aria-hidden="true" /> Outstanding Forms &amp; Tasks</h2>
+                <h2 className="dashboard-section-title"><span className="dashboard-section-icon"><OutstandingTasks aria-hidden="true" width={20} height={20} strokeWidth={1.75} /></span>Outstanding Forms &amp; Tasks</h2>
                 <p className="dashboard-attention-summary">
                   {summary.outstandingTasksCount} outstanding · {summary.overdueTasksCount} overdue
                 </p>

@@ -4,7 +4,7 @@ import { useState, useTransition } from "react";
 import { ClientStatus, JourneyPhase, STATUS_LABELS } from "@/lib/types";
 import { cx, phaseForStatus, statusBadgeClasses } from "@/lib/utils";
 import { updateClientStatusAction } from "@/lib/actions";
-import { ChevronDown, Loader2 } from "lucide-react";
+import { ChevronDown, Loader2 } from "@/components/ui/HeartfulIcon";
 
 // Practitioner-facing manual override for a client's journey status/phase.
 // Scheduling and completing sessions already advance status automatically

@@ -5,7 +5,7 @@ import { useRouter } from "next/navigation";
 import { FormTemplate, DOCUMENT_LABELS } from "@/lib/types";
 import { cx } from "@/lib/utils";
 import { setFormTemplateFlagsAction, resyncFormTemplatesAction } from "@/lib/actions";
-import { FileText, ChevronDown, ChevronUp, ShieldCheck, ShieldOff, RefreshCw } from "lucide-react";
+import { FileText, ChevronDown, ChevronUp, ShieldCheck, ShieldOff, RefreshCw } from "@/components/ui/HeartfulIcon";
 import FormRenderer from "./FormRenderer";
 
 // Form Library: lets a practitioner see every codified consent/intake template

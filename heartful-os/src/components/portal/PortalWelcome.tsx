@@ -2,7 +2,7 @@
 
 import { useState } from "react";
 import {
-  HeartHandshake,
+  CheckCircle2,
   CalendarDays,
   ClipboardCheck,
   Sprout,
@@ -10,7 +10,7 @@ import {
   ShieldCheck,
   ArrowRight,
   Loader2,
-} from "lucide-react";
+} from "@/components/ui/HeartfulIcon";
 import { Profile } from "@/lib/types";
 
 // ---------------------------------------------------------------------------
@@ -74,26 +74,17 @@ export default function PortalWelcome({
   const [busy, setBusy] = useState(false);
 
   return (
-    <div className="max-w-2xl mx-auto space-y-6">
+    <div className="portal-welcome">
       {/* Masthead */}
-      <div className="relative overflow-hidden rounded-2xl bg-gradient-to-br from-clay-500 via-clay-500 to-plum-500 text-white px-6 py-9 text-center">
-        {/* Soft depth — decorative only, kept subtle enough to stay behind text */}
-        <div
-          aria-hidden
-          className="absolute -top-16 -right-12 h-48 w-48 rounded-full bg-white/10 blur-2xl"
-        />
-        <div
-          aria-hidden
-          className="absolute -bottom-20 -left-10 h-48 w-48 rounded-full bg-white/10 blur-2xl"
-        />
+      <div className="portal-welcome-hero">
         <div className="relative space-y-3">
-          <div className="h-12 w-12 rounded-2xl bg-white/20 backdrop-blur flex items-center justify-center mx-auto">
-            <HeartHandshake className="h-6 w-6" />
+          <div className="portal-welcome-hero__icon">
+            <CheckCircle2 className="h-6 w-6" />
           </div>
           <h1 className="text-2xl font-semibold tracking-tight">
             You&apos;re all set, {clientFirstName}
           </h1>
-          <p className="text-sm text-white/85 leading-relaxed max-w-md mx-auto">
+          <p className="text-sm leading-relaxed max-w-md">
             Your paperwork is signed and your portal is open. Here&apos;s what you&apos;ll find in it.
           </p>
         </div>
@@ -114,10 +105,10 @@ export default function PortalWelcome({
       </div>
 
       {/* The four rooms */}
-      <div className="grid sm:grid-cols-2 gap-3">
+      <div className="portal-welcome-sections">
         {SECTIONS.map(({ icon: Icon, title, body, tint }) => (
           <div key={title} className="card p-5 flex flex-col gap-2.5">
-            <div className={`h-9 w-9 rounded-xl flex items-center justify-center ${tint}`}>
+            <div className={`portal-welcome-section-icon h-9 w-9 rounded-xl flex items-center justify-center ${tint}`}>
               <Icon className="h-4.5 w-4.5" />
             </div>
             <h2 className="font-semibold text-ink-900 text-sm">{title}</h2>
@@ -130,7 +121,7 @@ export default function PortalWelcome({
       {/* Not using .card here: it's an unlayered rule in globals.css, so its
           white background and ink border beat any Tailwind utility no matter
           the order. Spelled out to match .card's shape exactly. */}
-      <div className="p-5 flex gap-3.5 rounded-2xl border border-sage-200 bg-sage-50/70 shadow-[0_1px_2px_rgba(43,36,32,0.04)]">
+      <div className="portal-welcome-privacy p-5 flex gap-3.5">
         <div className="h-9 w-9 rounded-xl bg-white text-sage-700 flex items-center justify-center shrink-0">
           <ShieldCheck className="h-4.5 w-4.5" />
         </div>

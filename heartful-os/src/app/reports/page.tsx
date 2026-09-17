@@ -3,7 +3,7 @@ import { ClientGrowthChart, ReferralBarChart, StatusDonutChart } from "@/compone
 import ReportsNav from "@/components/reports/ReportsNav";
 import { getReportsSummary } from "@/lib/data";
 import { STATUS_LABELS } from "@/lib/types";
-import { ClipboardList, TrendingUp, Users } from "lucide-react";
+import { ClipboardList, TrendingUp, Users } from "@/components/ui/HeartfulIcon";
 
 export const dynamic = "force-dynamic";
 

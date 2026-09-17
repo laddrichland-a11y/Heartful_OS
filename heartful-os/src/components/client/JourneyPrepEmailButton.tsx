@@ -1,7 +1,7 @@
 "use client";
 
 import { useState } from "react";
-import { Mail } from "lucide-react";
+import { Mail } from "@/components/ui/HeartfulIcon";
 import JourneyPrepEmailModal from "./JourneyPrepEmailModal";
 
 export default function JourneyPrepEmailButton({

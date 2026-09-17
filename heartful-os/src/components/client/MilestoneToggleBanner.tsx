@@ -1,7 +1,7 @@
 "use client";
 
 import { useState, useTransition } from "react";
-import { Check, CheckCircle2, CircleDot, Loader2 } from "lucide-react";
+import { Check, CheckCircle2, CircleDot, Loader2 } from "@/components/ui/HeartfulIcon";
 import { toggleMilestoneAction } from "@/lib/actions";
 import { cx } from "@/lib/utils";
 

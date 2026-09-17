@@ -14,3 +14,11 @@ node_modules/
 firebase-service-account*.json
 *-firebase-adminsdk-*.json
 _to_delete/
+
+# Local preview/build artifacts and reference workspaces
+heartful-os/.next-backup-*/
+heartful-os/output/
+heartful-os/*.log
+heartful-os-baseline/
+wellnest_hospital_management_dashboard/
+*-dashboard-thumbnail.png

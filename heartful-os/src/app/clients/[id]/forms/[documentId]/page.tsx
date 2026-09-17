@@ -9,7 +9,7 @@ import {
 import { notFound } from "next/navigation";
 import FullPageForm from "@/components/forms/FullPageForm";
 import Link from "next/link";
-import { ArrowLeft } from "lucide-react";
+import { ArrowLeft } from "@/components/ui/HeartfulIcon";
 import { DOCUMENT_LABELS } from "@/lib/types";
 import { buildFormPrefill } from "@/lib/formPrefill";
 

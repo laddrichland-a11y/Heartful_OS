@@ -3,7 +3,7 @@
 import { useState, useTransition } from "react";
 import AppShell from "@/components/layout/AppShell";
 import Link from "next/link";
-import { Search as SearchIcon } from "lucide-react";
+import { Search as SearchIcon } from "@/components/ui/HeartfulIcon";
 import { cx } from "@/lib/utils";
 
 export const dynamic = "force-dynamic";

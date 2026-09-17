@@ -3,7 +3,7 @@
 import { useRouter } from "next/navigation";
 import { useRole } from "@/components/RoleContext";
 import { useClientSwitcher } from "@/components/client/ClientSwitcherContext";
-import { ArrowRight, Bell, Check, ChevronDown, LogOut, Menu, MessageCircle, Plus, Search, Settings } from "lucide-react";
+import { ArrowRight, Bell, Check, ChevronDown, LogOut, Menu, MessageCircle, Plus, Search, Settings } from "@/components/ui/HeartfulIcon";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import MobileNav from "./MobileNav";
 import { logoutAction } from "@/lib/actions";

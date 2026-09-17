@@ -1,7 +1,7 @@
 "use client";
 
 import { useRouter } from "next/navigation";
-import { ArrowLeft } from "lucide-react";
+import { ArrowLeft } from "@/components/ui/HeartfulIcon";
 
 export default function BackButton({ label = "Back" }: { label?: string }) {
   const router = useRouter();

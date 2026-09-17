@@ -12,7 +12,7 @@ import TranscriptInput from "@/components/ai/TranscriptInput";
 import AiGenerateButton from "@/components/ai/AiGenerateButton";
 import SummaryCard from "@/components/ai/SummaryCard";
 import { cx } from "@/lib/utils";
-import { FileText } from "lucide-react";
+import { FileText } from "@/components/ui/HeartfulIcon";
 import Link from "next/link";
 
 export default function PreparationWorkspace({

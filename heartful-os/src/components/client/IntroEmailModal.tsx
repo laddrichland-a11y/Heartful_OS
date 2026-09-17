@@ -1,7 +1,7 @@
 "use client";
 
 import { useMemo, useState } from "react";
-import { X, Mail, Copy, Check } from "lucide-react";
+import { X, Mail, Copy, Check } from "@/components/ui/HeartfulIcon";
 import { buildIntroEmail } from "@/lib/emailTemplates";
 import { logIntroEmailAction } from "@/lib/actions";
 

@@ -1,5 +1,5 @@
 import Link from "next/link";
-import { Mail, Phone } from "lucide-react";
+import { Mail, Phone } from "@/components/ui/HeartfulIcon";
 import { getClient, getMilestones, getSessions } from "@/lib/data";
 import { STATUS_LABELS } from "@/lib/types";
 import { formatDate, phaseForStatus } from "@/lib/utils";

@@ -3,7 +3,7 @@ import AppShell from "@/components/layout/AppShell";
 import { getAllProspectCalls, getProspects, getOnHoldProspects } from "@/lib/data";
 import { PROSPECT_STATUS_LABELS, type Prospect, type ProspectCall } from "@/lib/types";
 import { cx, formatDate } from "@/lib/utils";
-import { UserPlus, ArrowRight, PauseCircle, CalendarDays, Tag } from "lucide-react";
+import { UserPlus, ArrowRight, PauseCircle, CalendarDays, Tag } from "@/components/ui/HeartfulIcon";
 import NewProspectButton from "./NewProspectButton";
 
 export const dynamic = "force-dynamic";

@@ -2,7 +2,7 @@
 
 import { useEffect, useState } from "react";
 import { useRouter, usePathname } from "next/navigation";
-import { Mail } from "lucide-react";
+import { Mail } from "@/components/ui/HeartfulIcon";
 import IntroEmailModal from "./IntroEmailModal";
 
 export default function ClientHeaderActions({

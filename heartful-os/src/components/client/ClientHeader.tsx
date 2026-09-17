@@ -2,7 +2,7 @@
 
 import { useState } from "react";
 import ClientAvatarImage from "@/components/client/ClientAvatarImage";
-import { CalendarDays, CheckCircle2, ChevronDown, ChevronUp, CircleDollarSign, KeyRound, Mail, PauseCircle, Phone, UserRound } from "lucide-react";
+import { CalendarDays, CheckCircle2, ChevronDown, ChevronUp, CircleDollarSign, KeyRound, Mail, PauseCircle, Phone, UserRound } from "@/components/ui/HeartfulIcon";
 import { Client, JourneyMilestone, Profile, ReferralSource, Session } from "@/lib/types";
 import { clientAvatarSrc, formatCurrency, formatDate, formatDateTime, initials } from "@/lib/utils";
 import ClientStatusControl from "@/components/client/ClientStatusControl";

@@ -38,7 +38,7 @@ import {
   Upload,
   Trash2,
   Music,
-} from "lucide-react";
+} from "@/components/ui/HeartfulIcon";
 
 const BOOSTER_REMINDER_MINUTES = 90;
 

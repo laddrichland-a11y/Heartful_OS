@@ -2,7 +2,7 @@
 
 import ClientAvatarImage from "@/components/client/ClientAvatarImage";
 import Link from "next/link";
-import { Search, SlidersHorizontal } from "lucide-react";
+import { Search, SlidersHorizontal } from "@/components/ui/HeartfulIcon";
 import JourneyProgressBar from "@/components/JourneyProgressBar";
 import FilterSelect from "@/components/client/FilterSelect";
 import { Client, ClientStatus, JourneyMilestone } from "@/lib/types";

@@ -1,7 +1,7 @@
 "use client";
 
 import { useState } from "react";
-import { ArrowRight, DollarSign, Loader2, X, Check } from "lucide-react";
+import { ArrowRight, DollarSign, Loader2, X, Check } from "@/components/ui/HeartfulIcon";
 import { recordPaymentAction } from "@/lib/actions";
 
 const METHODS = ["Cash", "Check", "Venmo", "Bank Transfer", "Other"];

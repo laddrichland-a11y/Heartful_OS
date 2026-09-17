@@ -1,6 +1,6 @@
 import AppShell from "@/components/layout/AppShell";
 import Link from "next/link";
-import { ArrowLeft } from "lucide-react";
+import { ArrowLeft } from "@/components/ui/HeartfulIcon";
 import {
   getClient,
   getMilestones,

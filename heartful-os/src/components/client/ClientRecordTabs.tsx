@@ -53,7 +53,7 @@ import {
   ChevronLeft,
   ChevronDown,
   ChevronRight,
-} from "lucide-react";
+} from "@/components/ui/HeartfulIcon";
 import {
   uploadDocumentAction,
   sendMessageAction,
@@ -281,7 +281,7 @@ function HistoryTab({
   return (
     <div className="card p-5">
       <h3 className="font-medium text-ink-900 mb-1 flex items-center gap-2">
-        <History className="h-4 w-4 text-clay-500" /> Activity History
+        <History className="h-5 w-5 text-clay-500" /> Activity History
       </h3>
       <p className="text-xs text-ink-400 mb-4">
         Everything recorded for this client, most recent first — sessions, documents, forms, messages, and milestones.
@@ -304,8 +304,8 @@ function HistoryTab({
               </>
             );
             return (
-              <div key={e.id} className="relative pb-5 last:pb-0 group">
-                <div className="absolute -left-12 top-0 h-9 w-9 rounded-full bg-white border-2 border-clay-300 flex items-center justify-center">
+              <div key={e.id} className="relative mb-5 last:mb-0 group">
+                <div className="absolute -left-12 top-1/2 -translate-y-1/2 h-9 w-9 rounded-full bg-white border-2 border-clay-300 flex items-center justify-center">
                   <Icon className="h-5 w-5 text-clay-600" />
                 </div>
                 {e.href ? (

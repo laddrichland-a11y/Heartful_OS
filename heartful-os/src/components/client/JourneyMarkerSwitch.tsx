@@ -1,7 +1,7 @@
 "use client";
 
 import { useState } from "react";
-import { Loader2, Pencil } from "lucide-react";
+import { Loader2, Pencil } from "@/components/ui/HeartfulIcon";
 import { cx, formatDateTime, toDatetimeLocalValue, fromDatetimeLocalValue } from "@/lib/utils";
 
 // Toggle switch for Journey Begin / Journey End / Booster Dose — same visual

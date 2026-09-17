@@ -67,8 +67,32 @@ import {
 // so the bulk of this file reads the same either way.
 // ---------------------------------------------------------------------------
 
+// A tiny process-local read-through cache keeps route-to-route navigation from
+// repeating the same Firestore reads. It is deliberately brief: mutations
+// below clear it immediately, while a natural expiry protects live data even
+// across another server instance.
+const FIRESTORE_READ_CACHE_MS = 3_000;
+const firestoreReadCache = new Map<string, { expiresAt: number; value: Promise<unknown> }>();
+
+function cachedFirestoreRead<T>(key: string, read: () => Promise<T>): Promise<T> {
+  const now = Date.now();
+  const cached = firestoreReadCache.get(key);
+  if (cached && cached.expiresAt > now) return cached.value as Promise<T>;
+
+  const value = read();
+  firestoreReadCache.set(key, { expiresAt: now + FIRESTORE_READ_CACHE_MS, value });
+  void value.catch(() => firestoreReadCache.delete(key));
+  return value;
+}
+
+function invalidateFirestoreReadCache() {
+  firestoreReadCache.clear();
+}
+
 async function listAll<T>(mockArr: T[], collection: string): Promise<T[]> {
-  return isFirebaseConfigured ? allDocs<T>(collection) : [...mockArr];
+  return isFirebaseConfigured
+    ? cachedFirestoreRead(`all:${collection}`, () => allDocs<T>(collection))
+    : [...mockArr];
 }
 
 async function listWhere<T>(
@@ -77,7 +101,9 @@ async function listWhere<T>(
   field: string,
   value: unknown
 ): Promise<T[]> {
-  if (isFirebaseConfigured) return queryEq<T>(collection, field, value);
+  if (isFirebaseConfigured) {
+    return cachedFirestoreRead(`where:${collection}:${field}:${JSON.stringify(value)}`, () => queryEq<T>(collection, field, value));
+  }
   return mockArr.filter((x) => (x as unknown as Record<string, unknown>)[field] === value);
 }
 
@@ -86,12 +112,16 @@ async function findById<T extends { id: string }>(
   collection: string,
   id: string
 ): Promise<T | undefined> {
-  if (isFirebaseConfigured) return getDocById<T>(collection, id);
+  if (isFirebaseConfigured) return cachedFirestoreRead(`id:${collection}:${id}`, () => getDocById<T>(collection, id));
   return mockArr.find((x) => x.id === id);
 }
 
 async function create<T extends { id: string }>(mockArr: T[], collection: string, doc: T): Promise<T> {
-  if (isFirebaseConfigured) return insertDoc(collection, doc);
+  if (isFirebaseConfigured) {
+    const created = await insertDoc(collection, doc);
+    invalidateFirestoreReadCache();
+    return created;
+  }
   mockArr.push(doc);
   return doc;
 }
@@ -102,7 +132,11 @@ async function createMany<T extends { id: string }>(
   docs: T[]
 ): Promise<T[]> {
   if (docs.length === 0) return docs;
-  if (isFirebaseConfigured) return insertDocs(collection, docs);
+  if (isFirebaseConfigured) {
+    const created = await insertDocs(collection, docs);
+    invalidateFirestoreReadCache();
+    return created;
+  }
   mockArr.push(...docs);
   return docs;
 }
@@ -114,6 +148,7 @@ async function removeById<T extends { id: string }>(
 ): Promise<void> {
   if (isFirebaseConfigured) {
     await deleteDoc(collection, id);
+    invalidateFirestoreReadCache();
     return;
   }
   const idx = mockArr.findIndex((x) => x.id === id);
@@ -128,6 +163,7 @@ async function removeWhere<T>(
 ): Promise<void> {
   if (isFirebaseConfigured) {
     await deleteDocsWhere(collection, field, value);
+    invalidateFirestoreReadCache();
     return;
   }
   for (let i = mockArr.length - 1; i >= 0; i--) {
@@ -144,7 +180,11 @@ async function patchById<T extends { id: string }>(
   // A blank id means the caller is acting on a record that doesn't exist
   // (see getDocById's note) — "nothing to patch", not an error.
   if (!id) return undefined;
-  if (isFirebaseConfigured) return updateDocById<T>(collection, id, patch);
+  if (isFirebaseConfigured) {
+    const updated = await updateDocById<T>(collection, id, patch);
+    invalidateFirestoreReadCache();
+    return updated;
+  }
   const item = mockArr.find((x) => x.id === id);
   if (!item) return undefined;
   for (const [k, v] of Object.entries(patch as Record<string, unknown>)) {
@@ -169,6 +209,7 @@ async function clearFields<T extends { id: string }>(
   if (!id) return;
   if (isFirebaseConfigured) {
     await clearDocFields(collection, id, fields);
+    invalidateFirestoreReadCache();
     return;
   }
   const item = mockArr.find((x) => x.id === id);
@@ -1495,8 +1536,11 @@ export interface ClientAgreementStatus {
   completed_at?: string;
 }
 
-export async function getAgreementStatusByClient(): Promise<ClientAgreementStatus[]> {
-  const [clients, templates] = await Promise.all([getClients(), getFormTemplates()]);
+export async function getAgreementStatusByClient(clientRecords?: Client[]): Promise<ClientAgreementStatus[]> {
+  const [clients, templates] = await Promise.all([
+    clientRecords ? Promise.resolve(clientRecords) : getClients(),
+    getFormTemplates(),
+  ]);
   const agreementTemplates = templates.filter(
     (t) => isGeneralPaperwork(t.document_type) && t.active
   );
@@ -1734,21 +1778,22 @@ export async function getActiveClientCount(): Promise<number> {
 }
 
 export async function getDashboardSummary() {
-  // Working views (counts, active list, referral mix) exclude clients on hold.
-  const clients = await getClients();
-  // Money math does NOT: a held client's collected payments and contracted
-  // package value are still real, and dropping them would silently restate
-  // revenue every time someone is parked.
-  const clientsForRevenue = await getClientsIncludingOnHold();
+  // These reads are independent. Parallelizing them removes several server
+  // round trips from every dashboard navigation.
+  const [clients, clientsForRevenue, outstandingTasks, outstandingForms, unreadMessages, upcomingSessions, payments, referralSources] = await Promise.all([
+    getClients(),
+    getClientsIncludingOnHold(),
+    getOutstandingTasks(),
+    getOutstandingForms(),
+    getUnreadMessagesSummary(),
+    getUpcomingSessions(6),
+    getPayments(),
+    getReferralSources(),
+  ]);
   const activeClients = clients.filter((c) => ACTIVE_STATUSES.includes(c.status));
   const awaitingIntegration = clients.filter(
     (c) => c.status === "journey_complete" || c.status === "check_in_complete" || c.status === "integration_1_complete"
   );
-  const [outstandingTasks, outstandingForms, unreadMessages] = await Promise.all([
-    getOutstandingTasks(),
-    getOutstandingForms(),
-    getUnreadMessagesSummary(),
-  ]);
   const urgencyReference = Date.now();
   const urgencyRank = (item: (typeof outstandingTasks)[number] | (typeof outstandingForms)[number]) => {
     if (item.status === "overdue") return 0;
@@ -1765,8 +1810,6 @@ export async function getDashboardSummary() {
     const bDue = b.due_at ? new Date(b.due_at).getTime() : Number.POSITIVE_INFINITY;
     return aDue - bDue;
   });
-  const upcomingSessions = await getUpcomingSessions(6);
-  const payments = await getPayments();
   const now = new Date();
   const currentYear = now.getFullYear().toString();
   const currentYearMonth = `${currentYear}-${String(now.getMonth() + 1).padStart(2, "0")}`;
@@ -1791,7 +1834,6 @@ export async function getDashboardSummary() {
     0
   );
 
-  const referralSources = await getReferralSources();
   const referralCounts = new Map<string, number>();
   for (const c of clients) {
     const src = referralSources.find((r) => r.id === c.referral_source_id);

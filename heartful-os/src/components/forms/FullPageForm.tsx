@@ -11,7 +11,7 @@ import {
   startLiveSessionAction,
   endLiveSessionAction,
 } from "@/lib/actions";
-import { Users, Pencil, Radio, Loader2, StopCircle } from "lucide-react";
+import { Users, Pencil, Radio, Loader2, StopCircle } from "@/components/ui/HeartfulIcon";
 
 export default function FullPageForm({
   clientId,

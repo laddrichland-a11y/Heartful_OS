@@ -26,7 +26,7 @@ import {
   ChevronRight,
   CalendarDays,
   Circle,
-} from "lucide-react";
+} from "@/components/ui/HeartfulIcon";
 import {
   updateProspectAction,
   deleteProspectAction,

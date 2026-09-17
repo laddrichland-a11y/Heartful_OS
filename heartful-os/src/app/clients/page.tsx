@@ -5,7 +5,7 @@ import { cx } from "@/lib/utils";
 import { ClientStatus } from "@/lib/types";
 import ClientList from "@/components/client/ClientList";
 import NewClientButton from "@/components/client/NewClientButton";
-import { PauseCircle } from "lucide-react";
+import { PauseCircle } from "@/components/ui/HeartfulIcon";
 
 export const dynamic = "force-dynamic";
 

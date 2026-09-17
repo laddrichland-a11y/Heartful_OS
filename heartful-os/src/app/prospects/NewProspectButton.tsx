@@ -2,7 +2,7 @@
 
 import { useState } from "react";
 import { useRouter } from "next/navigation";
-import { Plus, Loader2, X } from "lucide-react";
+import { Plus, Loader2, X } from "@/components/ui/HeartfulIcon";
 import { createProspectAction } from "@/lib/actions";
 
 export default function NewProspectButton() {

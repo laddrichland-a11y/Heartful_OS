@@ -2,6 +2,7 @@
 
 import Link from "next/link";
 import Image from "next/image";
+import HeartfulBrand from "@/components/ui/HeartfulBrand";
 import { usePathname } from "next/navigation";
 import { useEffect, useState } from "react";
 import {
@@ -9,12 +10,12 @@ import {
   Users,
   CalendarDays,
   BarChart3,
-  Sparkles,
   Settings,
   UserPlus,
+  ListChecks,
   PanelLeftClose,
   PanelLeftOpen,
-} from "lucide-react";
+} from "@/components/ui/HeartfulIcon";
 import { cx } from "@/lib/utils";
 import { getActiveClientCountAction } from "@/lib/actions";
 
@@ -23,7 +24,7 @@ const NAV = [
   { href: "/prospects", label: "Prospects", icon: UserPlus },
   { href: "/clients", label: "Clients", icon: Users },
   { href: "/calendar", label: "Calendar", icon: CalendarDays },
-  { href: "/copilot", label: "Prep Center", icon: Sparkles },
+  { href: "/copilot", label: "Prep Center", icon: ListChecks },
   { href: "/reports", label: "Reports", icon: BarChart3 },
   { href: "/settings", label: "Settings", icon: Settings },
 ];
@@ -98,19 +99,7 @@ export default function Sidebar() {
         className="sidebar-brand flex items-center gap-2 px-5 py-5 transition-colors hover:bg-ink-50"
         aria-label="Heartful dashboard"
       >
-        <span className="sidebar-brand-mark">
-          <Image
-            src="/images/heartful-logo-transparent.png"
-            alt="Heartful"
-            width={1254}
-            height={1254}
-            priority
-            style={{ width: "100%", height: "100%", objectFit: "contain" }}
-          />
-        </span>
-        <div className="sidebar-brand-copy">
-          <div className="sidebar-wordmark">Heartful</div>
-        </div>
+        <HeartfulBrand />
       </Link>
       <nav id="primary-sidebar-navigation" className="sidebar-nav flex-1 px-3 py-4 space-y-1">
         {NAV.map((item) => {

@@ -1,7 +1,7 @@
 "use client";
 
 import { useState } from "react";
-import { Upload, FileAudio } from "lucide-react";
+import { Upload, FileAudio } from "@/components/ui/HeartfulIcon";
 
 export default function TranscriptInput({
   value,

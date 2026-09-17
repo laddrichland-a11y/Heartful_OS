@@ -2,7 +2,7 @@
 
 import { useState } from "react";
 import { useRouter } from "next/navigation";
-import { PauseCircle, PlayCircle, X } from "lucide-react";
+import { PauseCircle, PlayCircle, X } from "@/components/ui/HeartfulIcon";
 import { DEFAULT_HOLD_DAYS } from "@/lib/types";
 import {
   putClientOnHoldAction,

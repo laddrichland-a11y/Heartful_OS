@@ -1,7 +1,7 @@
 import Link from "next/link";
 import { JourneyMilestone, Session } from "@/lib/types";
 import { formatDate } from "@/lib/utils";
-import { Check } from "lucide-react";
+import { Check } from "@/components/ui/HeartfulIcon";
 
 export type PhaseNavKey = "overview" | "intake" | "preparation" | "harm_reduction_session" | "post_journey_check_in" | "integration_1" | "integration_2" | "growth_action_plan";
 

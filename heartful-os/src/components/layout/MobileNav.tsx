@@ -2,7 +2,7 @@
 
 import Link from "next/link";
 import { usePathname, useRouter } from "next/navigation";
-import { X, LayoutDashboard, Users, CalendarDays, BarChart3, Sparkles, Settings, HeartHandshake, UserPlus } from "lucide-react";
+import { X, LayoutDashboard, Users, CalendarDays, BarChart3, Settings, HeartHandshake, UserPlus, ListChecks } from "@/components/ui/HeartfulIcon";
 import { cx } from "@/lib/utils";
 import { useRole } from "@/components/RoleContext";
 
@@ -11,7 +11,7 @@ const NAV = [
   { href: "/prospects", label: "Prospects", icon: UserPlus },
   { href: "/clients", label: "Clients", icon: Users },
   { href: "/calendar", label: "Calendar", icon: CalendarDays },
-  { href: "/copilot", label: "Prep Center", icon: Sparkles },
+  { href: "/copilot", label: "Prep Center", icon: ListChecks },
   { href: "/reports", label: "Reports", icon: BarChart3 },
   { href: "/settings", label: "Settings", icon: Settings },
 ];

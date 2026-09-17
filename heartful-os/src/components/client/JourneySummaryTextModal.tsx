@@ -1,7 +1,7 @@
 "use client";
 
 import { useMemo, useState } from "react";
-import { X, MessageSquare, Copy, Check } from "lucide-react";
+import { X, MessageSquare, Copy, Check } from "@/components/ui/HeartfulIcon";
 import { buildJourneySummaryReadyText } from "@/lib/smsTemplates";
 import { logJourneySummaryTextAction } from "@/lib/actions";
 

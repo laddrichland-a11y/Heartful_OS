@@ -1,6 +1,6 @@
 "use client";
 
-import { Loader2 } from "lucide-react";
+import { Loader2 } from "@/components/ui/HeartfulIcon";
 import { useNowTick } from "@/lib/useNowTick";
 
 const QUICK_ADJUST_MINUTES = [-5, -1, 1, 5];

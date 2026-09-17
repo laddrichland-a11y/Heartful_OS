@@ -3,7 +3,7 @@
   "version": "0.1.0",
   "private": true,
   "scripts": {
-    "dev": "next dev",
+    "dev": "next dev --turbopack",
     "build": "next build",
     "start": "next start",
     "lint": "eslint"
@@ -21,7 +21,7 @@
     "firebase": "^12.16.0",
     "firebase-admin": "^14.1.0",
     "googleapis": "^173.0.0",
-    "lucide-react": "^1.21.0",
+    "mage-icons-react": "^0.7.0-beta",
     "next": "16.2.9",
     "openai": "^6.44.0",
     "react": "19.2.4",

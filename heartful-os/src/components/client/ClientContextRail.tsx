@@ -10,7 +10,7 @@ import {
   MessageSquare,
   Sparkles,
   Upload,
-} from "lucide-react";
+} from "@/components/ui/HeartfulIcon";
 import {
   AiSummary,
   CheckIn,
@@ -268,7 +268,7 @@ export default function ClientContextRail({
 function RailHeading({ icon: Icon, title }: { icon: typeof CalendarDays; title: string }) {
   return (
     <header className="wn-rail-heading">
-      <span className="wn-rail-heading-icon"><Icon aria-hidden="true" /></span>
+      <span className="wn-rail-heading-icon"><Icon aria-hidden="true" width={18} height={18} strokeWidth={1.75} /></span>
       <h2>{title}</h2>
     </header>
   );

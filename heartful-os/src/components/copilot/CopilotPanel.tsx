@@ -3,7 +3,7 @@
 import { useRef, useState } from "react";
 import ClientAvatarImage from "@/components/client/ClientAvatarImage";
 import Link from "next/link";
-import { Sparkles, Loader2, CalendarClock, ArrowRight, ChevronRight, ListChecks } from "lucide-react";
+import { Sparkles, Loader2, CalendarClock, ArrowRight, ChevronRight, ListChecks, IntegrationLink } from "@/components/ui/HeartfulIcon";
 import SummaryCard from "@/components/ai/SummaryCard";
 import FilterSelect from "@/components/client/FilterSelect";
 import { clientAvatarSrc, formatDateTime, initials } from "@/lib/utils";
@@ -221,7 +221,7 @@ export default function CopilotPanel({
 
       <section className="card prep-section prep-secondary" aria-labelledby="journey-heading">
         <div className="prep-heading">
-          <h2 id="journey-heading"><Sparkles className="h-4 w-4" /> Living Journey Summary</h2>
+          <h2 id="journey-heading"><IntegrationLink className="h-4 w-4" /> Living Journey Summary</h2>
         </div>
         <div className="prep-controls prep-summary-controls">
           <div className="prep-field">

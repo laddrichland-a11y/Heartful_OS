@@ -12,7 +12,7 @@ import {
   DOCUMENT_LABELS,
 } from "@/lib/types";
 import { cx, isGeneralPaperwork } from "@/lib/utils";
-import { FileText } from "lucide-react";
+import { FileText } from "@/components/ui/HeartfulIcon";
 import Link from "next/link";
 
 export default function IntakeWorkspace({

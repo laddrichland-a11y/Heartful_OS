@@ -5,7 +5,7 @@ import { AiSummary, CheckIn } from "@/lib/types";
 import { submitCheckInAction } from "@/lib/actions";
 import AiGenerateButton from "@/components/ai/AiGenerateButton";
 import SummaryCard from "@/components/ai/SummaryCard";
-import { Send } from "lucide-react";
+import { Send } from "@/components/ui/HeartfulIcon";
 
 const FIELDS: { key: keyof CheckIn; label: string }[] = [
   { key: "emotional_state", label: "Emotional State" },

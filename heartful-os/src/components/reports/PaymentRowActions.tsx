@@ -2,7 +2,7 @@
 
 import Link from "next/link";
 import { useEffect, useRef, useState } from "react";
-import { CalendarDays, Download, DollarSign, ExternalLink, FileText, MoreHorizontal, Pencil, X } from "lucide-react";
+import { CalendarDays, Download, DollarSign, ExternalLink, FileText, MoreHorizontal, Pencil, X } from "@/components/ui/HeartfulIcon";
 import RecordPaymentButton from "@/components/client/RecordPaymentButton";
 import { updateOutstandingPaymentAction, updatePaymentAction, updatePaymentDueDateAction } from "@/lib/actions";
 import { formatCurrency, formatDate } from "@/lib/utils";

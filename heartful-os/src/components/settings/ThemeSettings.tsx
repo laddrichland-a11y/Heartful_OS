@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useState } from "react";
+import { Check } from "@/components/ui/HeartfulIcon";
 
 const THEME_KEY = "heartful-theme";
 type Theme = "golden-canopy" | "mushroom-grove" | "dark";
@@ -78,7 +79,7 @@ export default function ThemeSettings() {
             >
               {theme === value && (
                 <span className="settings-theme-check" aria-hidden="true">
-                  <svg viewBox="0 0 12 12" fill="none"><path d="m3 6 2 2 4-4" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" strokeLinejoin="round" /></svg>
+                  <Check className="h-3 w-3" />
                 </span>
               )}
               <span className="settings-theme-preview" data-preview-theme={value} aria-hidden="true">

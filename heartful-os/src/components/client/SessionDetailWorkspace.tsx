@@ -37,7 +37,7 @@ import {
   Upload,
   Music,
   ScrollText,
-} from "lucide-react";
+} from "@/components/ui/HeartfulIcon";
 import SummaryCard from "@/components/ai/SummaryCard";
 import MilestoneToggleBanner from "@/components/client/MilestoneToggleBanner";
 import JourneyPrepEmailButton from "@/components/client/JourneyPrepEmailButton";

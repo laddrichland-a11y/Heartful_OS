@@ -296,6 +296,29 @@ export default function FormRenderer({
                 );
               }
 
+              if (field.type === "initial") {
+                return (
+                  <div key={field.id} className="form-initial-field">
+                    <div className="form-initial-field__copy">
+                      <label htmlFor={`${template.id}-${field.id}`} className="text-sm text-ink-700 leading-snug block">
+                        {field.label}
+                        {field.required && <span className="text-clay-600"> *</span>}
+                      </label>
+                      {field.helpText && <p className="text-xs text-ink-400 mt-1">{field.helpText}</p>}
+                    </div>
+                    <input
+                      id={`${template.id}-${field.id}`}
+                      disabled={locked}
+                      value={(value as string) ?? ""}
+                      onChange={(e) => setField(field.id, e.target.value)}
+                      placeholder="Initials"
+                      maxLength={6}
+                      className="form-initial-field__input border border-ink-200 rounded-xl px-3 py-2 text-sm text-center font-medium focus:outline-none focus:ring-2 focus:ring-clay-200 disabled:bg-ink-50"
+                    />
+                  </div>
+                );
+              }
+
               return (
                 <div key={field.id}>
                   <label className="text-sm text-ink-700 leading-snug block mb-1.5">
@@ -330,17 +353,6 @@ export default function FormRenderer({
                       onChange={(e) => setField(field.id, e.target.value)}
                       placeholder="$"
                       className="w-40 border border-ink-200 rounded-xl px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-clay-200 disabled:bg-ink-50"
-                    />
-                  )}
-
-                  {field.type === "initial" && (
-                    <input
-                      disabled={locked}
-                      value={(value as string) ?? ""}
-                      onChange={(e) => setField(field.id, e.target.value)}
-                      placeholder="Initials"
-                      maxLength={6}
-                      className="w-28 border border-ink-200 rounded-xl px-3 py-2 text-sm text-center font-medium italic focus:outline-none focus:ring-2 focus:ring-clay-200 disabled:bg-ink-50"
                     />
                   )}
 

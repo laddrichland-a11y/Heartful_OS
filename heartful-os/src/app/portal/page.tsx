@@ -1,6 +1,7 @@
 "use client";
 
-import { Suspense, useEffect, useState, useTransition } from "react";
+import { Suspense, useEffect, useRef, useState, useTransition } from "react";
+import HeartfulBrand from "@/components/ui/HeartfulBrand";
 import { useRole } from "@/components/RoleContext";
 import { useRouter, useSearchParams } from "next/navigation";
 import {
@@ -38,7 +39,7 @@ import {
   Session,
   Recording,
 } from "@/lib/types";
-import { HeartHandshake, CheckCircle2, Circle, Send, FileSignature, Sparkles, FileText, ChevronDown, ChevronUp, CalendarDays, MapPin, Clock, Pencil, MessageSquareText, Music, ScrollText } from "lucide-react";
+import { AlertCircle, CheckCircle2, Circle, Send, Sparkles, FileText, ChevronDown, ChevronUp, CalendarDays, MapPin, Clock, Pencil, MessageSquareText, Mail, Music, ScrollText, UserRound, LayoutDashboard, ListChecks, Sprout, PanelLeftClose, PanelLeftOpen } from "@/components/ui/HeartfulIcon";
 import { formatDate, formatDateTime, relativeDueLabel, cx, isGeneralPaperwork } from "@/lib/utils";
 import JourneyProgressBar from "@/components/JourneyProgressBar";
 import FormRenderer from "@/components/forms/FormRenderer";
@@ -95,6 +96,16 @@ interface Bundle {
 
 const TABS = ["Home", "Appointments", "Forms & Check-Ins", "Growth & Integration", "Messages"] as const;
 
+const PORTAL_NAV = [
+  { label: "Home", icon: LayoutDashboard },
+  { label: "Appointments", icon: CalendarDays },
+  { label: "Forms & Check-Ins", icon: ListChecks },
+  { label: "Growth & Integration", icon: Sprout },
+  { label: "Messages", icon: MessageSquareText },
+] as const;
+
+const PORTAL_SIDEBAR_COLLAPSED_KEY = "heartful-portal-sidebar-collapsed";
+
 export default function PortalPage() {
   return (
     <Suspense fallback={null}>
@@ -126,6 +137,59 @@ function PortalPageInner() {
     practitionerEmail?: string;
   } | null>(null);
   const [tab, setTab] = useState<(typeof TABS)[number]>("Home");
+  const [portalSidebarCollapsed, setPortalSidebarCollapsed] = useState(false);
+  const [portalClientSwitcherOpen, setPortalClientSwitcherOpen] = useState(false);
+  const [portalClientListOpen, setPortalClientListOpen] = useState(false);
+  const portalAccountMenuRef = useRef<HTMLDivElement>(null);
+
+  /* Browser storage is an external preference source, synchronized after the
+     initial server render to avoid a hydration mismatch. */
+  /* eslint-disable react-hooks/set-state-in-effect */
+  useEffect(() => {
+    try {
+      setPortalSidebarCollapsed(window.localStorage.getItem(PORTAL_SIDEBAR_COLLAPSED_KEY) === "true");
+    } catch {
+      // Keep the sidebar expanded when browser storage is unavailable.
+    }
+  }, []);
+
+  useEffect(() => {
+    if (!portalClientSwitcherOpen) return;
+
+    function closePortalAccountMenu(event: PointerEvent) {
+      if (!portalAccountMenuRef.current?.contains(event.target as Node)) {
+        setPortalClientSwitcherOpen(false);
+        setPortalClientListOpen(false);
+      }
+    }
+
+    function closePortalAccountMenuOnEscape(event: KeyboardEvent) {
+      if (event.key === "Escape") {
+        setPortalClientSwitcherOpen(false);
+        setPortalClientListOpen(false);
+      }
+    }
+
+    document.addEventListener("pointerdown", closePortalAccountMenu);
+    document.addEventListener("keydown", closePortalAccountMenuOnEscape);
+    return () => {
+      document.removeEventListener("pointerdown", closePortalAccountMenu);
+      document.removeEventListener("keydown", closePortalAccountMenuOnEscape);
+    };
+  }, [portalClientSwitcherOpen]);
+  /* eslint-enable react-hooks/set-state-in-effect */
+
+  function togglePortalSidebar() {
+    setPortalSidebarCollapsed((current) => {
+      const next = !current;
+      try {
+        window.localStorage.setItem(PORTAL_SIDEBAR_COLLAPSED_KEY, String(next));
+      } catch {
+        // The control still works for the current page without persistence.
+      }
+      return next;
+    });
+  }
   // Practitioner-preview escape hatch for the agreements gate below. Real
   // clients never get this — for them the gate is the whole portal until
   // the paperwork is signed.
@@ -161,10 +225,10 @@ function PortalPageInner() {
   }, [hydrated, clientFromQuery, role, portalClientId, isPreview, setRole, setPortalClientId, setIsPreview, router]);
 
   useEffect(() => {
-    if (hydrated && !portalClientId) {
+    if (hydrated && (!portalClientId || isPreview)) {
       listClientsForPortalAction().then(setClients);
     }
-  }, [hydrated, portalClientId]);
+  }, [hydrated, portalClientId, isPreview]);
 
   useEffect(() => {
     if (portalClientId) {
@@ -217,9 +281,7 @@ function PortalPageInner() {
     return (
       <div className="auth-shell min-h-screen flex items-center justify-center bg-[var(--background)] px-4">
         <div className="card p-8 max-w-md w-full text-center space-y-4">
-          <div className="h-10 w-10 rounded-lg bg-clay-500 text-white flex items-center justify-center mx-auto">
-            <HeartHandshake className="h-5 w-5" />
-          </div>
+          <div className="portal-auth-brand"><HeartfulBrand subtitle="Your Journey Portal" /></div>
           {isPractitioner ? (
             <>
               <h1 className="text-lg font-semibold text-ink-900">That client link is out of date</h1>
@@ -273,9 +335,7 @@ function PortalPageInner() {
     return (
       <div className="portal-shell min-h-screen flex items-center justify-center bg-[var(--background)] px-4">
         <div className="card p-8 max-w-md w-full text-center space-y-4">
-          <div className="h-10 w-10 rounded-lg bg-clay-500 text-white flex items-center justify-center mx-auto">
-            <HeartHandshake className="h-5 w-5" />
-          </div>
+          <div className="portal-auth-brand"><HeartfulBrand subtitle="Your Journey Portal" /></div>
           <h1 className="text-lg font-semibold text-ink-900">Welcome to your Client Portal</h1>
           <p className="text-sm text-ink-500">For this demo, choose which client account to view.</p>
           <div className="space-y-2 text-left">
@@ -348,9 +408,6 @@ function PortalPageInner() {
   const hasActionItems = pendingTasks.length > 0 || pendingAssignments.length > 0 || incompleteForms.length > 0;
   const refresh = () => getPortalBundleAction(portalClientId).then((b) => setBundle(b as Bundle));
 
-  const sessionCallSummaries = bundle.sessionCallSummaries ?? [];
-  const recordings = bundle.recordings ?? [];
-
   // -------------------------------------------------------------------------
   // ONBOARDING GATE — the practice-wide agreements come before anything else.
   //
@@ -372,60 +429,47 @@ function PortalPageInner() {
   const agreementsOutstanding = agreementItems.length - agreementsDone;
 
   if (agreementItems.length > 0 && agreementsOutstanding > 0 && !previewSkipGate) {
+    const practitionerName = bundle.practitioner?.full_name ?? "your practitioner";
+    const practitionerEmail = bundle.practitioner?.email;
     return (
-      <div className="portal-shell min-h-screen bg-[var(--background)]">
-        <header className="bg-white border-b border-ink-100">
-          <div className="max-w-2xl mx-auto px-4 md:px-6 py-3.5 flex items-center gap-2">
-            <div className="h-8 w-8 rounded-lg bg-clay-500 text-white flex items-center justify-center">
-              <HeartHandshake className="h-4.5 w-4.5" />
+      <div className="portal-shell portal-onboarding app-frame heartful-site-shell flex min-h-screen bg-[var(--background)]">
+        <PortalSidebar
+          activeTab={tab}
+          collapsed={portalSidebarCollapsed}
+          agreementMode
+          onToggle={togglePortalSidebar}
+          onTabChange={setTab}
+        />
+        <div className="portal-workspace-frame flex-1 min-w-0">
+        <header className="portal-onboarding-header portal-mobile-header">
+          <div className="portal-onboarding-header__inner">
+            <div className="portal-onboarding-brand">
+              <HeartfulBrand subtitle="Your Journey Portal" />
             </div>
-            <div>
-              <div className="font-semibold text-ink-900 leading-tight">Heartful OS</div>
-              <div className="text-xs text-ink-400 leading-tight">Your Journey Portal</div>
-            </div>
-            {isPreview && (
-              <button
-                onClick={() => setPreviewSkipGate(true)}
-                className="ml-auto text-xs text-clay-600 hover:text-clay-700 underline underline-offset-2"
-              >
-                Skip (preview only)
-              </button>
-            )}
           </div>
         </header>
 
-        <main className="max-w-2xl mx-auto px-4 md:px-6 py-8 space-y-5">
-          <div className="text-center space-y-2">
-            <div className="h-11 w-11 rounded-full bg-clay-100 text-clay-600 flex items-center justify-center mx-auto">
-              <FileSignature className="h-5 w-5" />
-            </div>
-            <h1 className="app-page-title text-ink-900">
-              Welcome, {client.full_name.split(" ")[0]}
-            </h1>
-            <p className="text-sm text-ink-500 leading-relaxed">
-              {/* One template string, not JSX text: the build strips the leading
-                  space from a text node that follows an expression container,
-                  which rendered this as "short formsto read through". */}
-              {`Before we begin, there ${
-                agreementItems.length === 1 ? "is one form" : `are ${agreementItems.length} short forms`
-              } to read through and sign. They cover consent, what this work involves, and how we’ll work together. Take your time with them — your portal opens up once they’re signed.`}
-            </p>
+        <main className="portal-onboarding-main">
+          <div className="portal-onboarding-intro">
+            <p className="portal-onboarding-step">Step 1 of {agreementItems.length} · Agreements</p>
+            <h1>Welcome, {client.full_name.split(" ")[0]}</h1>
+            <p>Review and sign these agreements before continuing to your journey portal. They explain how we&apos;ll work together and what to expect.</p>
           </div>
 
-          <div className="card p-5 space-y-4">
-            <div className="flex items-center justify-between">
-              <h2 className="font-semibold text-ink-900 text-sm">Your agreements</h2>
-              <span className="text-xs text-ink-400">
-                {agreementsDone} of {agreementItems.length} signed
-              </span>
+          <section className="portal-agreements-surface">
+            <div className="portal-agreements-surface__header">
+              <div>
+                <h2>Your agreements</h2>
+                <p>{agreementsDone} of {agreementItems.length} completed</p>
+              </div>
             </div>
-            <div className="h-1.5 rounded-full bg-ink-100 overflow-hidden">
+            <div className="portal-agreements-progress" aria-label={`${agreementsDone} of ${agreementItems.length} agreements completed`}>
               <div
-                className="h-full bg-clay-500 transition-all"
+                className="portal-agreements-progress__value"
                 style={{ width: `${(agreementsDone / agreementItems.length) * 100}%` }}
               />
             </div>
-            <div className="space-y-2">
+            <div className="portal-agreements-list">
               {agreementItems.map(({ doc, template, submission }) => (
                 <FormDocumentCard
                   key={doc.id}
@@ -436,17 +480,28 @@ function PortalPageInner() {
                   packageValue={client.package_value}
                   prefill={prefill}
                   onChanged={refresh}
+                  variant="onboarding"
                 />
               ))}
             </div>
-          </div>
-
-          <p className="text-xs text-ink-400 text-center">
-            {`Questions about any of this? Reach out to ${
-              bundle.practitioner?.full_name ?? "your practitioner"
-            } before signing — there’s no rush.`}
-          </p>
+            <div className="portal-agreements-footer">
+              <div className="portal-agreements-support">
+                <strong>Have a question before signing?</strong>
+                {practitionerEmail ? (
+                  <a href={`mailto:${practitionerEmail}?subject=${encodeURIComponent("Question about my agreements")}`}><Mail aria-hidden="true" />Message {practitionerName}</a>
+                ) : (
+                  <span>Message {practitionerName}</span>
+                )}
+              </div>
+              {isPreview && (
+                <button onClick={() => setPreviewSkipGate(true)} className="portal-preview-skip">
+                  Skip preview <span aria-hidden="true">→</span>
+                </button>
+              )}
+            </div>
+          </section>
         </main>
+        </div>
       </div>
     );
   }
@@ -464,14 +519,8 @@ function PortalPageInner() {
     return (
       <div className="portal-shell min-h-screen bg-[var(--background)]">
         <header className="bg-white border-b border-ink-100">
-          <div className="max-w-2xl mx-auto px-4 md:px-6 py-3.5 flex items-center gap-2">
-            <div className="h-8 w-8 rounded-lg bg-clay-500 text-white flex items-center justify-center">
-              <HeartHandshake className="h-4.5 w-4.5" />
-            </div>
-            <div>
-              <div className="font-semibold text-ink-900 leading-tight">Heartful OS</div>
-              <div className="text-xs text-ink-400 leading-tight">Your Journey Portal</div>
-            </div>
+          <div className="portal-onboarding-header__inner portal-onboarding-brand">
+            <HeartfulBrand subtitle="Your Journey Portal" />
           </div>
         </header>
         <main className="px-4 md:px-6 py-8">
@@ -495,108 +544,130 @@ function PortalPageInner() {
   }
 
   return (
-    <div className="portal-shell min-h-screen bg-[var(--background)]">
-      <header className="sticky top-0 z-20 bg-white/90 backdrop-blur border-b border-ink-100">
-        <div className="max-w-4xl mx-auto px-4 md:px-6 py-3.5 flex items-center justify-between">
-          <button
-            onClick={() => setTab("Home")}
-            className="flex items-center gap-2 rounded-lg -ml-1 px-1 hover:bg-ink-50 transition-colors"
-            title="Go to your home"
-          >
-            <div className="h-8 w-8 rounded-lg bg-clay-500 text-white flex items-center justify-center">
-              <HeartHandshake className="h-4.5 w-4.5" />
-            </div>
-            <div className="text-left">
-              <div className="font-semibold text-ink-900 leading-tight">Heartful OS</div>
-              <div className="text-xs text-ink-400 leading-tight">Your Journey Portal</div>
-            </div>
-          </button>
-          <div className="flex items-center gap-3">
-            <button
-              onClick={() => setWelcomeOverride(true)}
-              className="text-xs text-ink-400 hover:text-clay-600 underline underline-offset-2 hidden sm:inline"
-            >
-              About this portal
-            </button>
-            <div className="text-sm text-ink-600">Hi, {client.full_name.split(" ")[0]}</div>
+    <div className="portal-shell app-frame heartful-site-shell flex min-h-screen bg-[var(--background)]">
+      <PortalSidebar
+        activeTab={tab}
+        collapsed={portalSidebarCollapsed}
+        onToggle={togglePortalSidebar}
+        onTabChange={setTab}
+      />
+
+      <div className="portal-workspace-frame flex-1 min-w-0">
+      <header className="app-topbar portal-app-header sticky top-0 z-20 bg-white/95 backdrop-blur border-b border-ink-100">
+        <div className="flex items-center justify-between px-4 md:px-7 py-3.5">
+          <span aria-hidden="true" />
+          <div className="topbar-actions">
             {isPreview && (
-              <>
-                <button
-                  onClick={() => {
-                    setBundle(null);
-                    setPortalClientId("");
-                  }}
-                  className="text-xs text-clay-600 hover:text-clay-700 underline underline-offset-2"
-                >
-                  Switch client
-                </button>
-                <div className="flex items-center text-xs bg-ink-50 rounded-full p-1">
-                  <button
-                    onClick={() => setRole("practitioner")}
-                    className="px-3 py-1 rounded-full transition-colors text-ink-500 hover:text-ink-800"
-                  >
-                    Practitioner View
-                  </button>
-                  <span className="px-3 py-1 rounded-full bg-white shadow text-ink-900 font-medium">Client Portal View</span>
-                </div>
-              </>
+              <button
+                type="button"
+                className="topbar-view-trigger"
+                onClick={() => setRole("practitioner")}
+              >
+                <span>Practitioner View</span>
+                <ChevronDown aria-hidden="true" />
+              </button>
             )}
+            {isPreview && <span className="topbar-action-divider" />}
+            <div className="topbar-account" ref={portalAccountMenuRef}>
+              <button
+                type="button"
+                className="topbar-account-trigger"
+                aria-label="Client portal menu"
+                aria-haspopup="menu"
+                aria-expanded={portalClientSwitcherOpen}
+                onClick={() => {
+                  setPortalClientSwitcherOpen((open) => !open);
+                  if (portalClientSwitcherOpen) setPortalClientListOpen(false);
+                }}
+              >
+                <span className="topbar-avatar" aria-hidden="true">
+                  {client.full_name.split(" ").map((name) => name[0]).join("").slice(0, 2).toUpperCase()}
+                </span>
+                <ChevronDown aria-hidden="true" />
+              </button>
+              {portalClientSwitcherOpen && (
+                <div className="topbar-popover topbar-account-menu portal-client-account-menu" role="menu">
+                  <div className="topbar-account-summary">
+                    <span className="topbar-avatar" aria-hidden="true">
+                      {client.full_name.split(" ").map((name) => name[0]).join("").slice(0, 2).toUpperCase()}
+                    </span>
+                    <span><strong>{client.full_name}</strong><small>Client portal</small></span>
+                  </div>
+                  <button type="button" role="menuitem" onClick={() => { setPortalClientSwitcherOpen(false); setWelcomeOverride(true); }}>
+                    <AlertCircle aria-hidden="true" /><span>About this portal</span>
+                  </button>
+                  {isPreview && (
+                    <>
+                      <button type="button" role="menuitem" aria-expanded={portalClientListOpen} onClick={() => setPortalClientListOpen((open) => !open)}>
+                        <UserRound aria-hidden="true" /><span>Switch client</span><ChevronDown className="portal-client-account-chevron" aria-hidden="true" />
+                      </button>
+                      {portalClientListOpen && (
+                        <div className="portal-client-account-options" role="group" aria-label="Choose client">
+                          {clients.map((portalClient) => (
+                            <button
+                              key={portalClient.id}
+                              type="button"
+                              role="menuitem"
+                              onClick={() => {
+                                setPortalClientSwitcherOpen(false);
+                                setPortalClientListOpen(false);
+                                setPortalClientId(portalClient.id);
+                              }}
+                              data-current={portalClient.id === portalClientId ? "true" : undefined}
+                            >
+                              <span className="topbar-client-avatar" aria-hidden="true">
+                                {portalClient.full_name.split(" ").map((name) => name[0]).join("").slice(0, 2).toUpperCase()}
+                              </span>
+                              <span>{portalClient.full_name}</span>
+                            </button>
+                          ))}
+                        </div>
+                      )}
+                    </>
+                  )}
+                </div>
+              )}
+            </div>
           </div>
         </div>
-        <nav className="max-w-4xl mx-auto px-4 md:px-6 flex gap-4 overflow-x-auto">
-          {TABS.map((t) => (
-            <button
-              key={t}
-              onClick={() => setTab(t)}
-              className={cx(
-                "text-sm pb-2.5 border-b-2 whitespace-nowrap transition-colors",
-                tab === t ? "border-clay-500 text-clay-700 font-medium" : "border-transparent text-ink-500 hover:text-ink-800"
-              )}
-            >
-              {t}
-            </button>
-          ))}
-        </nav>
       </header>
 
-      <main className="max-w-4xl mx-auto px-4 md:px-6 py-6 space-y-6">
+      <main className="portal-main">
+        <div className="portal-workspace-heading">
+          <div>
+            <span className="portal-eyebrow">Your Journey Portal</span>
+            <h1>{tab === "Home" ? `Welcome back, ${client.full_name.split(" ")[0]}` : tab}</h1>
+            <p>{tab === "Home" ? "Your next steps, sessions and reflections — together in one place." : tab === "Appointments" ? "Your upcoming sessions and the conversations worth keeping." : tab === "Forms & Check-Ins" ? "Complete your forms and share how you’re doing." : tab === "Growth & Integration" ? "Carry your insights into everyday life." : "Stay connected with your practitioner between sessions."}</p>
+          </div>
+        </div>
         {tab === "Home" && (
-          <div className="space-y-6">
-            <div className="card p-5">
-              <h2 className="font-semibold text-ink-900 mb-3">Your Journey</h2>
+          <div className="portal-overview">
+            <section className="card p-5 portal-journey-card">
+              <div className="portal-section-heading">
+                <div>
+                  <span className="portal-eyebrow">Your path</span>
+                  <h2>Your Journey</h2>
+                </div>
+                <span className="portal-phase-label">{client.current_phase.replace(/_/g, " ")}</span>
+              </div>
               <JourneyProgressBar milestones={bundle.milestones} />
-            </div>
-            {/* Every appointment — upcoming and past, every session type
-                (intake, prep, Journey Day, check-in, integration) — not
-                just ones that happen to have a generated summary yet.
-                Same panel as the Appointments tab, surfaced here too so
-                the client sees it without switching tabs. */}
-            <AppointmentsPanel
-              clientId={portalClientId}
-              sessions={bundle.sessions}
-              sessionCallSummaries={sessionCallSummaries}
-              recordings={recordings}
-              formTemplates={bundle.formTemplates}
-              documents={bundle.documents}
-              formSubmissions={bundle.formSubmissions}
-              packageValue={client.package_value}
-              prefill={prefill}
-            />
-            <div className="card p-5">
-              <h2 className="font-semibold text-ink-900 mb-3">Action Items</h2>
+            </section>
+            <section className="card p-5 portal-actions-card">
+              <div className="portal-section-heading">
+                <div>
+                  <span className="portal-eyebrow">Keep moving</span>
+                  <h2>Action Items</h2>
+                </div>
+                {hasActionItems && <span className="portal-count">{pendingTasks.length + pendingAssignments.length + incompleteForms.length}</span>}
+              </div>
               {!hasActionItems ? (
                 <p className="text-sm text-ink-400">You&apos;re all caught up — nothing pending right now.</p>
               ) : (
-                <ul className="space-y-2">
+                <ul className="portal-action-list">
                   {pendingTasks.map((t) => (
                     <li key={t.id} className="flex items-center justify-between gap-3 text-sm">
                       <div className="flex items-center gap-2">
-                        <button
-                          onClick={() => startTransition(async () => {
-                            await completeTaskAction(t.id, portalClientId);
-                            refresh();
-                          })}
-                        >
+                        <button onClick={() => startTransition(async () => { await completeTaskAction(t.id, portalClientId); refresh(); })}>
                           <Circle className="h-4 w-4 text-ink-300 hover:text-sage-500" />
                         </button>
                         <span className="text-ink-800">{t.title}</span>
@@ -606,35 +677,19 @@ function PortalPageInner() {
                   ))}
                   {pendingAssignments.map((a) => (
                     <li key={a.id} className="flex items-center justify-between gap-3 text-sm">
-                      <button
-                        onClick={() => setTab("Forms & Check-Ins")}
-                        className="flex items-center gap-2 text-left"
-                      >
-                        <Circle className="h-4 w-4 text-ink-300" />
-                        <span className="text-ink-800">{a.title}</span>
-                      </button>
+                      <button onClick={() => setTab("Forms & Check-Ins")} className="flex items-center gap-2 text-left"><Circle className="h-4 w-4 text-ink-300" /><span className="text-ink-800">{a.title}</span></button>
                       <span className="text-xs text-ink-400">{relativeDueLabel(a.due_at)}</span>
                     </li>
                   ))}
                   {incompleteForms.map(({ doc, template, status }) => (
                     <li key={doc.id} className="flex items-center justify-between gap-3 text-sm">
-                      <button
-                        onClick={() => setTab("Forms & Check-Ins")}
-                        className="flex items-center gap-2 text-left"
-                      >
-                        <Circle className="h-4 w-4 text-ink-300" />
-                        <span className="text-ink-800">
-                          {DOCUMENT_LABELS[doc.document_type] ?? template.title}
-                        </span>
-                      </button>
-                      <span className="text-xs text-ink-400">
-                        {(status === "in_progress" || status === "draft") ? "In progress" : "Not started"}
-                      </span>
+                      <button onClick={() => setTab("Forms & Check-Ins")} className="flex items-center gap-2 text-left"><Circle className="h-4 w-4 text-ink-300" /><span className="text-ink-800">{DOCUMENT_LABELS[doc.document_type] ?? template.title}</span></button>
+                      <span className="text-xs text-ink-400">{(status === "in_progress" || status === "draft") ? "In progress" : "Not started"}</span>
                     </li>
                   ))}
                 </ul>
               )}
-            </div>
+            </section>
           </div>
         )}
 
@@ -653,8 +708,8 @@ function PortalPageInner() {
         )}
 
         {tab === "Forms & Check-Ins" && (
-          <div className="space-y-6">
-            <div className="card p-5">
+          <div className="portal-content-grid">
+            <div className="card p-5 portal-content-grid__primary">
               <h2 className="font-semibold text-ink-900 mb-3">Required Forms &amp; Consents</h2>
               {bundle.documents.filter((d) => bundle.formTemplates.some((t) => t.document_type === d.document_type)).length === 0 ? (
                 <p className="text-sm text-ink-400">Nothing to fill out right now.</p>
@@ -682,7 +737,7 @@ function PortalPageInner() {
                 </div>
               )}
             </div>
-            <div className="card p-5">
+            <div className="card p-5 portal-content-grid__side">
               <h2 className="font-semibold text-ink-900 mb-3">Assigned Forms &amp; Homework</h2>
               {pendingAssignments.length === 0 ? (
                 <p className="text-sm text-ink-400">No assignments waiting on you.</p>
@@ -740,7 +795,75 @@ function PortalPageInner() {
 
         {tab === "Messages" && <MessagesPanel clientId={portalClientId} messages={bundle.messages} onSent={refresh} />}
       </main>
+      </div>
     </div>
+  );
+}
+
+function PortalSidebar({
+  activeTab,
+  collapsed,
+  agreementMode = false,
+  onToggle,
+  onTabChange,
+}: {
+  activeTab: (typeof TABS)[number];
+  collapsed: boolean;
+  agreementMode?: boolean;
+  onToggle: () => void;
+  onTabChange: (tab: (typeof TABS)[number]) => void;
+}) {
+  return (
+    <aside
+      className="app-sidebar portal-sidebar relative hidden min-h-screen w-60 shrink-0 self-start transition-[width] duration-200 md:flex md:flex-col sticky top-0"
+      data-collapsed={collapsed ? "true" : "false"}
+    >
+      <button
+        type="button"
+        className="sidebar-collapse-button"
+        onClick={onToggle}
+        aria-label={collapsed ? "Expand sidebar" : "Collapse sidebar"}
+        aria-expanded={!collapsed}
+        aria-controls="client-portal-navigation"
+        title={collapsed ? "Expand sidebar" : "Collapse sidebar"}
+      >
+        {collapsed ? <PanelLeftOpen aria-hidden="true" /> : <PanelLeftClose aria-hidden="true" />}
+      </button>
+
+      <button type="button" onClick={() => !agreementMode && onTabChange("Home")} className="sidebar-brand flex items-center gap-2 px-5 py-5 transition-colors" aria-label="Heartful client portal home">
+        <HeartfulBrand subtitle="Your Journey Portal" />
+      </button>
+
+      <nav id="client-portal-navigation" className="sidebar-nav flex-1 px-3 py-4 space-y-1" aria-label="Client portal navigation">
+        {agreementMode && (
+          <button type="button" data-active="true" aria-current="step" className="portal-sidebar-nav-item">
+            <span className="sidebar-icon-box" aria-hidden="true"><ListChecks /></span>
+            <span className="sidebar-label">Agreements</span>
+          </button>
+        )}
+        {PORTAL_NAV.map((item) => {
+          const Icon = item.icon;
+          const active = !agreementMode && activeTab === item.label;
+          return (
+            <button
+              type="button"
+              key={item.label}
+              onClick={() => onTabChange(item.label)}
+              disabled={agreementMode}
+              data-active={active ? "true" : "false"}
+              aria-current={active ? "page" : undefined}
+              aria-label={agreementMode ? `${item.label} — available after agreements` : item.label}
+              title={collapsed ? item.label : undefined}
+              className="portal-sidebar-nav-item"
+            >
+              <span className="sidebar-icon-box" aria-hidden="true"><Icon /></span>
+              <span className="sidebar-label">{item.label}</span>
+            </button>
+          );
+        })}
+      </nav>
+
+    </aside>
   );
 }
 
@@ -799,7 +922,7 @@ function AppointmentsPanel({
     .sort((a, b) => ((b.scheduled_at ?? "") < (a.scheduled_at ?? "") ? -1 : 1));
 
   return (
-    <div className="space-y-6">
+    <div className="portal-appointments-grid">
       <div className="card p-5">
         <h2 className="font-semibold text-ink-900 mb-3 flex items-center gap-2">
           <CalendarDays className="h-4 w-4 text-clay-500" /> Upcoming Appointments
@@ -886,7 +1009,7 @@ function SessionRow({
   }
 
   return (
-    <li className="border-b border-ink-100 pb-3 last:border-0">
+    <li className="portal-session-row border-b border-ink-100 pb-3 last:border-0">
       <div className="flex items-start justify-between gap-3 text-sm">
         <div>
           <div className="font-medium text-ink-800">{sessionTypeLabel(s.session_type)}</div>
@@ -1025,7 +1148,7 @@ function SessionRow({
 
 function PlanList({ title, items }: { title: string; items: string[] }) {
   return (
-    <div>
+    <div className="portal-plan-section">
       <div className="text-xs uppercase tracking-wide text-ink-400 mb-1">{title}</div>
       <ul className="list-disc list-inside text-ink-700 space-y-0.5">
         {items.map((i, idx) => (
@@ -1044,6 +1167,7 @@ function FormDocumentCard({
   packageValue,
   prefill,
   onChanged,
+  variant = "default",
 }: {
   clientId: string;
   document: ClientDocument;
@@ -1052,6 +1176,7 @@ function FormDocumentCard({
   packageValue?: number;
   prefill?: FormPrefill;
   onChanged: () => void;
+  variant?: "default" | "onboarding";
 }) {
   const [open, setOpen] = useState(false);
   const [editing, setEditing] = useState(false);
@@ -1073,9 +1198,49 @@ function FormDocumentCard({
       ? { ...submission, status: "in_progress" as const, submitted_at: undefined, signed_at: undefined }
       : submission;
 
+  if (variant === "onboarding") {
+    const actionLabel = isSubmitted ? "Signed" : status === "in_progress" || status === "draft" ? "Continue" : "Review";
+    const supportingText = isSubmitted ? "Completed" : status === "in_progress" || status === "draft" ? "Continue where you left off" : "Read and sign";
+    return (
+      <div className={cx("portal-agreement-row", open && "is-open", isSubmitted && "is-complete")}>
+        <button onClick={() => setOpen((current) => !current)} className="portal-agreement-row__summary" aria-expanded={open}>
+          <span className="portal-agreement-row__icon"><FileText aria-hidden="true" /></span>
+          <span className="portal-agreement-row__copy">
+            <span className="portal-agreement-row__title"><strong>{DOCUMENT_LABELS[doc.document_type] ?? template.title}</strong><span className={cx("portal-agreement-status", isSubmitted ? "is-complete" : status === "in_progress" || status === "draft" ? "is-progress" : "is-pending")}>{statusBadge.label}</span></span>
+            <small>{supportingText}</small>
+          </span>
+        </button>
+        <div className="portal-agreement-row__actions">
+          {isSubmitted ? (
+            <span className="portal-agreement-action is-complete"><CheckCircle2 aria-hidden="true" /> {actionLabel}</span>
+          ) : (
+            <button onClick={() => setOpen(true)} className="portal-agreement-action">{actionLabel} <span aria-hidden="true">→</span></button>
+          )}
+        </div>
+        {open && (
+          <div className="portal-agreement-row__form">
+            <FormRenderer
+              template={template}
+              submission={submissionForRenderer}
+              clientId={clientId}
+              documentId={doc.id}
+              packageValue={packageValue}
+              prefill={prefill}
+              live={status === "in_progress"}
+              onPoll={() => getFormSubmissionAction(doc.id)}
+              editorLabel="your practitioner"
+              onSaveProgress={async (answers) => { await saveFormProgressAction(clientId, doc.id, template.id, answers); }}
+              onSubmit={async (answers, signed) => { await submitClientFormAction(clientId, doc.id, template.id, answers, signed); setEditing(false); onChanged(); }}
+            />
+          </div>
+        )}
+      </div>
+    );
+  }
+
   return (
-    <div className="border border-ink-100 rounded-xl overflow-hidden">
-      <div className="flex items-center gap-3 px-4 py-3">
+    <div className="portal-document-row overflow-hidden">
+      <div className="portal-document-row__header flex items-center gap-3 px-4 py-3">
         <button
           onClick={() => setOpen((o) => !o)}
           className="flex-1 flex items-center gap-2.5 text-left hover:text-ink-900 transition-colors"
@@ -1095,7 +1260,8 @@ function FormDocumentCard({
               Edit
             </button>
           )}
-          <button onClick={() => setOpen((o) => !o)} className="p-1 text-ink-400 hover:text-ink-700">
+          <button onClick={() => setOpen((o) => !o)} className="portal-agreement-action" aria-expanded={open}>
+            {open ? "Close" : isSubmitted ? "View" : status === "in_progress" || status === "draft" ? "Continue" : "Review"}
             {open ? <ChevronUp className="h-4 w-4" /> : <ChevronDown className="h-4 w-4" />}
           </button>
         </div>
@@ -1174,7 +1340,7 @@ function MessagesPanel({ clientId, messages, onSent }: { clientId: string; messa
   const [pending, startTransition] = useTransition();
 
   return (
-    <div className="card p-5 flex flex-col h-[60vh]">
+    <div className="card p-5 portal-messages-panel flex flex-col h-[60vh]">
       <h2 className="font-semibold text-ink-900 mb-3">Messages with your Practitioner</h2>
       <div className="flex-1 overflow-y-auto space-y-2 pr-1">
         {messages.map((m) => (
@@ -1193,6 +1359,7 @@ function MessagesPanel({ clientId, messages, onSent }: { clientId: string; messa
           className="flex-1 border border-ink-200 rounded-xl px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-clay-200"
         />
         <button
+          aria-label="Send message"
           disabled={!body.trim() || pending}
           onClick={() =>
             startTransition(async () => {
@@ -1230,9 +1397,7 @@ function PortalAuthGate({
   return (
     <div className="auth-shell min-h-screen flex items-center justify-center bg-[var(--background)] px-4">
       <div className="card p-6 w-full max-w-sm space-y-4 text-center">
-        <div className="h-10 w-10 rounded-lg bg-clay-500 text-white flex items-center justify-center mx-auto">
-          <HeartHandshake className="h-5 w-5" />
-        </div>
+        <div className="portal-auth-brand"><HeartfulBrand subtitle="Your Journey Portal" /></div>
         {accountExists ? (
           <PortalLoginForm clientId={clientId} clientEmail={clientEmail} onUnlocked={onUnlocked} />
         ) : (

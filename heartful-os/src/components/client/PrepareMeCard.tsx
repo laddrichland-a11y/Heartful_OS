@@ -4,7 +4,7 @@ import { useState } from "react";
 import AiGenerateButton from "@/components/ai/AiGenerateButton";
 import SummaryCard from "@/components/ai/SummaryCard";
 import { AiSummary } from "@/lib/types";
-import { FileText } from "lucide-react";
+import { FileText } from "@/components/ui/HeartfulIcon";
 
 /**
  * Prepare Me, on a stage page.

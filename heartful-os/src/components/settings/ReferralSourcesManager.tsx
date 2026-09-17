@@ -1,7 +1,7 @@
 "use client";
 
 import { useRef, useState, type FormEvent } from "react";
-import { Plus, X } from "lucide-react";
+import { Plus, X } from "@/components/ui/HeartfulIcon";
 import { ReferralSource } from "@/lib/types";
 import { createReferralSourceAction, deleteReferralSourceAction } from "@/lib/actions";
 

@@ -1,7 +1,7 @@
 "use client";
 
 import { useState } from "react";
-import { Trash2, Pencil, Check, X, Loader2 } from "lucide-react";
+import { Trash2, Pencil, Check, X, Loader2 } from "@/components/ui/HeartfulIcon";
 
 export default function SummaryCard({
   title,

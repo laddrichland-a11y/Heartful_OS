@@ -3,7 +3,7 @@
 import { useState, Suspense } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
 import { loginAction } from "@/lib/actions";
-import { HeartHandshake } from "lucide-react";
+import { HeartHandshake } from "@/components/ui/HeartfulIcon";
 
 export default function LoginPage() {
   return (

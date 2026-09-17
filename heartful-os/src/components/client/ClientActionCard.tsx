@@ -1,7 +1,7 @@
 "use client";
 
 import Link from "next/link";
-import { CalendarClock, FileWarning, ClipboardList, BookOpen } from "lucide-react";
+import { CalendarClock, FileWarning, ClipboardList, BookOpen } from "@/components/ui/HeartfulIcon";
 import { Session, ClientDocument, Task, PortalAssignment, FormSubmission } from "@/lib/types";
 import { SESSION_TYPE_LABELS, formatDateTime, formatDate } from "@/lib/utils";
 
