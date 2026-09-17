@@ -1,7 +1,7 @@
 "use client";
 
 import { CheckCircle2, ChevronDown, FileText, ListFilter } from "lucide-react";
-import Image from "next/image";
+import ClientAvatarImage from "@/components/client/ClientAvatarImage";
 import Link from "next/link";
 import { useMemo, useState } from "react";
 import { clientAvatarSrc, initials } from "@/lib/utils";
@@ -170,7 +170,7 @@ export default function OutstandingQueue({ groups }: { groups: OutstandingQueueG
                   </button>
                   <span className="outstanding-client-avatar" aria-hidden="true">
                     {avatarSrc ? (
-                      <Image src={avatarSrc} alt="" width={28} height={28} sizes="28px" />
+                      <ClientAvatarImage clientName={group.clientName} src={avatarSrc} width={28} height={28} sizes="28px" />
                     ) : (
                       initials(group.clientName)
                     )}

@@ -1,5 +1,5 @@
 import Link from "next/link";
-import Image from "next/image";
+import ClientAvatarImage from "@/components/client/ClientAvatarImage";
 import AppShell from "@/components/layout/AppShell";
 import RevenueChartCard from "@/components/reports/RevenueChartCard";
 import ReportsNav from "@/components/reports/ReportsNav";
@@ -46,7 +46,7 @@ function PaymentClientLink({ clientId, clientName }: { clientId: string; clientN
   const avatarSrc = clientAvatarSrc(clientName);
   return <Link href={`/clients/${clientId}`} className="report-client-link">
     <span className="report-client-avatar" aria-hidden="true">
-      {avatarSrc ? <Image src={avatarSrc} alt="" width={24} height={24} sizes="24px" /> : initials(clientName)}
+      {avatarSrc ? <ClientAvatarImage clientName={clientName} src={avatarSrc} width={24} height={24} sizes="24px" /> : initials(clientName)}
     </span>
     <span>{clientName}</span>
   </Link>;

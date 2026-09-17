@@ -7,7 +7,7 @@ import {
   Activity, ArrowRight, CalendarDays, CheckCircle2, ChevronRight, CircleAlert,
   ClipboardCheck, Clock3, DollarSign, FileText, Plus, Users,
 } from "lucide-react";
-import Image from "next/image";
+import ClientAvatarImage from "@/components/client/ClientAvatarImage";
 import Link from "next/link";
 import {
   clientAvatarSrc, cx, formatDateTime, initials, isPastDue, outstandingItemHref,
@@ -83,7 +83,7 @@ export default async function DashboardPage() {
                   <div className="dashboard-session-time"><Clock3 aria-hidden="true" /><span>{formatDateTime(session.scheduled_at)}</span></div>
                   <Link href={`/clients/${session.client_id}`} className="dashboard-client-link dashboard-session-client">
                     <span className="dashboard-session-avatar" aria-hidden="true">
-                      {avatarSrc ? <Image src={avatarSrc} alt="" width={24} height={24} sizes="24px" /> : initials(session.client_name)}
+                      {avatarSrc ? <ClientAvatarImage clientName={session.client_name} src={avatarSrc} width={24} height={24} sizes="24px" /> : initials(session.client_name)}
                     </span>
                     <span className="dashboard-session-client-name">{session.client_name}</span>
                   </Link>
@@ -115,7 +115,7 @@ export default async function DashboardPage() {
                       <span className="dashboard-active-client-identity">
                         <span className="dashboard-active-client-avatar" aria-hidden="true">
                           {avatarSrc ? (
-                            <Image src={avatarSrc} alt="" width={30} height={30} sizes="30px" />
+                            <ClientAvatarImage clientName={client.full_name} src={avatarSrc} width={30} height={30} sizes="30px" />
                           ) : (
                             initials(client.full_name)
                           )}

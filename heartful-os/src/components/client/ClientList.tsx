@@ -1,6 +1,6 @@
 "use client";
 
-import Image from "next/image";
+import ClientAvatarImage from "@/components/client/ClientAvatarImage";
 import Link from "next/link";
 import { Search, SlidersHorizontal } from "lucide-react";
 import JourneyProgressBar from "@/components/JourneyProgressBar";
@@ -278,7 +278,7 @@ export default function ClientList({ items, emptyMessage }: { items: ClientListI
                   <div className="flex min-w-0 items-center gap-3">
                     <div className="client-list-avatar flex h-14 w-14 shrink-0 items-center justify-center rounded-full bg-clay-100 font-medium text-clay-700">
                       {avatarSrc ? (
-                        <Image src={avatarSrc} alt="" width={56} height={56} sizes="56px" />
+                        <ClientAvatarImage clientName={client.full_name} src={avatarSrc} width={56} height={56} sizes="56px" />
                       ) : (
                         initials(client.full_name)
                       )}

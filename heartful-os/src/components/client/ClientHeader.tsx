@@ -1,7 +1,7 @@
 "use client";
 
 import { useState } from "react";
-import Image from "next/image";
+import ClientAvatarImage from "@/components/client/ClientAvatarImage";
 import { CalendarDays, CheckCircle2, ChevronDown, ChevronUp, CircleDollarSign, KeyRound, Mail, PauseCircle, Phone, UserRound } from "lucide-react";
 import { Client, JourneyMilestone, Profile, ReferralSource, Session } from "@/lib/types";
 import { clientAvatarSrc, formatCurrency, formatDate, formatDateTime, initials } from "@/lib/utils";
@@ -66,7 +66,7 @@ export default function ClientHeader({ client, sessions = [], referralSources, p
       <div className="wn-overview-summary">
         <div className="wn-overview-identity">
           <div className="wn-avatar">
-            {avatarSrc ? <Image src={avatarSrc} alt="" width={58} height={58} priority /> : initials(client.full_name)}
+            {avatarSrc ? <ClientAvatarImage clientName={client.full_name} src={avatarSrc} width={58} height={58} priority /> : initials(client.full_name)}
           </div>
           <div className="wn-overview-name">
             <span className="wn-section-eyebrow">Client overview</span>

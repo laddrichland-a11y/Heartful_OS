@@ -14,7 +14,7 @@ import {
 } from "@/lib/actions";
 import { Session, SessionType, ProspectCall, ExternalCalendarEvent } from "@/lib/types";
 import { clientAvatarSrc, cx, formatDateTime, initials, occupiesCalendarSlot } from "@/lib/utils";
-import Image from "next/image";
+import ClientAvatarImage from "@/components/client/ClientAvatarImage";
 import {
   ChevronLeft,
   ChevronRight,
@@ -791,12 +791,13 @@ function ClientAvatar({ clientName, compact = false }: { clientName: string; com
   const size = compact ? 16 : 28;
 
   return src ? (
-    <Image
+    <ClientAvatarImage
+      clientName={clientName}
       src={src}
-      alt=""
       width={size}
       height={size}
       className={cx("shrink-0 rounded-full object-cover", compact ? "h-4 w-4" : "h-7 w-7")}
+      fallbackClassName={cx("inline-flex shrink-0 items-center justify-center rounded-full bg-ink-100 text-ink-500 font-semibold", compact ? "h-4 w-4 text-xs" : "h-7 w-7 text-xs")}
     />
   ) : (
     <span

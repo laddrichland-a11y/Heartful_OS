@@ -1,7 +1,7 @@
 "use client";
 
 import { useRef, useState } from "react";
-import Image from "next/image";
+import ClientAvatarImage from "@/components/client/ClientAvatarImage";
 import Link from "next/link";
 import { Sparkles, Loader2, CalendarClock, ArrowRight, ChevronRight, ListChecks } from "lucide-react";
 import SummaryCard from "@/components/ai/SummaryCard";
@@ -133,7 +133,7 @@ export default function CopilotPanel({
                 <span className="prep-session-identity">
                   <span className="prep-session-avatar" aria-hidden="true">
                     {clientAvatarSrc(s.clientName) ? (
-                      <Image src={clientAvatarSrc(s.clientName)!} alt="" width={30} height={30} sizes="30px" />
+                      <ClientAvatarImage clientName={s.clientName} src={clientAvatarSrc(s.clientName)!} width={30} height={30} sizes="30px" />
                     ) : initials(s.clientName)}
                   </span>
                   <span className="prep-session-client">{s.clientName}</span>
