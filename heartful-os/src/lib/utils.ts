@@ -1,4 +1,10 @@
 import { ClientStatus, DocumentType, JourneyPhase } from "@/lib/types";
+import type { StaticImageData } from "next/image";
+import mayaChenAvatar from "../../public/images/clients/maya-chen.webp";
+import danielOrtizAvatar from "../../public/images/clients/daniel-ortiz.webp";
+import priyaPatelAvatar from "../../public/images/clients/priya-patel.webp";
+import marcusWebbAvatar from "../../public/images/clients/marcus-webb.webp";
+import sarahKleinAvatar from "../../public/images/clients/sarah-klein.webp";
 
 export function cx(...args: (string | false | null | undefined)[]) {
   return args.filter(Boolean).join(" ");
@@ -135,13 +141,13 @@ export function initials(name: string) {
     .toUpperCase();
 }
 
-export function clientAvatarSrc(clientName: string): string | undefined {
-  const avatarByName: Record<string, string> = {
-    "Maya Chen": "/images/clients/maya-chen.webp",
-    "Daniel Ortiz": "/images/clients/daniel-ortiz.webp",
-    "Priya Patel": "/images/clients/priya-patel.webp",
-    "Marcus Webb": "/images/clients/marcus-webb.webp",
-    "Sarah Klein": "/images/clients/sarah-klein.webp",
+export function clientAvatarSrc(clientName: string): StaticImageData | undefined {
+  const avatarByName: Record<string, StaticImageData> = {
+    "Maya Chen": mayaChenAvatar,
+    "Daniel Ortiz": danielOrtizAvatar,
+    "Priya Patel": priyaPatelAvatar,
+    "Marcus Webb": marcusWebbAvatar,
+    "Sarah Klein": sarahKleinAvatar,
   };
 
   return avatarByName[clientName];

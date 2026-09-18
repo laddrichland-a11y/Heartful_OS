@@ -1,12 +1,12 @@
 "use client";
 
-import Image from "next/image";
+import Image, { type ImageProps } from "next/image";
 import { useState } from "react";
 import { initials } from "@/lib/utils";
 
 type ClientAvatarImageProps = {
   clientName: string;
-  src: string;
+  src: ImageProps["src"];
   width: number;
   height: number;
   sizes?: string;
@@ -44,6 +44,7 @@ export default function ClientAvatarImage({
       height={height}
       sizes={sizes}
       priority={priority}
+      unoptimized
       className={className}
       onError={() => setFailed(true)}
     />
