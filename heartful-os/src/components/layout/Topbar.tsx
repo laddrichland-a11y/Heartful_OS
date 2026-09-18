@@ -2,8 +2,9 @@
 
 import { useRouter } from "next/navigation";
 import { useRole } from "@/components/RoleContext";
+import { usePractitioner } from "@/components/PractitionerContext";
 import { useClientSwitcher } from "@/components/client/ClientSwitcherContext";
-import { ArrowRight, Bell, Check, ChevronDown, LogOut, Menu, MessageCircle, Plus, Search, Settings } from "@/components/ui/HeartfulIcon";
+import { ArrowRight, Bell, Check, ChevronDown, LogOut, Menu, MessageCircle, Plus, Search } from "@/components/ui/HeartfulIcon";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import MobileNav from "./MobileNav";
 import { logoutAction } from "@/lib/actions";
@@ -18,6 +19,7 @@ export default function Topbar({
   showClientSwitcher?: boolean;
 }) {
   const { role, setRole, setIsPreview } = useRole();
+  const { practitionerName, practiceName } = usePractitioner();
   const clientSwitcher = useClientSwitcher();
   const router = useRouter();
   const [mobileOpen, setMobileOpen] = useState(false);
@@ -30,6 +32,7 @@ export default function Topbar({
   const clientMenuRef = useRef<HTMLDivElement>(null);
   const viewMenuRef = useRef<HTMLDivElement>(null);
   const accountMenuRef = useRef<HTMLDivElement>(null);
+  const practitionerInitials = initials(practitionerName) || "P";
 
   const currentClientName = clientSwitcher?.clients.find(
     (client) => client.id === clientSwitcher.currentClientId
@@ -213,12 +216,11 @@ export default function Topbar({
             <button className="topbar-icon-button" aria-label="Messages" title="Messages" onClick={() => router.push("/clients")}><MessageCircle /></button>
             <div className="topbar-account" ref={accountMenuRef}>
               <button className="topbar-account-trigger" aria-label="Account menu" aria-haspopup="menu" aria-expanded={accountMenuOpen} onClick={() => setAccountMenuOpen((open) => !open)}>
-                <span className="topbar-avatar">PA</span><ChevronDown aria-hidden="true" />
+                <span className="topbar-avatar">{practitionerInitials}</span><ChevronDown aria-hidden="true" />
               </button>
               {accountMenuOpen && (
                 <div className="topbar-popover topbar-account-menu" role="menu">
-                  <div className="topbar-account-summary"><span className="topbar-avatar">PA</span><span><strong>Paul Austin</strong><small>Practitioner account</small></span></div>
-                  <button role="menuitem" onClick={() => { setAccountMenuOpen(false); router.push("/settings"); }}><Settings /><span>Account settings</span></button>
+                  <div className="topbar-account-summary"><span className="topbar-avatar">{practitionerInitials}</span><span><strong>{practitionerName}</strong><small>{practiceName}</small></span></div>
                   <button role="menuitem" onClick={async () => { try { await logoutAction(); } catch (err) { if (err instanceof Error && err.message === "NEXT_REDIRECT") throw err; } }}><LogOut /><span>Log out</span></button>
                 </div>
               )}

@@ -355,10 +355,19 @@ const UPLOAD_ONLY_DOCUMENT_TYPES: { type: DocumentType; required: boolean }[] = 
 // PRACTITIONER PROFILE + REFERRAL SOURCES
 // ---------------------------------------------------------------------------
 
+const PRACTICE_NAME = "Stillwater Integration Studio";
+
 export async function getPractitioner(): Promise<Profile> {
   if (isFirebaseConfigured) {
     const existing = await getDocById<Profile>("meta", "practitioner");
-    if (existing) return existing;
+    if (existing) {
+      if (existing.practice_name !== "Heartful Labs") return existing;
+      return setSingleton<Profile & Record<string, unknown>>(
+        "meta",
+        "practitioner",
+        { ...existing, practice_name: PRACTICE_NAME } as Profile & Record<string, unknown>
+      );
+    }
     // First run against a brand-new Firestore project: seed from the mock
     // practitioner profile so the app has something sensible to show.
     return setSingleton<Profile & Record<string, unknown>>(
@@ -366,6 +375,9 @@ export async function getPractitioner(): Promise<Profile> {
       "practitioner",
       store.practitioner as unknown as Profile & Record<string, unknown>
     );
+  }
+  if (store.practitioner.practice_name === "Heartful Labs") {
+    store.practitioner.practice_name = PRACTICE_NAME;
   }
   return store.practitioner;
 }

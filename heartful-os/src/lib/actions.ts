@@ -135,6 +135,42 @@ async function isPortalUnlocked(clientId: string, passwordHash?: string): Promis
   return cookie === passwordHash;
 }
 
+/** Updates only the contact fields the client record already supports. */
+export async function updatePortalProfileAction(
+  clientId: string,
+  input: { full_name: string; email?: string; phone?: string }
+): Promise<{ ok: boolean; error?: string }> {
+  const client = await data.getClient(clientId);
+  if (!client) return { ok: false, error: "Client not found." };
+
+  const authed = await isPractitionerAuthed();
+  if (!authed && !(await isPortalUnlocked(clientId, client.portal_password_hash))) {
+    return { ok: false, error: "Your portal session has ended. Please sign in again." };
+  }
+
+  const fullName = input.full_name.trim();
+  const email = input.email?.trim() ?? "";
+  if (!fullName) return { ok: false, error: "Enter your full name." };
+  if (email && !emailLooksValid(email)) return { ok: false, error: "Enter a valid email address." };
+
+  await data.updateClient(clientId, {
+    full_name: fullName,
+    email: email || undefined,
+    phone: input.phone?.trim() || undefined,
+  });
+  revalidatePath("/portal");
+  revalidatePath(`/clients/${clientId}`);
+  return { ok: true };
+}
+
+/** Ends the current client portal session without affecting practitioner auth. */
+export async function portalLogoutAction(clientId: string) {
+  const cookieStore = await cookies();
+  cookieStore.delete(`${PORTAL_UNLOCK_PREFIX}${clientId}`);
+  cookieStore.delete(PORTAL_CLIENT_COOKIE);
+  redirect("/portal");
+}
+
 // ---------------------------------------------------------------------------
 // Server Actions — thin mutation layer called directly from client
 // components. Each wraps the mock data layer in lib/data.ts and revalidates
@@ -298,6 +334,8 @@ export async function updatePractitionerAction(patch: {
 }) {
   await data.updatePractitioner(patch);
   revalidatePath("/settings");
+  revalidatePath("/dashboard");
+  revalidatePath("/", "layout");
 }
 
 // Puts a form into "in_progress" (creating an empty submission if needed) so

@@ -2,6 +2,7 @@
 
 import { useState, useTransition, type FormEvent } from "react";
 import { updatePractitionerAction } from "@/lib/actions";
+import { usePractitioner } from "@/components/PractitionerContext";
 
 type ProfileFields = {
   full_name?: string;
@@ -11,6 +12,7 @@ type ProfileFields = {
 };
 
 export default function PracticeProfileForm({ profile }: { profile: ProfileFields }) {
+  const { setPractitionerName, setPracticeName } = usePractitioner();
   const [values, setValues] = useState({
     full_name: profile.full_name ?? "",
     practice_name: profile.practice_name ?? "",
@@ -35,6 +37,8 @@ export default function PracticeProfileForm({ profile }: { profile: ProfileField
           email: values.email.trim(),
           phone: values.phone.trim(),
         });
+        setPractitionerName(values.full_name.trim());
+        setPracticeName(values.practice_name.trim());
         setMessage("Changes saved");
       } catch {
         setMessage("Could not save changes. Try again.");
@@ -47,7 +51,7 @@ export default function PracticeProfileForm({ profile }: { profile: ProfileField
       <div className="settings-fields">
         {([
           ["full_name", "Practitioner name", "text", "Ladd Richland"],
-          ["practice_name", "Practice name", "text", "Heartful Labs"],
+          ["practice_name", "Practice name", "text", "Stillwater Integration Studio"],
           ["email", "Email", "email", "you@example.com"],
           ["phone", "Phone", "tel", "(555) 555-0100"],
         ] as const).map(([key, label, type, placeholder]) => (

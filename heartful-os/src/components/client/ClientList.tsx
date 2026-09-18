@@ -166,15 +166,24 @@ export default function ClientList({ items, emptyMessage }: { items: ClientListI
 
   return (
     <>
-      <div className="mb-3 flex flex-wrap items-center gap-2" aria-label="Search and filter clients">
-        <label className="relative min-w-[190px] flex-1 sm:w-[340px] sm:flex-none">
-          <Search className="pointer-events-none absolute left-2.5 top-1/2 h-3.5 w-3.5 -translate-y-1/2 text-ink-400" />
+      <div
+        className="mb-3 flex flex-col gap-2 lg:flex-row lg:items-center"
+        aria-label="Search and filter clients"
+      >
+        <label
+          className={cx(
+            controlClass,
+            "flex min-w-0 items-center gap-2 px-3 focus-within:border-clay-300 focus-within:ring-2 focus-within:ring-clay-100 lg:w-[360px] lg:shrink-0",
+            query && "border-clay-300 bg-clay-50"
+          )}
+        >
+          <Search className="h-4 w-4 shrink-0 text-ink-400" />
           <input
             type="search"
             value={query}
             onChange={(event) => setQuery(event.target.value)}
             placeholder="Search clients..."
-            className={cx(controlClass, "w-full pl-8 pr-3", query && "border-clay-300 bg-clay-50")}
+            className="client-list-search-input min-w-0 flex-1 bg-transparent text-sm text-ink-600 outline-none placeholder:text-ink-400"
           />
         </label>
 
@@ -184,7 +193,7 @@ export default function ClientList({ items, emptyMessage }: { items: ClientListI
           options={STAGE_OPTIONS}
           onChange={(value) => setStage(value as StageFilter)}
           active={stage !== "all"}
-          className="w-[160px]"
+          className="w-full lg:w-40 lg:shrink-0"
           menuClassName="left-auto right-0 w-40"
         />
 
@@ -197,11 +206,11 @@ export default function ClientList({ items, emptyMessage }: { items: ClientListI
           ]}
           onChange={setReferral}
           active={referral !== "all"}
-          className="w-[280px] max-w-full"
+          className="w-full lg:w-[300px] lg:shrink-0"
           menuClassName="w-72"
         />
 
-        <details className="relative min-w-[120px] flex-1">
+        <details className="relative min-w-0 lg:flex-1">
           <summary
             className={cx(
               controlClass,
@@ -249,7 +258,7 @@ export default function ClientList({ items, emptyMessage }: { items: ClientListI
         </details>
 
         {hasFilters && (
-          <button type="button" onClick={clearFilters} className="px-1.5 text-xs text-ink-500 hover:text-ink-800">
+          <button type="button" onClick={clearFilters} className="px-1.5 text-xs text-ink-500 hover:text-ink-800 lg:shrink-0">
             Clear filters
           </button>
         )}

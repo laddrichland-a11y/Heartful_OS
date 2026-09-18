@@ -1,0 +1,46 @@
+:where(.icon) {
+  position: relative;
+  display: inline-block;
+  flex: 0 0 auto;
+  width: 1em;
+  height: 1em;
+  color: currentColor;
+  vertical-align: -0.125em;
+}
+
+.layer {
+  position: absolute;
+  inset: -7%;
+  display: block;
+  background-color: currentColor;
+  mask-position: center;
+  mask-repeat: no-repeat;
+  mask-size: contain;
+  transition: opacity 150ms ease;
+}
+
+.broken {
+  mask-image: var(--heartful-icon-broken);
+  opacity: 1;
+}
+
+.filled {
+  mask-image: var(--heartful-icon-filled);
+  opacity: 0;
+}
+
+:where(a, button, [role="button"]):is(:hover, :focus-visible) .broken,
+:where([aria-current="page"], [aria-pressed="true"], [data-active="true"], [data-selected="true"]) .broken {
+  opacity: 0;
+}
+
+:where(a, button, [role="button"]):is(:hover, :focus-visible) .filled,
+:where([aria-current="page"], [aria-pressed="true"], [data-active="true"], [data-selected="true"]) .filled {
+  opacity: 1;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .layer {
+    transition: none;
+  }
+}

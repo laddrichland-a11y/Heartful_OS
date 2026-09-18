@@ -4,6 +4,7 @@ import { useState, useTransition } from "react";
 import Link from "next/link";
 import { disconnectGoogleCalendarAction, syncGoogleCalendarNowAction } from "@/lib/actions";
 import { formatDateTime } from "@/lib/utils";
+import { CalendarDays } from "@/components/ui/HeartfulIcon";
 
 export default function GoogleCalendarSettings({
   configured, connected, connectedEmail, lastSyncedAt, lastSyncError, flash,
@@ -48,7 +49,7 @@ export default function GoogleCalendarSettings({
       <div className="settings-calendar-main">
         <div>
           <div className="settings-calendar-title-row">
-            <h3>Google Calendar</h3>
+            <h3 className="settings-heading"><CalendarDays aria-hidden="true" />Google Calendar</h3>
             <span className={`settings-status ${connected ? "settings-status-connected" : ""}`}>
               {connected ? "Connected" : "Not connected"}
             </span>

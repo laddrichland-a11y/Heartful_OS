@@ -474,11 +474,11 @@ export default function CalendarView({
             </div>
           )}
         </div>
-        <div className="card p-5">
+        <div className="card p-5 flex h-full flex-col">
           <h3 className="font-semibold text-ink-900 mb-3 flex items-center gap-2">
             <History className="h-4 w-4 text-ink-400" /> Past Sessions
           </h3>
-          <div className="space-y-2 max-h-[420px] overflow-y-auto pr-1">
+          <div className="min-h-0 flex-1 space-y-2 overflow-y-auto pr-1">
             {past.length === 0 && <p className="text-sm text-ink-400">No past sessions yet.</p>}
             {past.slice(0, 30).map((s) => (
               <SessionRow

@@ -24,12 +24,12 @@ export default async function RevenueReportsPage() {
     </section>
     <RevenueChartCard payments={summary.revenuePayments} clientActivity={summary.revenueByMonth} />
     <div className="reports-grid reports-grid--tables">
-      <PaymentTable title="Outstanding payments" description="Open balances by client" empty="No outstanding balances." headings={["Client", "Amount", "Due date", "Status", "Actions"]}>
+      <PaymentTable title="Outstanding payments" empty="No outstanding balances." headings={["Client", "Amount", "Due date", "Status", "Actions"]}>
         {summary.outstandingPayments.map((payment) => <tr key={payment.clientId}>
           <td><PaymentClientLink clientId={payment.clientId} clientName={payment.client} /></td><td>{formatCurrency(payment.amount)}</td><td>{payment.dueDate ? formatDate(payment.dueDate) : "—"}</td><td><span className="report-status report-status--outstanding">{payment.status}</span></td><td className="report-table-actions"><PaymentRowActions clientId={payment.clientId} outstanding={payment.amount} dueDate={payment.dueDate} /></td>
         </tr>)}
       </PaymentTable>
-      <PaymentTable title="Recent payments" description="Latest recorded collections" empty="No recorded payments yet." headings={["Client", "Amount", "Date", "Status", "Actions"]}>
+      <PaymentTable title="Recent payments" empty="No recorded payments yet." headings={["Client", "Amount", "Date", "Status", "Actions"]}>
         {summary.recentPayments.map((payment) => <tr key={payment.id}>
           <td><PaymentClientLink clientId={payment.clientId} clientName={payment.client} /></td><td>{formatCurrency(payment.amount)}</td><td>{formatDate(payment.date)}</td><td><span className="report-status report-status--paid">{payment.status}</span></td><td className="report-table-actions"><PaymentRowActions clientId={payment.clientId} payment={payment} /></td>
         </tr>)}
@@ -52,7 +52,7 @@ function PaymentClientLink({ clientId, clientName }: { clientId: string; clientN
   </Link>;
 }
 
-function PaymentTable({ title, description, headings, empty, children }: { title: string; description: string; headings: string[]; empty: string; children: React.ReactNode }) {
+function PaymentTable({ title, headings, empty, children }: { title: string; headings: string[]; empty: string; children: React.ReactNode }) {
   const hasRows = Array.isArray(children) ? children.length > 0 : Boolean(children);
-  return <section className="card report-card"><div className="report-card-heading"><h2>{title}</h2><p>{description}</p></div><div className="report-table-wrap"><table className="report-table"><thead><tr>{headings.map((heading) => <th key={heading}>{heading}</th>)}</tr></thead><tbody>{children}</tbody></table>{!hasRows && <p className="report-empty">{empty}</p>}</div></section>;
+  return <section className="card report-card"><div className="report-card-heading"><h2>{title}</h2></div><div className="report-table-wrap"><table className="report-table"><thead><tr>{headings.map((heading) => <th key={heading}>{heading}</th>)}</tr></thead><tbody>{children}</tbody></table>{!hasRows && <p className="report-empty">{empty}</p>}</div></section>;
 }

@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useState } from "react";
+import { Bell } from "@/components/ui/HeartfulIcon";
 
 const STORAGE_KEY = "heartful-notification-preferences";
 const items = [
@@ -37,7 +38,7 @@ export default function NotificationSettings() {
 
   return (
     <section className="settings-block settings-notifications-block" aria-labelledby="notifications-heading">
-      <h3 id="notifications-heading">Notification</h3>
+      <h3 id="notifications-heading" className="settings-heading"><Bell aria-hidden="true" />Notification</h3>
       <div className="settings-notification-list">
         {items.map(([key, label]) => (
           <label className="settings-row settings-notification-row" key={key}>

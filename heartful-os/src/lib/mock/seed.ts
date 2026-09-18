@@ -60,7 +60,7 @@ export const PRACTITIONER: Profile = {
   role: "practitioner",
   full_name: "Ladd Richland",
   email: "ladd.richland@gmail.com",
-  practice_name: "Heartful Labs",
+  practice_name: "Stillwater Integration Studio",
   title: "Integration & Harm Reduction Specialist",
 };
 

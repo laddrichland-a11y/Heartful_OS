@@ -3,7 +3,7 @@ import { ClientGrowthChart, ReferralBarChart, StatusDonutChart } from "@/compone
 import ReportsNav from "@/components/reports/ReportsNav";
 import { getReportsSummary } from "@/lib/data";
 import { STATUS_LABELS } from "@/lib/types";
-import { ClipboardList, TrendingUp, Users } from "@/components/ui/HeartfulIcon";
+import { ClipboardList, TrendingUp, UserRound, Users } from "@/components/ui/HeartfulIcon";
 
 export const dynamic = "force-dynamic";
 
@@ -49,7 +49,7 @@ export default async function ReportsOverviewPage() {
     </header>
     <section className="reports-kpi-grid" aria-label="Practice overview">
       <ReportMetric label="Total clients" value={summary.totalClients} icon={Users} tone="clay" />
-      <ReportMetric label="Active clients" value={summary.activeClients} icon={TrendingUp} tone="sage" />
+      <ReportMetric label="Active clients" value={summary.activeClients} icon={UserRound} tone="sage" />
       <ReportMetric label="Journey completion rate" value={`${summary.journeyCompletionRate}%`} icon={ClipboardList} tone="vanilla" />
       <ReportMetric
         label="Average journey progress"

@@ -1,7 +1,9 @@
 import type { Metadata, Viewport } from "next";
 import "./globals.css";
 import { RoleProvider } from "@/components/RoleContext";
+import { PractitionerProvider } from "@/components/PractitionerContext";
 import { ThemeBootstrap } from "@/components/settings/ThemeSettings";
+import { getPractitioner } from "@/lib/data";
 
 export const metadata: Metadata = {
   title: "Heartful OS",
@@ -23,18 +25,22 @@ export const viewport: Viewport = {
   themeColor: "#F3774D",
 };
 
-export default function RootLayout({
+export default async function RootLayout({
   children,
 }: Readonly<{
   children: React.ReactNode;
 }>) {
+  const practitioner = await getPractitioner();
+
   return (
     <html lang="en" className="h-full antialiased">
       <body className="min-h-full flex flex-col">
-        <RoleProvider>
-          <ThemeBootstrap />
-          {children}
-        </RoleProvider>
+        <PractitionerProvider initialName={practitioner.full_name} initialPracticeName={practitioner.practice_name}>
+          <RoleProvider>
+            <ThemeBootstrap />
+            {children}
+          </RoleProvider>
+        </PractitionerProvider>
       </body>
     </html>
   );

@@ -39,12 +39,13 @@ import {
   Session,
   Recording,
 } from "@/lib/types";
-import { AlertCircle, CheckCircle2, Circle, Send, Sparkles, FileText, ChevronDown, ChevronUp, CalendarDays, MapPin, Clock, Pencil, MessageSquareText, Mail, Music, ScrollText, UserRound, LayoutDashboard, ListChecks, Sprout, PanelLeftClose, PanelLeftOpen } from "@/components/ui/HeartfulIcon";
+import { AlertCircle, Check, CheckCircle2, Circle, Send, Sparkles, FileText, ChevronDown, ChevronUp, CalendarDays, MapPin, Clock, Pencil, MessageSquareText, Mail, Music, ScrollText, UserRound, LayoutDashboard, ListChecks, Sprout, PanelLeftClose, PanelLeftOpen, Settings, ArrowRight } from "@/components/ui/HeartfulIcon";
 import { formatDate, formatDateTime, relativeDueLabel, cx, isGeneralPaperwork } from "@/lib/utils";
 import JourneyProgressBar from "@/components/JourneyProgressBar";
 import FormRenderer from "@/components/forms/FormRenderer";
 import { buildFormPrefill, FormPrefill } from "@/lib/formPrefill";
 import PortalWelcome from "@/components/portal/PortalWelcome";
+import PortalClientSettings from "@/components/portal/PortalClientSettings";
 
 export const dynamic = "force-dynamic";
 
@@ -95,6 +96,16 @@ interface Bundle {
 }
 
 const TABS = ["Home", "Appointments", "Forms & Check-Ins", "Growth & Integration", "Messages"] as const;
+type PortalTab = (typeof TABS)[number] | "Settings";
+
+const PORTAL_PAGE_TITLES: Record<PortalTab, string> = {
+  Home: "Home",
+  Appointments: "Appointments",
+  "Forms & Check-Ins": "Forms & Check-Ins",
+  "Growth & Integration": "Growth & Integration",
+  Messages: "Messages",
+  Settings: "Settings",
+};
 
 const PORTAL_NAV = [
   { label: "Home", icon: LayoutDashboard },
@@ -103,6 +114,26 @@ const PORTAL_NAV = [
   { label: "Growth & Integration", icon: Sprout },
   { label: "Messages", icon: MessageSquareText },
 ] as const;
+
+const ASSIGNMENT_TYPE_LABELS: Record<PortalAssignment["assignment_type"], string> = {
+  form: "Form",
+  homework: "Homework",
+  journaling_prompt: "Journal prompt",
+  integration_exercise: "Integration exercise",
+  action_item: "Action item",
+};
+
+function assignmentStatusLabel(status: PortalAssignment["status"]) {
+  if (status === "completed") return "Completed";
+  if (status === "in_progress") return "In progress";
+  return "Not started";
+}
+
+function formAssignmentActionLabel(status: PortalAssignment["status"]) {
+  if (status === "completed") return "Review";
+  if (status === "in_progress") return "Continue";
+  return "Start";
+}
 
 const PORTAL_SIDEBAR_COLLAPSED_KEY = "heartful-portal-sidebar-collapsed";
 
@@ -136,11 +167,14 @@ function PortalPageInner() {
     practitionerName?: string;
     practitionerEmail?: string;
   } | null>(null);
-  const [tab, setTab] = useState<(typeof TABS)[number]>("Home");
+  const [tab, setTab] = useState<PortalTab>("Home");
   const [portalSidebarCollapsed, setPortalSidebarCollapsed] = useState(false);
   const [portalClientSwitcherOpen, setPortalClientSwitcherOpen] = useState(false);
   const [portalClientListOpen, setPortalClientListOpen] = useState(false);
+  const [portalViewMenuOpen, setPortalViewMenuOpen] = useState(false);
+  const [showAllAssignments, setShowAllAssignments] = useState(false);
   const portalAccountMenuRef = useRef<HTMLDivElement>(null);
+  const portalViewMenuRef = useRef<HTMLDivElement>(null);
 
   /* Browser storage is an external preference source, synchronized after the
      initial server render to avoid a hydration mismatch. */
@@ -177,6 +211,27 @@ function PortalPageInner() {
       document.removeEventListener("keydown", closePortalAccountMenuOnEscape);
     };
   }, [portalClientSwitcherOpen]);
+
+  useEffect(() => {
+    if (!portalViewMenuOpen) return;
+
+    function closePortalViewMenu(event: PointerEvent) {
+      if (!portalViewMenuRef.current?.contains(event.target as Node)) {
+        setPortalViewMenuOpen(false);
+      }
+    }
+
+    function closePortalViewMenuOnEscape(event: KeyboardEvent) {
+      if (event.key === "Escape") setPortalViewMenuOpen(false);
+    }
+
+    document.addEventListener("pointerdown", closePortalViewMenu);
+    document.addEventListener("keydown", closePortalViewMenuOnEscape);
+    return () => {
+      document.removeEventListener("pointerdown", closePortalViewMenu);
+      document.removeEventListener("keydown", closePortalViewMenuOnEscape);
+    };
+  }, [portalViewMenuOpen]);
   /* eslint-enable react-hooks/set-state-in-effect */
 
   function togglePortalSidebar() {
@@ -197,7 +252,7 @@ function PortalPageInner() {
   // Welcome page: null = follow the client record, true/false = this session's
   // override (dismissed just now, or re-opened via the header link).
   const [welcomeOverride, setWelcomeOverride] = useState<boolean | null>(null);
-  const [, startTransition] = useTransition();
+  const [isPending, startTransition] = useTransition();
 
   // Intro emails link straight to a specific client's portal via
   // /portal?client=<id>. That link is the only "auth" a client has, so it
@@ -385,6 +440,7 @@ function PortalPageInner() {
   const prefill = buildFormPrefill(client, bundle.practitioner);
   const pendingTasks = bundle.tasks.filter((t) => t.status !== "completed");
   const pendingAssignments = bundle.assignments.filter((a) => a.status !== "completed");
+  const visibleAssignments = showAllAssignments ? bundle.assignments : bundle.assignments.slice(0, 3);
   // Forms/consents are tracked separately from Task records (they're
   // auto-attached documents, not tasks), so the Action Items list has to
   // pull them in explicitly — otherwise a client with zero tasks but
@@ -406,6 +462,40 @@ function PortalPageInner() {
     })
     .filter((x): x is { doc: ClientDocument; template: FormTemplate; status: string } => x !== null);
   const hasActionItems = pendingTasks.length > 0 || pendingAssignments.length > 0 || incompleteForms.length > 0;
+  const sortedMilestones = [...bundle.milestones].sort((a, b) => a.sort_order - b.sort_order);
+  const completedMilestones = sortedMilestones.filter((milestone) => milestone.completed).length;
+  const currentMilestoneIndex = sortedMilestones.findIndex((milestone) => !milestone.completed);
+  const currentMilestone = currentMilestoneIndex >= 0 ? sortedMilestones[currentMilestoneIndex] : sortedMilestones.at(-1);
+  const nextMilestone = currentMilestoneIndex >= 0 ? sortedMilestones[currentMilestoneIndex + 1] : undefined;
+  const nextSession = bundle.sessions
+    .filter((session) => session.status === "scheduled" && session.scheduled_at && new Date(session.scheduled_at).getTime() >= Date.now())
+    .sort((a, b) => a.scheduled_at!.localeCompare(b.scheduled_at!))[0];
+  const homeActions = [
+    ...incompleteForms.map(({ doc, template, status }) => ({
+      id: `form-${doc.id}`,
+      title: DOCUMENT_LABELS[doc.document_type] ?? template.title,
+      status: (status === "in_progress" || status === "draft") ? "In progress" : "Not started",
+      action: (status === "in_progress" || status === "draft") ? "Continue" : "Start",
+      onClick: () => setTab("Forms & Check-Ins"),
+      overdue: false,
+    })),
+    ...pendingAssignments.map((assignment) => ({
+      id: `assignment-${assignment.id}`,
+      title: assignment.title,
+      status: relativeDueLabel(assignment.due_at),
+      action: "Review",
+      onClick: () => setTab("Forms & Check-Ins"),
+      overdue: relativeDueLabel(assignment.due_at).toLowerCase().includes("overdue"),
+    })),
+    ...pendingTasks.map((task) => ({
+      id: `task-${task.id}`,
+      title: task.title.replace(/^Collect\s+/i, ""),
+      status: relativeDueLabel(task.due_at),
+      action: "Mark done",
+      onClick: () => startTransition(async () => { await completeTaskAction(task.id, portalClientId); refresh(); }),
+      overdue: relativeDueLabel(task.due_at).toLowerCase().includes("overdue"),
+    })),
+  ].filter((item, index, items) => items.findIndex((candidate) => candidate.title.toLowerCase() === item.title.toLowerCase()) === index).slice(0, 4);
   const refresh = () => getPortalBundleAction(portalClientId).then((b) => setBundle(b as Bundle));
 
   // -------------------------------------------------------------------------
@@ -427,6 +517,9 @@ function PortalPageInner() {
     .filter((x) => x !== null);
   const agreementsDone = agreementItems.filter((a) => a.done).length;
   const agreementsOutstanding = agreementItems.length - agreementsDone;
+  // Keep the production gate client-safe, while making the review escape hatch
+  // consistently available in local Codex development sessions.
+  const canSkipAgreementReview = isPreview || process.env.NODE_ENV === "development";
 
   if (agreementItems.length > 0 && agreementsOutstanding > 0 && !previewSkipGate) {
     const practitionerName = bundle.practitioner?.full_name ?? "your practitioner";
@@ -438,7 +531,7 @@ function PortalPageInner() {
           collapsed={portalSidebarCollapsed}
           agreementMode
           onToggle={togglePortalSidebar}
-          onTabChange={setTab}
+          onTabChange={(nextTab) => setTab(nextTab)}
         />
         <div className="portal-workspace-frame flex-1 min-w-0">
         <header className="portal-onboarding-header portal-mobile-header">
@@ -493,9 +586,9 @@ function PortalPageInner() {
                   <span>Message {practitionerName}</span>
                 )}
               </div>
-              {isPreview && (
+              {canSkipAgreementReview && (
                 <button onClick={() => setPreviewSkipGate(true)} className="portal-preview-skip">
-                  Skip preview <span aria-hidden="true">→</span>
+                  Skip review <span aria-hidden="true">→</span>
                 </button>
               )}
             </div>
@@ -512,7 +605,10 @@ function PortalPageInner() {
   // from the header link. Preview mode never auto-shows it, so the
   // practitioner isn't stopped by it every time they look at a client.
   // -------------------------------------------------------------------------
-  const welcomeUnseen = !client.portal_welcome_seen_at && !isPreview;
+  // Codex and the external browser keep separate local sessions. Avoid
+  // diverting the local development view to the one-time welcome screen so
+  // both open the actual portal Home by default.
+  const welcomeUnseen = !client.portal_welcome_seen_at && !isPreview && process.env.NODE_ENV !== "development";
   const showWelcome = welcomeOverride ?? welcomeUnseen;
 
   if (showWelcome) {
@@ -549,23 +645,58 @@ function PortalPageInner() {
         activeTab={tab}
         collapsed={portalSidebarCollapsed}
         onToggle={togglePortalSidebar}
-        onTabChange={setTab}
+        onTabChange={(nextTab) => setTab(nextTab)}
       />
 
-      <div className="portal-workspace-frame flex-1 min-w-0">
+      <div className={cx("portal-workspace-frame flex-1 min-w-0", tab === "Messages" && "portal-workspace-frame--messages")}>
       <header className="app-topbar portal-app-header sticky top-0 z-20 bg-white/95 backdrop-blur border-b border-ink-100">
         <div className="flex items-center justify-between px-4 md:px-7 py-3.5">
-          <span aria-hidden="true" />
+          <h1 className="app-page-title portal-app-header__title">{PORTAL_PAGE_TITLES[tab]}</h1>
           <div className="topbar-actions">
             {isPreview && (
-              <button
-                type="button"
-                className="topbar-view-trigger"
-                onClick={() => setRole("practitioner")}
-              >
-                <span>Practitioner View</span>
-                <ChevronDown aria-hidden="true" />
-              </button>
+              <div className="topbar-view-menu" ref={portalViewMenuRef}>
+                <button
+                  type="button"
+                  className="topbar-view-trigger"
+                  aria-haspopup="menu"
+                  aria-expanded={portalViewMenuOpen}
+                  onClick={() => setPortalViewMenuOpen((open) => !open)}
+                >
+                  <span>{role === "practitioner" ? "Practitioner View" : "Client Portal View"}</span>
+                  <ChevronDown aria-hidden="true" />
+                </button>
+                {portalViewMenuOpen && (
+                  <div className="topbar-popover topbar-view-options" role="menu">
+                    <button
+                      type="button"
+                      role="menuitem"
+                      data-selected={role === "practitioner"}
+                      onClick={() => {
+                        setRole("practitioner");
+                        setIsPreview(false);
+                        setPortalViewMenuOpen(false);
+                        router.push("/dashboard");
+                      }}
+                    >
+                      <span><strong>Practitioner View</strong><small>Manage your practice</small></span>
+                      {role === "practitioner" && <Check aria-hidden="true" />}
+                    </button>
+                    <button
+                      type="button"
+                      role="menuitem"
+                      data-selected={role === "client"}
+                      onClick={() => {
+                        setRole("client");
+                        setIsPreview(true);
+                        setPortalViewMenuOpen(false);
+                      }}
+                    >
+                      <span><strong>Client Portal View</strong><small>Preview the client experience</small></span>
+                      {role === "client" && <Check aria-hidden="true" />}
+                    </button>
+                  </div>
+                )}
+              </div>
             )}
             {isPreview && <span className="topbar-action-divider" />}
             <div className="topbar-account" ref={portalAccountMenuRef}>
@@ -595,6 +726,9 @@ function PortalPageInner() {
                   </div>
                   <button type="button" role="menuitem" onClick={() => { setPortalClientSwitcherOpen(false); setWelcomeOverride(true); }}>
                     <AlertCircle aria-hidden="true" /><span>About this portal</span>
+                  </button>
+                  <button type="button" role="menuitem" onClick={() => { setPortalClientSwitcherOpen(false); setTab("Settings"); }}>
+                    <Settings aria-hidden="true" /><span>Settings</span>
                   </button>
                   {isPreview && (
                     <>
@@ -635,61 +769,59 @@ function PortalPageInner() {
       <main className="portal-main">
         <div className="portal-workspace-heading">
           <div>
-            <span className="portal-eyebrow">Your Journey Portal</span>
-            <h1>{tab === "Home" ? `Welcome back, ${client.full_name.split(" ")[0]}` : tab}</h1>
-            <p>{tab === "Home" ? "Your next steps, sessions and reflections — together in one place." : tab === "Appointments" ? "Your upcoming sessions and the conversations worth keeping." : tab === "Forms & Check-Ins" ? "Complete your forms and share how you’re doing." : tab === "Growth & Integration" ? "Carry your insights into everyday life." : "Stay connected with your practitioner between sessions."}</p>
+            {tab === "Home" && <h1>Welcome back, {client.full_name.split(" ")[0]}</h1>}
           </div>
         </div>
+        {tab === "Settings" && (
+          <PortalClientSettings
+            client={client}
+            onSaved={refresh}
+            onViewAgreements={() => setTab("Forms & Check-Ins")}
+          />
+        )}
         {tab === "Home" && (
           <div className="portal-overview">
             <section className="card p-5 portal-journey-card">
               <div className="portal-section-heading">
-                <div>
-                  <span className="portal-eyebrow">Your path</span>
-                  <h2>Your Journey</h2>
-                </div>
-                <span className="portal-phase-label">{client.current_phase.replace(/_/g, " ")}</span>
+                <div className="portal-heading-with-icon"><span className="portal-heading-icon"><Sprout aria-hidden="true" /></span><h2>Your Journey</h2></div>
+                {nextMilestone && <span className="portal-phase-label">Next: {nextMilestone.label}</span>}
               </div>
-              <JourneyProgressBar milestones={bundle.milestones} />
+              <div className="portal-journey-summary">
+                <div>
+                  <span>Current step</span>
+                  <div className="portal-current-step-line"><strong>{currentMilestone?.label ?? "Your journey"}</strong><span className="portal-phase-label">{client.current_phase.replace(/_/g, " ")}</span></div>
+                </div>
+                <div className="portal-journey-progress-copy"><strong>{completedMilestones} of {sortedMilestones.length}</strong><span>completed</span></div>
+              </div>
+              <JourneyProgressBar milestones={bundle.milestones} compact />
+              <button type="button" className="portal-journey-continue" onClick={() => setTab("Forms & Check-Ins")}>Continue journey <ArrowRight aria-hidden="true" /></button>
+            </section>
+            <div className="portal-home-secondary-grid">
+            <section className="card p-5 portal-next-session-card">
+              <div className="portal-section-heading">
+                <div className="portal-heading-with-icon"><span className="portal-heading-icon"><Clock aria-hidden="true" /></span><h2>Next session</h2></div>
+              </div>
+              {nextSession ? (
+                <div className="portal-next-session-content">
+                  <div><span className="portal-next-session-date"><CalendarDays aria-hidden="true" /><strong>{formatDateTime(nextSession.scheduled_at)}</strong></span><span>{sessionTypeLabel(nextSession.session_type)} · {bundle.practitioner?.full_name ?? "Your practitioner"}{nextSession.location && ` · ${nextSession.location}`}</span></div>
+                  <button type="button" onClick={() => setTab("Appointments")}>View appointment <ArrowRight aria-hidden="true" /></button>
+                </div>
+              ) : (
+                <p className="text-sm text-ink-400">No upcoming session is scheduled yet.</p>
+              )}
             </section>
             <section className="card p-5 portal-actions-card">
               <div className="portal-section-heading">
-                <div>
-                  <span className="portal-eyebrow">Keep moving</span>
-                  <h2>Action Items</h2>
-                </div>
-                {hasActionItems && <span className="portal-count">{pendingTasks.length + pendingAssignments.length + incompleteForms.length}</span>}
+                <div className="portal-heading-with-icon"><span className="portal-heading-icon"><ListChecks aria-hidden="true" /></span><h2>To do</h2>{hasActionItems && <span className="portal-count">{pendingTasks.length + pendingAssignments.length + incompleteForms.length}</span>}</div>
               </div>
-              {!hasActionItems ? (
-                <p className="text-sm text-ink-400">You&apos;re all caught up — nothing pending right now.</p>
-              ) : (
+              {!hasActionItems ? <p className="text-sm text-ink-400">You&apos;re all caught up — nothing pending right now.</p> : (
                 <ul className="portal-action-list">
-                  {pendingTasks.map((t) => (
-                    <li key={t.id} className="flex items-center justify-between gap-3 text-sm">
-                      <div className="flex items-center gap-2">
-                        <button onClick={() => startTransition(async () => { await completeTaskAction(t.id, portalClientId); refresh(); })}>
-                          <Circle className="h-4 w-4 text-ink-300 hover:text-sage-500" />
-                        </button>
-                        <span className="text-ink-800">{t.title}</span>
-                      </div>
-                      <span className="text-xs text-ink-400">{relativeDueLabel(t.due_at)}</span>
-                    </li>
-                  ))}
-                  {pendingAssignments.map((a) => (
-                    <li key={a.id} className="flex items-center justify-between gap-3 text-sm">
-                      <button onClick={() => setTab("Forms & Check-Ins")} className="flex items-center gap-2 text-left"><Circle className="h-4 w-4 text-ink-300" /><span className="text-ink-800">{a.title}</span></button>
-                      <span className="text-xs text-ink-400">{relativeDueLabel(a.due_at)}</span>
-                    </li>
-                  ))}
-                  {incompleteForms.map(({ doc, template, status }) => (
-                    <li key={doc.id} className="flex items-center justify-between gap-3 text-sm">
-                      <button onClick={() => setTab("Forms & Check-Ins")} className="flex items-center gap-2 text-left"><Circle className="h-4 w-4 text-ink-300" /><span className="text-ink-800">{DOCUMENT_LABELS[doc.document_type] ?? template.title}</span></button>
-                      <span className="text-xs text-ink-400">{(status === "in_progress" || status === "draft") ? "In progress" : "Not started"}</span>
-                    </li>
-                  ))}
+                  {homeActions.map((item) => <li key={item.id}><div><strong>{item.title}</strong><span className={item.overdue ? "portal-action-overdue" : undefined}>{item.status}</span></div><button type="button" onClick={item.onClick}>{item.action} <ArrowRight aria-hidden="true" /></button></li>)}
                 </ul>
               )}
+              {hasActionItems && <button type="button" className="portal-view-all-tasks" onClick={() => setTab("Forms & Check-Ins")}>View all tasks <ArrowRight aria-hidden="true" /></button>}
             </section>
+            </div>
           </div>
         )}
 
@@ -710,7 +842,7 @@ function PortalPageInner() {
         {tab === "Forms & Check-Ins" && (
           <div className="portal-content-grid">
             <div className="card p-5 portal-content-grid__primary">
-              <h2 className="font-semibold text-ink-900 mb-3">Required Forms &amp; Consents</h2>
+              <h2 className="portal-forms-section-title font-semibold text-ink-900 mb-3"><FileText aria-hidden="true" />Required Forms &amp; Consents</h2>
               {bundle.documents.filter((d) => bundle.formTemplates.some((t) => t.document_type === d.document_type)).length === 0 ? (
                 <p className="text-sm text-ink-400">Nothing to fill out right now.</p>
               ) : (
@@ -738,32 +870,55 @@ function PortalPageInner() {
               )}
             </div>
             <div className="card p-5 portal-content-grid__side">
-              <h2 className="font-semibold text-ink-900 mb-3">Assigned Forms &amp; Homework</h2>
-              {pendingAssignments.length === 0 ? (
+              <h2 className="portal-forms-section-title font-semibold text-ink-900 mb-3"><ListChecks aria-hidden="true" />Assigned Forms &amp; Homework</h2>
+              {bundle.assignments.length === 0 ? (
                 <p className="text-sm text-ink-400">No assignments waiting on you.</p>
               ) : (
-                <ul className="space-y-2">
-                  {pendingAssignments.map((a) => (
-                    <li key={a.id} className="flex items-start justify-between gap-3 text-sm border-b border-ink-100 pb-2 last:border-0">
-                      <div>
-                        <div className="font-medium text-ink-800">{a.title}</div>
-                        {a.description && <div className="text-xs text-ink-500 mt-0.5">{a.description}</div>}
-                        <span className="badge mt-1 inline-block capitalize bg-ink-100 text-ink-600">
-                          {a.assignment_type.replace(/_/g, " ")}
-                        </span>
-                      </div>
-                      <button
-                        onClick={() => startTransition(async () => {
-                          await completePortalAssignmentAction(a.id, portalClientId);
-                          refresh();
-                        })}
-                        className="btn-secondary text-xs px-3 py-1.5 shrink-0"
-                      >
-                        Mark Done
-                      </button>
-                    </li>
-                  ))}
-                </ul>
+                <>
+                  <ul className="portal-assignment-list">
+                    {visibleAssignments.map((assignment) => {
+                      const isForm = assignment.assignment_type === "form";
+                      const status = assignmentStatusLabel(assignment.status);
+                      const formAction = formAssignmentActionLabel(assignment.status);
+                      return (
+                        <li key={assignment.id} className="portal-assignment-row">
+                          <div className="portal-assignment-copy">
+                            <strong>{assignment.title}</strong>
+                            {assignment.description && <p>{assignment.description}</p>}
+                            <div className="portal-assignment-meta">
+                              <span className="portal-assignment-type">{ASSIGNMENT_TYPE_LABELS[assignment.assignment_type]}</span>
+                              <span className={cx("portal-assignment-status", status === "In progress" && "is-progress", status === "Completed" && "is-complete")}>{status}</span>
+                            </div>
+                          </div>
+                          {isForm ? (
+                            <button type="button" className="portal-assignment-form-action" onClick={() => setTab("Forms & Check-Ins")}>
+                              {formAction}<ArrowRight aria-hidden="true" />
+                            </button>
+                          ) : assignment.status === "completed" ? (
+                            <span className="portal-assignment-completed"><CheckCircle2 aria-hidden="true" />Completed</span>
+                          ) : (
+                            <button
+                              type="button"
+                              disabled={isPending}
+                              onClick={() => startTransition(async () => {
+                                await completePortalAssignmentAction(assignment.id, portalClientId);
+                                refresh();
+                              })}
+                              className="btn-secondary portal-assignment-complete"
+                            >
+                              <CheckCircle2 aria-hidden="true" />Mark Done
+                            </button>
+                          )}
+                        </li>
+                      );
+                    })}
+                  </ul>
+                  {bundle.assignments.length > 3 && (
+                    <button type="button" className="portal-assignment-view-all" onClick={() => setShowAllAssignments((showingAll) => !showingAll)}>
+                      {showAllAssignments ? "Show less" : "View all"}<ArrowRight aria-hidden="true" />
+                    </button>
+                  )}
+                </>
               )}
             </div>
             {(bundle.checkIns.length > 0 || PHASE_ORDER.indexOf(client.current_phase) >= PHASE_ORDER.indexOf("post_journey_check_in")) && (
@@ -807,7 +962,7 @@ function PortalSidebar({
   onToggle,
   onTabChange,
 }: {
-  activeTab: (typeof TABS)[number];
+  activeTab: PortalTab;
   collapsed: boolean;
   agreementMode?: boolean;
   onToggle: () => void;
@@ -924,8 +1079,8 @@ function AppointmentsPanel({
   return (
     <div className="portal-appointments-grid">
       <div className="card p-5">
-        <h2 className="font-semibold text-ink-900 mb-3 flex items-center gap-2">
-          <CalendarDays className="h-4 w-4 text-clay-500" /> Upcoming Appointments
+        <h2 className="portal-appointments-heading font-semibold mb-3 flex items-center gap-2">
+          <CalendarDays className="h-4 w-4" aria-hidden="true" /> Upcoming Appointments
         </h2>
         {upcoming.length === 0 ? (
           <p className="text-sm text-ink-400">No upcoming appointments scheduled.</p>
@@ -938,7 +1093,9 @@ function AppointmentsPanel({
         )}
       </div>
       <div className="card p-5">
-        <h2 className="font-semibold text-ink-900 mb-3">Past Appointments</h2>
+        <h2 className="portal-appointments-heading font-semibold mb-3 flex items-center gap-2">
+          <Clock className="h-4 w-4" aria-hidden="true" /> Past Appointments
+        </h2>
         {past.length === 0 ? (
           <p className="text-sm text-ink-400">No past appointments yet.</p>
         ) : (

@@ -92,7 +92,7 @@ export default async function ProspectsPage() {
 
         {/* Active prospects */}
         <div className="card p-5">
-          <h2 className="text-sm font-semibold text-ink-700 mb-4 flex items-center gap-2">
+          <h2 className="prospects-section-title text-sm font-semibold text-ink-700 mb-4 flex items-center gap-2">
             <UserPlus className="h-4 w-4 text-clay-500" />
             Active ({active.length})
           </h2>

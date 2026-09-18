@@ -1,23 +1,23 @@
 "use client";
 
 import { useEffect, useState } from "react";
-import { Check } from "@/components/ui/HeartfulIcon";
+import { Check, Sparkles } from "@/components/ui/HeartfulIcon";
 
 const THEME_KEY = "heartful-theme";
-type Theme = "golden-canopy" | "mushroom-grove" | "dark";
+export type Theme = "golden-canopy" | "mushroom-grove" | "dark";
 
-const THEMES: { value: Theme; label: string }[] = [
+export const THEMES: { value: Theme; label: string }[] = [
   { value: "golden-canopy", label: "Golden Canopy" },
   { value: "mushroom-grove", label: "Mushroom Grove" },
   { value: "dark", label: "Dark" },
 ];
 
-function applyTheme(theme: Theme) {
+export function applyTheme(theme: Theme) {
   document.documentElement.dataset.theme = theme;
   document.documentElement.style.colorScheme = theme === "dark" ? "dark" : "light";
 }
 
-function getSavedTheme(): Theme {
+export function getSavedTheme(): Theme {
   try {
     const savedTheme = window.localStorage.getItem(THEME_KEY);
     if (savedTheme === "golden-canopy" || savedTheme === "mushroom-grove" || savedTheme === "dark") return savedTheme;
@@ -31,6 +31,15 @@ function getSavedTheme(): Theme {
   }
 }
 
+export function saveTheme(theme: Theme) {
+  applyTheme(theme);
+  try {
+    window.localStorage.setItem(THEME_KEY, theme);
+  } catch {
+    // The preference remains active for this session when storage is unavailable.
+  }
+}
+
 /** Applies the persisted preference before a practitioner page is displayed. */
 export function ThemeBootstrap() {
   useEffect(() => {
@@ -38,6 +47,38 @@ export function ThemeBootstrap() {
   }, []);
 
   return null;
+}
+
+export function ThemeOptions({ theme, onSelect }: { theme: Theme; onSelect: (theme: Theme) => void }) {
+  return (
+    <div className="settings-theme-options" role="group" aria-label="Color theme">
+      {THEMES.map(({ value, label }) => (
+        <button
+          key={value}
+          type="button"
+          className="settings-theme-option"
+          data-selected={theme === value ? "true" : "false"}
+          onClick={() => onSelect(value)}
+          aria-pressed={theme === value}
+        >
+          {theme === value && (
+            <span className="settings-theme-check" aria-hidden="true">
+              <Check className="h-3 w-3" />
+            </span>
+          )}
+          <span className="settings-theme-preview" data-preview-theme={value} aria-hidden="true">
+            <span className="settings-theme-preview-sidebar"><i /><i /><i /></span>
+            <span className="settings-theme-preview-page">
+              <span className="settings-theme-preview-heading" />
+              <span className="settings-theme-preview-card"><i /><i /></span>
+              <span className="settings-theme-preview-card"><i /><i /></span>
+            </span>
+          </span>
+          <span className="settings-theme-label">{label}</span>
+        </button>
+      ))}
+    </div>
+  );
 }
 
 export default function ThemeSettings() {
@@ -52,48 +93,17 @@ export default function ThemeSettings() {
 
   function selectTheme(nextTheme: Theme) {
     setTheme(nextTheme);
-    applyTheme(nextTheme);
-    try {
-      window.localStorage.setItem(THEME_KEY, nextTheme);
-    } catch {
-      // The preference remains active for this session when storage is unavailable.
-    }
+    saveTheme(nextTheme);
   }
 
   return (
     <section className="settings-block settings-theme-block" aria-label="Theme">
       <div className="settings-row settings-theme-row">
         <div className="settings-theme-intro">
-          <h3>Theme</h3>
+          <h3 className="settings-heading"><Sparkles aria-hidden="true" />Theme</h3>
           <p className="settings-description">Choose how Heartful looks across your workspace.</p>
         </div>
-        <div className="settings-theme-options" role="group" aria-label="Color theme">
-          {THEMES.map(({ value, label }) => (
-            <button
-              key={value}
-              type="button"
-              className="settings-theme-option"
-              data-selected={theme === value ? "true" : "false"}
-              onClick={() => selectTheme(value)}
-              aria-pressed={theme === value}
-            >
-              {theme === value && (
-                <span className="settings-theme-check" aria-hidden="true">
-                  <Check className="h-3 w-3" />
-                </span>
-              )}
-              <span className="settings-theme-preview" data-preview-theme={value} aria-hidden="true">
-                <span className="settings-theme-preview-sidebar"><i /><i /><i /></span>
-                <span className="settings-theme-preview-page">
-                  <span className="settings-theme-preview-heading" />
-                  <span className="settings-theme-preview-card"><i /><i /></span>
-                  <span className="settings-theme-preview-card"><i /><i /></span>
-                </span>
-              </span>
-              <span className="settings-theme-label">{label}</span>
-            </button>
-          ))}
-        </div>
+        <ThemeOptions theme={theme} onSelect={selectTheme} />
       </div>
     </section>
   );

@@ -93,7 +93,6 @@ export default function ClientHeader({ client, sessions = [], referralSources, p
             </>
           )}
           <button type="button" className="wn-overview-toggle" onClick={toggleExpanded} aria-expanded={expanded} aria-controls="client-overview-details">
-            <span>{expanded ? "Collapse" : "Expand"}</span>
             {expanded ? <ChevronUp /> : <ChevronDown />}
           </button>
         </div>
@@ -106,7 +105,6 @@ export default function ClientHeader({ client, sessions = [], referralSources, p
             <dl className="wn-overview-field-list">
               <OverviewFact
                 icon={<Mail />}
-                iconAction={<ClientHeaderActions {...introActionProps} compact />}
                 label="Email"
                 value={client.email ?? "Not provided"}
                 href={client.email ? `mailto:${client.email}` : undefined}
@@ -151,6 +149,7 @@ export default function ClientHeader({ client, sessions = [], referralSources, p
 
           <footer className="wn-overview-actions">
             <div className="wn-overview-action-buttons">
+              <ClientHeaderActions {...introActionProps} />
               <HoldControl kind="client" recordId={client.id} name={client.full_name} onHold={Boolean(client.on_hold_at)} followUpAt={client.hold_follow_up_at} reason={client.hold_reason} />
               <QuickNoteButton clientId={client.id} clientName={client.full_name} />
               <DeleteClientButton clientId={client.id} clientName={client.full_name} />

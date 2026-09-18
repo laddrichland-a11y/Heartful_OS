@@ -1,7 +1,7 @@
 import AppShell from "@/components/layout/AppShell";
 import { getPractitioner, getReferralSources, getGoogleCalendarSettings } from "@/lib/data";
 import { isGoogleOAuthConfigured } from "@/lib/googleCalendar";
-import { ArrowRight } from "@/components/ui/HeartfulIcon";
+import { ArrowRight, DollarSign, Tag, UserRound } from "@/components/ui/HeartfulIcon";
 import Link from "next/link";
 import PracticeProfileForm from "@/components/settings/PracticeProfileForm";
 import VenmoSettingsForm from "@/components/settings/VenmoSettingsForm";
@@ -27,7 +27,7 @@ export default async function SettingsPage({ searchParams }: {
           <section className="settings-group" aria-label="Practice">
             <div className="settings-container">
               <div className="settings-block">
-                <h3>Practice</h3>
+                <h3 className="settings-heading"><UserRound aria-hidden="true" />Practice</h3>
                 <PracticeProfileForm profile={{
                   full_name: practitioner.full_name,
                   practice_name: practitioner.practice_name,
@@ -38,21 +38,15 @@ export default async function SettingsPage({ searchParams }: {
             </div>
             <div className="settings-container">
               <div className="settings-block">
-                <h3>Payments</h3>
+                <h3 className="settings-heading"><DollarSign aria-hidden="true" />Payments</h3>
                 <VenmoSettingsForm venmoHandle={practitioner.venmo_handle} paymentMethods={practitioner.payment_methods} />
               </div>
             </div>
           </section>
-
           <section className="settings-group" aria-label="Appearance">
-            <div className="settings-container">
-              <ThemeSettings />
-            </div>
-            <div className="settings-container">
-              <NotificationSettings />
-            </div>
+            <div className="settings-container"><ThemeSettings /></div>
+            <div className="settings-container"><NotificationSettings /></div>
           </section>
-
           <section className="settings-group" aria-label="Client setup">
             <div className="settings-container">
               <Link href="/settings/forms" className="settings-nav-row">
@@ -62,23 +56,15 @@ export default async function SettingsPage({ searchParams }: {
             </div>
             <div className="settings-container">
               <div className="settings-block">
-                <h3>Referral Sources</h3>
+                <h3 className="settings-heading"><Tag aria-hidden="true" />Referral Sources</h3>
                 <p className="settings-description">Sources available when adding a new client.</p>
                 <ReferralSourcesManager initial={referralSources} />
               </div>
             </div>
           </section>
-
           <section className="settings-group" aria-label="Integrations">
             <div className="settings-container">
-              <GoogleCalendarSettings
-                configured={isGoogleOAuthConfigured}
-                connected={googleSettings.connected}
-                connectedEmail={googleSettings.connected_email}
-                lastSyncedAt={googleSettings.last_synced_at}
-                lastSyncError={googleSettings.last_sync_error}
-                flash={googleFlash}
-              />
+              <GoogleCalendarSettings configured={isGoogleOAuthConfigured} connected={googleSettings.connected} connectedEmail={googleSettings.connected_email} lastSyncedAt={googleSettings.last_synced_at} lastSyncError={googleSettings.last_sync_error} flash={googleFlash} />
             </div>
           </section>
         </div>

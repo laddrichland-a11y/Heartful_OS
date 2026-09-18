@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import Link from "next/link";
 import {
   AiConversationMessage,
@@ -53,6 +53,7 @@ import {
   ChevronLeft,
   ChevronDown,
   ChevronRight,
+  MoreHorizontal,
 } from "@/components/ui/HeartfulIcon";
 import {
   uploadDocumentAction,
@@ -677,6 +678,8 @@ function UploadButton({ documentId, clientId }: { documentId: string; clientId: 
 function SessionsTab({ clientId, sessions }: { clientId: string; sessions: Session[] }) {
   const [open, setOpen] = useState(false);
   const [busyId, setBusyId] = useState<string | null>(null);
+  const [actionMenuId, setActionMenuId] = useState<string | null>(null);
+  const actionMenuRef = useRef<HTMLDivElement>(null);
   const [scheduleDate, setScheduleDate] = useState(() => getPrimaryScheduleDate(sessions));
   const scheduleDays = buildScheduleDays(scheduleDate, sessions);
   const selectedDateKey = toDateKey(scheduleDate);
@@ -686,12 +689,19 @@ function SessionsTab({ clientId, sessions }: { clientId: string; sessions: Sessi
     return aTime - bTime;
   });
 
+  useEffect(() => {
+    function closeActionMenu(event: MouseEvent) {
+      if (!actionMenuRef.current?.contains(event.target as Node)) setActionMenuId(null);
+    }
+    document.addEventListener("mousedown", closeActionMenu);
+    return () => document.removeEventListener("mousedown", closeActionMenu);
+  }, []);
+
   return (
     <section className="client-surface wn-sessions-panel" aria-labelledby="sessions-heading">
       <header className="wn-sessions-header">
         <div>
-          <p className="client-eyebrow">Schedule</p>
-          <h2 id="sessions-heading">Sessions</h2>
+          <h2 id="sessions-heading">Schedule</h2>
         </div>
         <button className="btn-primary wn-schedule-action" onClick={() => setOpen((o) => !o)}>
           <Plus className="h-3.5 w-3.5" /> Schedule session
@@ -772,37 +782,40 @@ function SessionsTab({ clientId, sessions }: { clientId: string; sessions: Sessi
                   </td>
                   <td className="wn-session-actions-cell">
                     <div className="wn-session-actions">
+                      {s.status === "scheduled" && (
+                        <div className="wn-session-menu-wrap" ref={actionMenuId === s.id ? actionMenuRef : undefined}>
+                          <button
+                            type="button"
+                            className="wn-session-menu-trigger"
+                            aria-label={`Actions for ${SESSION_TYPE_LABELS[s.session_type] ?? "session"}`}
+                            aria-haspopup="menu"
+                            aria-expanded={actionMenuId === s.id}
+                            disabled={busyId === s.id}
+                            onClick={() => setActionMenuId((current) => current === s.id ? null : s.id)}
+                          >
+                            <MoreHorizontal aria-hidden="true" />
+                          </button>
+                          {actionMenuId === s.id && (
+                            <div className="wn-session-menu" role="menu">
+                              <button type="button" role="menuitem" disabled={busyId === s.id} onClick={async () => {
+                                setActionMenuId(null);
+                                setBusyId(s.id);
+                                await completeSessionAction(s.id, clientId);
+                                setBusyId(null);
+                              }}>Mark as complete</button>
+                              <button type="button" role="menuitem" className="is-danger" disabled={busyId === s.id} onClick={async () => {
+                                setActionMenuId(null);
+                                setBusyId(s.id);
+                                await cancelSessionAction(s.id, clientId);
+                                setBusyId(null);
+                              }}>Cancel session</button>
+                            </div>
+                          )}
+                        </div>
+                      )}
                       <Link href={`/clients/${clientId}/sessions/${s.id}`} className="wn-session-view-link">
                         View <ChevronRight aria-hidden="true" />
                       </Link>
-                      {s.status === "scheduled" && (
-                        <>
-                          <button
-                            type="button"
-                            disabled={busyId === s.id}
-                            className="wn-session-action-button"
-                            onClick={async () => {
-                              setBusyId(s.id);
-                              await completeSessionAction(s.id, clientId);
-                              setBusyId(null);
-                            }}
-                          >
-                            <CheckCircle2 aria-hidden="true" /> Complete
-                          </button>
-                          <button
-                            type="button"
-                            disabled={busyId === s.id}
-                            className="wn-session-action-button is-danger"
-                            onClick={async () => {
-                              setBusyId(s.id);
-                              await cancelSessionAction(s.id, clientId);
-                              setBusyId(null);
-                            }}
-                          >
-                            <XCircle aria-hidden="true" /> Cancel
-                          </button>
-                        </>
-                      )}
                     </div>
                   </td>
                 </tr>
