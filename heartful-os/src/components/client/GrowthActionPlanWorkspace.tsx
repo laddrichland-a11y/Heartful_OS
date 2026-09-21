@@ -4,7 +4,8 @@ import { useState } from "react";
 import { AiSummary, GrowthActionPlan } from "@/lib/types";
 import TranscriptInput from "@/components/ai/TranscriptInput";
 import AiGenerateButton from "@/components/ai/AiGenerateButton";
-import { Trash2 } from "@/components/ui/HeartfulIcon";
+import ActionCardHeader from "@/components/client/ActionCardHeader";
+import { ScrollText, Trash2 } from "@/components/ui/HeartfulIcon";
 import { deleteGrowthActionPlanAction } from "@/lib/actions";
 
 // Standalone Growth Action Plan step — pulled out of IntegrationWorkspace so
@@ -54,14 +55,17 @@ export default function GrowthActionPlanWorkspace({
   return (
     <div className="space-y-6">
       <div className="card p-5 space-y-4">
-        <h2 className="font-semibold text-ink-900">Session Transcript</h2>
-        <TranscriptInput value={transcript} onChange={setTranscript} />
+        <h2 className="flex items-center gap-2 font-semibold text-ink-900"><ScrollText className="h-4 w-4 text-ink-500" />Session Transcript</h2>
+        <TranscriptInput value={transcript} onChange={setTranscript} hideLabel />
       </div>
 
-      <div className="card p-5 space-y-3">
-        <div className="flex items-center justify-between gap-2">
-          <h3 className="font-semibold text-ink-900">Growth Action Plan</h3>
-          {growthPlan && (
+      <div className="card p-5 space-y-4">
+        <ActionCardHeader
+          title="Growth Action Plan"
+          description={growthPlan
+            ? "Enhance the existing plan with a new transcript without starting over."
+            : `Turn ${clientName}'s journey into practical 30-day commitments and next steps.`}
+          titleAction={growthPlan && (
             <button
               type="button"
               onClick={handleDeleteGrowthPlan}
@@ -73,26 +77,24 @@ export default function GrowthActionPlanWorkspace({
               <Trash2 className="h-3.5 w-3.5" />
             </button>
           )}
-        </div>
-        <p className="text-xs text-ink-400">
-          {growthPlan
-            ? `Paste a new transcript above and click "Enhance Growth Action Plan" to fold it into the existing plan — it revises and adds to what's already there instead of starting over.`
-            : `Synthesizes ${clientName}'s entire journey into 30-day commitments, behavioral experiments, daily practices, reflection questions, and accountability commitments.`}
-        </p>
-        <AiGenerateButton
-          clientId={clientId}
-          summaryType="growth_action_plan"
-          label={growthPlan ? "Enhance Growth Action Plan" : "Generate Growth Action Plan"}
-          extra={{ transcript }}
-          onDone={(s) => {
-            const content = (s as unknown as AiSummary).content as unknown as GrowthActionPlan;
-            setGrowthPlan({
-              ...content,
-              id: growthPlan?.id ?? "local",
-              client_id: clientId,
-              created_at: new Date().toISOString(),
-            });
-          }}
+          action={
+            <AiGenerateButton
+              clientId={clientId}
+              summaryType="growth_action_plan"
+              label={growthPlan ? "Enhance Growth Action Plan" : "Generate Growth Action Plan"}
+              extra={{ transcript }}
+              onDone={(s) => {
+                const content = (s as unknown as AiSummary).content as unknown as GrowthActionPlan;
+                setGrowthPlan({
+                  ...content,
+                  id: growthPlan?.id ?? "local",
+                  client_id: clientId,
+                  created_at: new Date().toISOString(),
+                });
+              }}
+              className="btn-primary inline-flex items-center gap-2 whitespace-nowrap text-sm disabled:opacity-60"
+            />
+          }
         />
         {growthPlan ? (
           <div className="grid sm:grid-cols-2 gap-4 mt-2 text-sm">

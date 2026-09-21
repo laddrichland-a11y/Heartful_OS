@@ -10,6 +10,7 @@ import {
 } from "@/lib/types";
 import TranscriptInput from "@/components/ai/TranscriptInput";
 import AiGenerateButton from "@/components/ai/AiGenerateButton";
+import ActionCardHeader from "@/components/client/ActionCardHeader";
 import SummaryCard from "@/components/ai/SummaryCard";
 import { cx } from "@/lib/utils";
 import { FileText } from "@/components/ui/HeartfulIcon";
@@ -81,19 +82,22 @@ export default function PreparationWorkspace({
       {/* Transcript + Journey Brief */}
       <div className="grid md:grid-cols-2 gap-6">
         <div className="card p-4 space-y-4">
-          <h2 className="font-semibold text-ink-900">Preparation Session Transcript</h2>
-          <TranscriptInput value={transcript} onChange={setTranscript} />
-          <AiGenerateButton
-            clientId={clientId}
-            summaryType="journey_brief"
-            label="Generate Journey Brief"
-            extra={{ transcript }}
-            onDone={(s) => setBrief(s as unknown as AiSummary)}
+          <ActionCardHeader
+            title="Preparation Session Transcript"
+            titleAs="h2"
+            description={`Create a Journey Brief from ${clientName}'s preparation work for use on Journey Day.`}
+            action={
+              <AiGenerateButton
+                clientId={clientId}
+                summaryType="journey_brief"
+                label="Generate Journey Brief"
+                extra={{ transcript }}
+                onDone={(s) => setBrief(s as unknown as AiSummary)}
+                className="btn-primary inline-flex items-center gap-2 whitespace-nowrap text-sm disabled:opacity-60"
+              />
+            }
           />
-          <p className="text-xs text-ink-400">
-            The Journey Brief synthesizes {clientName}&apos;s preparation work and will be available
-            during Journey Day.
-          </p>
+          <TranscriptInput value={transcript} onChange={setTranscript} />
         </div>
         <div className="space-y-4">
           <h2 className="font-semibold text-ink-900">Journey Brief</h2>

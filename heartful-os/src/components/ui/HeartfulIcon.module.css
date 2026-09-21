@@ -19,9 +19,13 @@
   transition: opacity 150ms ease;
 }
 
-.broken {
-  mask-image: var(--heartful-icon-broken);
+.regular {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
   opacity: 1;
+  transition: opacity 150ms ease;
 }
 
 .filled {
@@ -29,8 +33,8 @@
   opacity: 0;
 }
 
-:where(a, button, [role="button"]):is(:hover, :focus-visible) .broken,
-:where([aria-current="page"], [aria-pressed="true"], [data-active="true"], [data-selected="true"]) .broken {
+:where(a, button, [role="button"]):is(:hover, :focus-visible) .regular,
+:where([aria-current="page"], [aria-pressed="true"], [data-active="true"], [data-selected="true"]) .regular {
   opacity: 0;
 }
 
@@ -40,7 +44,7 @@
 }
 
 @media (prefers-reduced-motion: reduce) {
-  .layer {
+  .layer, .regular {
     transition: none;
   }
 }

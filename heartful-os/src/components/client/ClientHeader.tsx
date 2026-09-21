@@ -4,7 +4,7 @@ import { useState } from "react";
 import ClientAvatarImage from "@/components/client/ClientAvatarImage";
 import { CalendarDays, CheckCircle2, ChevronDown, ChevronUp, CircleDollarSign, KeyRound, Mail, PauseCircle, Phone, UserRound } from "@/components/ui/HeartfulIcon";
 import { Client, JourneyMilestone, Profile, ReferralSource, Session } from "@/lib/types";
-import { clientAvatarSrc, formatCurrency, formatDate, formatDateTime, initials } from "@/lib/utils";
+import { clientAvatarSrc, cx, formatCurrency, formatDate, formatDateTime, initials } from "@/lib/utils";
 import ClientStatusControl from "@/components/client/ClientStatusControl";
 import ClientHeaderActions from "@/components/client/ClientHeaderActions";
 import QuickNoteButton from "@/components/client/QuickNoteButton";
@@ -105,6 +105,7 @@ export default function ClientHeader({ client, sessions = [], referralSources, p
             <dl className="wn-overview-field-list">
               <OverviewFact
                 icon={<Mail />}
+                iconAction={client.email ? <a className="wn-utility-icon wn-email-icon" href={`mailto:${client.email}`} aria-label={`Email ${client.full_name}`}><Mail /></a> : undefined}
                 label="Email"
                 value={client.email ?? "Not provided"}
                 href={client.email ? `mailto:${client.email}` : undefined}
@@ -122,20 +123,21 @@ export default function ClientHeader({ client, sessions = [], referralSources, p
             <dl className="wn-overview-text-grid">
               <ProfileFact label="Client since" value={formatDate(client.created_at)} />
               <ProfileFact label="Referral source" value={referral?.name ?? "Direct inquiry"} />
-              <ProfileFact label="Package" value={client.package_name ?? "Not assigned"} />
+              <ProfileFact className="wn-overview-package" label="Package" value={client.package_name ?? "Not assigned"} />
             </dl>
           </div>
 
           <div className="wn-overview-section wn-overview-operations">
             <h2>Operational</h2>
             <dl className="wn-overview-field-list">
-              <OverviewFact icon={<CalendarDays />} label="Next session" value={nextSessionLabel} />
+              <OverviewFact icon={<CalendarDays />} label="Next session" value={nextSessionLabel} tone={nextSession ? "next-session" : undefined} />
               <OverviewFact
                 icon={<CircleDollarSign />}
                 label="Payment status"
                 value={paymentLabel}
                 note={`${formatCurrency(client.amount_paid)} of ${formatCurrency(client.package_value)}`}
                 action={<RecordPaymentButton clientId={client.id} outstanding={balance} />}
+                tone={balance > 0 ? "attention" : "positive"}
               />
               <OverviewFact
                 icon={client.portal_password_hash ? <CheckCircle2 /> : <KeyRound />}
@@ -143,6 +145,7 @@ export default function ClientHeader({ client, sessions = [], referralSources, p
                 value={client.portal_password_hash ? "Account active" : "Not set up"}
                 note={client.portal_email}
                 action={client.portal_password_hash ? <ResetPortalPasswordButton clientId={client.id} clientName={client.full_name} inline /> : undefined}
+                tone={client.portal_password_hash ? "positive" : "attention"}
               />
             </dl>
           </div>
@@ -161,11 +164,11 @@ export default function ClientHeader({ client, sessions = [], referralSources, p
   );
 }
 
-function ProfileFact({ label, value }: { label: string; value: string }) {
-  return <div><dt>{label}</dt><dd>{value}</dd></div>;
+function ProfileFact({ className, label, value }: { className?: string; label: string; value: string }) {
+  return <div className={className}><dt>{label}</dt><dd>{value}</dd></div>;
 }
 
-function OverviewFact({ icon, iconAction, label, value, note, href, action }: {
+function OverviewFact({ icon, iconAction, label, value, note, href, action, tone }: {
   icon: React.ReactElement;
   iconAction?: React.ReactNode;
   label: string;
@@ -173,13 +176,14 @@ function OverviewFact({ icon, iconAction, label, value, note, href, action }: {
   note?: string;
   href?: string;
   action?: React.ReactNode;
+  tone?: "next-session" | "attention" | "positive";
 }) {
   return (
-    <div className="wn-overview-fact">
+    <div className={cx("wn-overview-fact", tone && `is-${tone}`)}>
       {iconAction ?? <span className="wn-utility-icon">{icon}</span>}
       <div className="min-w-0">
         <dt>{label}</dt>
-        <dd title={value}>{href ? <a href={href}>{value}</a> : value}</dd>
+        <dd title={value}>{href ? <a className={href.startsWith("mailto:") ? "wn-email-link" : undefined} href={href}>{value}</a> : value}</dd>
         {note && <small>{note}</small>}
         {action}
       </div>

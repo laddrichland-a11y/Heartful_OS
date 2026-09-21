@@ -25,6 +25,24 @@ export const viewport: Viewport = {
   themeColor: "#F3774D",
 };
 
+const themeBootstrapScript = `(() => {
+  const root = document.documentElement;
+  let theme = "golden-canopy";
+  try {
+    const saved = window.localStorage.getItem("heartful-theme");
+    if (saved === "golden-canopy" || saved === "mushroom-grove" || saved === "dark") {
+      theme = saved;
+    } else if (saved === "light") {
+      window.localStorage.setItem("heartful-theme", "golden-canopy");
+    } else if (window.matchMedia("(prefers-color-scheme: dark)").matches) {
+      theme = "dark";
+    }
+  } catch {}
+  root.dataset.theme = theme;
+  root.dataset.themeReady = "true";
+  root.style.colorScheme = theme === "dark" ? "dark" : "light";
+})();`;
+
 export default async function RootLayout({
   children,
 }: Readonly<{
@@ -33,7 +51,10 @@ export default async function RootLayout({
   const practitioner = await getPractitioner();
 
   return (
-    <html lang="en" className="h-full antialiased">
+    <html lang="en" className="h-full antialiased" suppressHydrationWarning>
+      <head>
+        <script dangerouslySetInnerHTML={{ __html: themeBootstrapScript }} />
+      </head>
       <body className="min-h-full flex flex-col">
         <PractitionerProvider initialName={practitioner.full_name} initialPracticeName={practitioner.practice_name}>
           <RoleProvider>

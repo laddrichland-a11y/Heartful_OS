@@ -1,4 +1,4 @@
-import { ClientStatus, DocumentType, JourneyPhase } from "@/lib/types";
+import { Client, ClientStatus, DocumentType, JourneyMilestone, JourneyPhase } from "@/lib/types";
 import type { StaticImageData } from "next/image";
 import mayaChenAvatar from "../../public/images/clients/maya-chen.webp";
 import danielOrtizAvatar from "../../public/images/clients/daniel-ortiz.webp";
@@ -162,6 +162,33 @@ export function statusBadgeClasses(status: ClientStatus): string {
   return "bg-ink-100 text-ink-600";
 }
 
+/** Shared client-status palette for list rows and the editable client header. */
+export function clientStatusBadgeClasses(status: ClientStatus): string {
+  if (
+    status === "intake_complete" ||
+    status === "preparation_complete" ||
+    status === "journey_complete" ||
+    status === "check_in_complete" ||
+    status === "integration_1_complete" ||
+    status === "integration_2_complete" ||
+    status === "journey_closed"
+  ) {
+    return "bg-sage-100 text-sage-700";
+  }
+
+  const activeStatusClasses: Partial<Record<ClientStatus, string>> = {
+    inquiry: "client-status--inquiry",
+    intake_scheduled: "client-status--intake-scheduled",
+    preparation: "client-status--preparation",
+    journey_scheduled: "client-status--journey-scheduled",
+    integration_1: "client-status--integration-one",
+    integration_2: "client-status--integration-two",
+    inactive: "client-status--inactive",
+  };
+
+  return activeStatusClasses[status] ?? statusBadgeClasses(status);
+}
+
 export function phaseLabel(phase: JourneyPhase): string {
   const map: Record<JourneyPhase, string> = {
     intake: "Intake",
@@ -198,6 +225,60 @@ export const STATUS_PHASE_MAP: Partial<Record<ClientStatus, JourneyPhase>> = {
 
 export function phaseForStatus(status: ClientStatus, fallback: JourneyPhase): JourneyPhase {
   return STATUS_PHASE_MAP[status] ?? fallback;
+}
+
+/**
+ * Manual status is the source of truth for a client's displayed journey
+ * position. Journey Closed includes its hidden closing marker, while the
+ * client rail presents the first seven visible stages.
+ */
+export const JOURNEY_PROGRESS_COMPLETED_MILESTONES: Partial<Record<ClientStatus, number>> = {
+  inquiry: 0,
+  intake_scheduled: 0,
+  intake_complete: 1,
+  preparation: 1,
+  preparation_complete: 2,
+  journey_scheduled: 2,
+  journey_complete: 3,
+  check_in_complete: 4,
+  integration_1: 4,
+  integration_1_complete: 5,
+  integration_2: 5,
+  integration_2_complete: 6,
+  journey_closed: 8,
+};
+
+export const JOURNEY_PROGRESS_STAGE_COUNT = 7;
+
+/**
+ * The shared journey-progress model for every practitioner surface. A manual
+ * status normally determines progress; "inactive" is deliberately different:
+ * it pauses a client without erasing their retained phase or completed work.
+ */
+export function getClientJourneyProgress(
+  client: Pick<Client, "status" | "current_phase">,
+  milestones: JourneyMilestone[],
+) {
+  const closed = client.status === "journey_closed" || milestones.some(
+    (milestone) => milestone.milestone_key === "journey_closed" && milestone.completed,
+  );
+  const milestoneCompleted = milestones.filter(
+    (milestone) => milestone.sort_order <= JOURNEY_PROGRESS_STAGE_COUNT && milestone.completed,
+  ).length;
+  const statusCompleted = JOURNEY_PROGRESS_COMPLETED_MILESTONES[client.status];
+  const completed = Math.min(
+    client.status === "inactive" || statusCompleted === undefined ? milestoneCompleted : statusCompleted,
+    JOURNEY_PROGRESS_STAGE_COUNT,
+  );
+  const phase = phaseForStatus(client.status, client.current_phase);
+
+  return {
+    completed: closed ? JOURNEY_PROGRESS_STAGE_COUNT : completed,
+    total: JOURNEY_PROGRESS_STAGE_COUNT,
+    phase,
+    /** Inactive is a relationship status, never a journey-stage label. */
+    currentStageLabel: closed ? "Journey complete" : phaseLabel(phase),
+  };
 }
 
 export function relativeDueLabel(iso?: string) {

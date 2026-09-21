@@ -49,7 +49,10 @@ function ProspectListItem({ prospect, calls, tone = "active" }: { prospect: Pros
       <div className="prospect-list-item-main">
         <div className="prospect-list-avatar" aria-hidden="true">{initials(prospect.full_name)}</div>
         <div className="prospect-list-copy">
-          <strong>{prospect.full_name}</strong>
+          <div className="prospect-list-title">
+            <strong>{prospect.full_name}</strong>
+            <span className={cx("badge text-xs", STATUS_COLORS[prospect.status])}>{PROSPECT_STATUS_LABELS[prospect.status]}</span>
+          </div>
           <span className="prospect-list-contact">{contact}</span>
           <div className="prospect-list-meta" aria-label="Prospect details">
             <span><Tag aria-hidden="true" />{prospect.referral_source ?? "Interest not specified"}</span>
@@ -59,7 +62,6 @@ function ProspectListItem({ prospect, calls, tone = "active" }: { prospect: Pros
         </div>
       </div>
       <div className="prospect-list-item-side">
-        <span className={cx("badge text-xs", STATUS_COLORS[prospect.status])}>{PROSPECT_STATUS_LABELS[prospect.status]}</span>
         <span className="prospect-list-view">View prospect <ArrowRight aria-hidden="true" /></span>
       </div>
     </Link>

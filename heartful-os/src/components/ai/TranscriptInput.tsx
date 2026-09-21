@@ -7,18 +7,20 @@ export default function TranscriptInput({
   value,
   onChange,
   label = "Transcript",
+  hideLabel = false,
 }: {
   value: string;
   onChange: (v: string) => void;
   label?: string;
+  hideLabel?: boolean;
 }) {
   const [fileName, setFileName] = useState<string | null>(null);
 
   return (
-    <div className="space-y-2">
+    <div className={hideLabel ? "transcript-input transcript-input--heading-actions space-y-2" : "transcript-input space-y-2"}>
       <div className="flex items-center justify-between">
-        <label className="text-sm font-medium text-ink-800">{label}</label>
-        <div className="flex items-center gap-2">
+        {!hideLabel && <label className="text-sm font-medium text-ink-800">{label}</label>}
+        <div className="transcript-upload-actions flex items-center gap-2">
           <label className="btn-ghost text-xs flex items-center gap-1 px-2 py-1 cursor-pointer">
             <Upload className="h-3.5 w-3.5" /> Upload transcript
             <input

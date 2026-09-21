@@ -10,8 +10,8 @@ import {
 import ClientAvatarImage from "@/components/client/ClientAvatarImage";
 import Link from "next/link";
 import {
-  clientAvatarSrc, cx, formatDateTime, initials, isPastDue, outstandingItemHref,
-  relativeDueLabel, SESSION_TYPE_LABELS, statusBadgeClasses,
+  clientAvatarSrc, clientStatusBadgeClasses, cx, formatDateTime, initials, isPastDue, outstandingItemHref,
+  relativeDueLabel, SESSION_TYPE_LABELS,
 } from "@/lib/utils";
 import { STATUS_LABELS } from "@/lib/types";
 
@@ -89,9 +89,9 @@ export default async function DashboardPage() {
                         </span>
                         <strong>{client.full_name}</strong>
                       </span>
-                      <span className={cx("badge", statusBadgeClasses(client.status))}>{STATUS_LABELS[client.status]}</span>
+                      <span className={cx("badge", clientStatusBadgeClasses(client.status))}>{STATUS_LABELS[client.status]}</span>
                     </div>
-                    <JourneyProgressBar milestones={milestones} compact />
+                    <JourneyProgressBar client={client} milestones={milestones} compact />
                     <div className="dashboard-agreement-status">
                       {agreement?.complete ? <><CheckCircle2 /> Agreements signed</> : <><FileText /> Agreements {agreement?.signed_count ?? 0}/{agreement?.total_count ?? 3}</>}
                     </div>

@@ -359,7 +359,7 @@ export default function CalendarView({
             onDuplicate={() => openDuplicate(selected)}
             onGoToClient={() => router.push(`/clients/${selected.client_id}?tab=Sessions`)}
             onCancel={() =>
-              startTransition(async () => {
+              window.confirm("Cancel this session? This cannot be undone.") && startTransition(async () => {
                 await cancelSessionAction(selected.id, selected.client_id);
                 applyStatusChange(selected.id, "cancelled");
               })
@@ -758,7 +758,7 @@ function SessionRow({
       {session.status === "scheduled" && (
         <div className="flex items-center gap-1.5 shrink-0">
           <button
-            className="btn-ghost text-xs px-2 py-1"
+            className="calendar-session-complete-action"
             onClick={() =>
               startTransition(async () => {
                 await completeSessionAction(session.id, session.client_id);
@@ -766,16 +766,17 @@ function SessionRow({
               })
             }
           >
-            Complete
+            <CheckCircle2 aria-hidden="true" /> Complete
           </button>
           <button
-            className="btn-ghost text-xs px-2 py-1 text-clay-600"
-            onClick={() =>
+            className="calendar-session-cancel-action"
+            onClick={() => {
+              if (!window.confirm("Cancel this session? This cannot be undone.")) return;
               startTransition(async () => {
                 await cancelSessionAction(session.id, session.client_id);
                 onStatusChange(session.id, "cancelled");
-              })
-            }
+              });
+            }}
           >
             Cancel
           </button>

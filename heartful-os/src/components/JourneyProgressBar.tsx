@@ -1,19 +1,24 @@
-import { JourneyMilestone } from "@/lib/types";
-import { cx } from "@/lib/utils";
+import { Client, JourneyMilestone } from "@/lib/types";
+import { cx, getClientJourneyProgress, JOURNEY_PROGRESS_STAGE_COUNT } from "@/lib/utils";
 import { Check, IntegrationLink } from "@/components/ui/HeartfulIcon";
 
 export default function JourneyProgressBar({
   milestones,
+  client,
   compact = false,
   subdued = false,
 }: {
   milestones: JourneyMilestone[];
+  client?: Pick<Client, "status" | "current_phase">;
   compact?: boolean;
   subdued?: boolean;
 }) {
-  const sorted = [...milestones].sort((a, b) => a.sort_order - b.sort_order);
-  const completedCount = sorted.filter((m) => m.completed).length;
-  const currentIndex = sorted.findIndex((m) => !m.completed);
+  const sorted = [...milestones]
+    .filter((milestone) => milestone.sort_order <= JOURNEY_PROGRESS_STAGE_COUNT)
+    .sort((a, b) => a.sort_order - b.sort_order);
+  const calculated = client ? getClientJourneyProgress(client, milestones) : undefined;
+  const completedCount = calculated?.completed ?? sorted.filter((m) => m.completed).length;
+  const currentIndex = completedCount < sorted.length ? completedCount : -1;
 
   return (
     <div className="w-full">
@@ -27,25 +32,26 @@ export default function JourneyProgressBar({
       )}
       <div className="flex items-center w-full">
         {sorted.map((m, i) => {
+          const completed = i < completedCount;
           const isCurrent = !subdued && i === currentIndex;
 
           return (
           <div key={m.id} className="group/step relative flex flex-1 items-center last:flex-none">
             <div
               title={m.label}
-              aria-label={`${i + 1}. ${m.label}${m.completed ? ", completed" : isCurrent ? ", current stage" : ""}`}
+              aria-label={`${i + 1}. ${m.label}${completed ? ", completed" : isCurrent ? ", current stage" : ""}`}
               aria-current={isCurrent ? "step" : undefined}
               className={cx(
                 "flex shrink-0 items-center justify-center rounded-full transition-colors",
                 compact ? "h-5 w-5" : "h-6 w-6",
                 isCurrent
                   ? "bg-[var(--status-warning-bg)] text-[var(--status-warning-text)] ring-1 ring-[var(--brand-accent-muted)]"
-                  : m.completed
+                  : completed
                     ? "bg-[var(--journey-complete-bg,var(--color-sage-200))] text-[var(--journey-complete-text,var(--color-sage-800))]"
                     : "bg-ink-100 text-ink-400"
               )}
             >
-              {m.completed ? <Check strokeWidth={2.5} className={compact ? "h-3 w-3" : "h-3.5 w-3.5"} /> : (
+              {completed ? <Check strokeWidth={2.5} className={compact ? "h-3 w-3" : "h-3.5 w-3.5"} /> : (
                 <span className="text-xs">{i + 1}</span>
               )}
             </div>
@@ -53,7 +59,7 @@ export default function JourneyProgressBar({
               <div
                 className={cx(
                   "mx-1 h-[2px] flex-1 rounded",
-                  m.completed ? "bg-[var(--journey-complete-line,var(--color-sage-200))]" : "bg-ink-100"
+                  completed ? "bg-[var(--journey-complete-line,var(--color-sage-200))]" : "bg-ink-100"
                 )}
               />
             )}

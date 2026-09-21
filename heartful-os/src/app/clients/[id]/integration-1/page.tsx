@@ -12,6 +12,7 @@ import IntegrationWorkspace from "@/components/client/IntegrationWorkspace";
 import MilestoneToggleBanner from "@/components/client/MilestoneToggleBanner";
 import ClientPhaseNav from "@/components/client/ClientPhaseNav";
 import PhasePrepareMe from "@/components/client/PhasePrepareMe";
+import ClientPhaseWorkspace from "@/components/client/ClientPhaseWorkspace";
 
 export const dynamic = "force-dynamic";
 
@@ -32,6 +33,7 @@ export default async function Integration1Page({ params }: { params: Promise<{ i
 
   return (
     <AppShell title={client.full_name} variant="wellnest-client">
+      <ClientPhaseWorkspace clientId={id} showClientHeader>
       <ClientPhaseNav clientId={id} current="integration_1" />
       <MilestoneToggleBanner
         clientId={id}
@@ -50,6 +52,7 @@ export default async function Integration1Page({ params }: { params: Promise<{ i
         formSubmissions={formSubmissions}
         existingSummary={summaries.find((s) => s.title === "Integration Summary 1")}
       />
+      </ClientPhaseWorkspace>
     </AppShell>
   );
 }

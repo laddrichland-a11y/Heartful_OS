@@ -2,7 +2,7 @@
 
 import { useState, useTransition } from "react";
 import { ClientStatus, JourneyPhase, STATUS_LABELS } from "@/lib/types";
-import { cx, phaseForStatus, statusBadgeClasses } from "@/lib/utils";
+import { clientStatusBadgeClasses, cx, phaseForStatus } from "@/lib/utils";
 import { updateClientStatusAction } from "@/lib/actions";
 import { ChevronDown, Loader2 } from "@/components/ui/HeartfulIcon";
 
@@ -23,11 +23,13 @@ export default function ClientStatusControl({
   phase: JourneyPhase;
 }) {
   const [open, setOpen] = useState(false);
+  const [selectedStatus, setSelectedStatus] = useState(status);
   const [pending, startTransition] = useTransition();
 
   function handleChange(next: ClientStatus) {
     setOpen(false);
-    if (next === status) return;
+    if (next === selectedStatus) return;
+    setSelectedStatus(next);
     const nextPhase = phaseForStatus(next, phase);
     startTransition(async () => {
       await updateClientStatusAction(clientId, next, nextPhase);
@@ -42,12 +44,13 @@ export default function ClientStatusControl({
         disabled={pending}
         className={cx(
           "badge inline-flex items-center gap-1 cursor-pointer hover:opacity-80 transition-opacity",
-          statusBadgeClasses(status)
+          clientStatusBadgeClasses(selectedStatus)
         )}
+        data-status={selectedStatus}
         title="Manually advance or roll back this client's status"
       >
         {pending ? <Loader2 className="h-3 w-3 animate-spin" /> : null}
-        {STATUS_LABELS[status]}
+        {STATUS_LABELS[selectedStatus]}
         <ChevronDown className="h-3 w-3" />
       </button>
 
@@ -62,11 +65,11 @@ export default function ClientStatusControl({
                 onClick={() => handleChange(s)}
                 className={cx(
                   "w-full text-left px-3 py-1.5 text-sm hover:bg-ink-50 flex items-center justify-between",
-                  s === status && "font-semibold text-clay-700"
+                  s === selectedStatus && "font-semibold text-clay-700"
                 )}
               >
                 {STATUS_LABELS[s]}
-                {s === status && <span className="text-xs text-ink-400">current</span>}
+                {s === selectedStatus && <span className="text-xs text-ink-400">current</span>}
               </button>
             ))}
           </div>

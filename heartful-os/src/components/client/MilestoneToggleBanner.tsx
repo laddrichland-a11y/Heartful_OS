@@ -1,7 +1,7 @@
 "use client";
 
 import { useState, useTransition } from "react";
-import { Check, CheckCircle2, CircleDot, Loader2 } from "@/components/ui/HeartfulIcon";
+import { CalendarClock, Check, CheckCircle2, CircleDot, Loader2 } from "@/components/ui/HeartfulIcon";
 import { toggleMilestoneAction } from "@/lib/actions";
 import { cx } from "@/lib/utils";
 
@@ -34,7 +34,7 @@ export default function MilestoneToggleBanner({
       <div>
         <p className="client-eyebrow">Stage workspace</p>
         <div className="mt-1 flex flex-wrap items-center gap-2.5">
-          <h2 className="text-lg font-semibold text-ink-900">{label}</h2>
+          <h2 className="journey-icon-heading text-lg font-semibold text-ink-900"><CalendarClock aria-hidden="true" />{label}</h2>
           <span className={cx("badge inline-flex items-center gap-1.5", completed ? "bg-sage-100 text-sage-700" : "bg-clay-50 text-clay-700")}>
             {completed ? <CheckCircle2 className="h-3.5 w-3.5" /> : <CircleDot className="h-3.5 w-3.5" />}
             {completed ? "Completed" : "In progress"}

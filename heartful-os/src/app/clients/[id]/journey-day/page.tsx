@@ -19,6 +19,7 @@ import ClientPhaseNav from "@/components/client/ClientPhaseNav";
 import PhasePrepareMe from "@/components/client/PhasePrepareMe";
 import JourneyPrepEmailButton from "@/components/client/JourneyPrepEmailButton";
 import JourneySummaryTextButton from "@/components/client/JourneySummaryTextButton";
+import ClientPhaseWorkspace from "@/components/client/ClientPhaseWorkspace";
 import { headers } from "next/headers";
 
 export const dynamic = "force-dynamic";
@@ -67,6 +68,7 @@ export default async function JourneyDayPage({ params }: { params: Promise<{ id:
 
   return (
     <AppShell title={client.full_name} variant="wellnest-client">
+      <ClientPhaseWorkspace clientId={id}>
       <ClientPhaseNav clientId={id} current="harm_reduction_session" />
       <div className="mb-4 flex items-center justify-end gap-3">
         <div className="flex items-center gap-2">
@@ -169,6 +171,7 @@ export default async function JourneyDayPage({ params }: { params: Promise<{ id:
         initialTranscript={session?.transcript ?? ""}
         initialRecordings={recordings}
       />
+      </ClientPhaseWorkspace>
     </AppShell>
   );
 }

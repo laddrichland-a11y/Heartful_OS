@@ -1,28 +1,28 @@
 "use client";
 
 import { useState } from "react";
-import { Loader2, Pencil } from "@/components/ui/HeartfulIcon";
-import { cx, formatDateTime, toDatetimeLocalValue, fromDatetimeLocalValue } from "@/lib/utils";
+import { Check, Loader2, MoreHorizontal } from "@/components/ui/HeartfulIcon";
+import { formatDateTime, toDatetimeLocalValue, fromDatetimeLocalValue } from "@/lib/utils";
 
-// Toggle switch for Journey Begin / Journey End / Booster Dose — same visual
-// language as MilestoneToggleBanner's completion switch. Once a marker is
-// on, it also exposes a small "fix the time" affordance (a datetime-local
-// input) for correcting the timestamp after the fact — e.g. the
-// practitioner forgot to toggle it until a few minutes into the actual
-// event. Toggle logic (calling the action, updating sibling state like
-// Manual Notes) lives in the parent.
+/** Records a journey event while keeping time correction and removal available. */
 export default function JourneyMarkerSwitch({
   label,
+  actionLabel,
+  recordedLabel,
   on,
   pending,
+  disabled = false,
   isoTimestamp,
   onToggle,
   onTimeChange,
   timeSaving,
 }: {
   label: string;
+  actionLabel: string;
+  recordedLabel: string;
   on: boolean;
   pending: boolean;
+  disabled?: boolean;
   isoTimestamp?: string;
   onToggle: () => void;
   onTimeChange?: (newIso: string) => void;
@@ -32,76 +32,42 @@ export default function JourneyMarkerSwitch({
   const [draftTime, setDraftTime] = useState("");
 
   return (
-    <div>
-      <div className="flex items-center gap-3">
-        <span className={cx("text-sm font-medium", on ? "text-sage-700" : "text-ink-600")}>{label}</span>
-        {pending ? (
-          <Loader2 className="h-4 w-4 animate-spin text-ink-400" />
-        ) : (
-          <button
-            onClick={onToggle}
-            role="switch"
-            aria-checked={on}
-            className={cx(
-              "relative inline-flex h-6 w-11 shrink-0 cursor-pointer rounded-full border-2 border-transparent transition-colors duration-200 focus:outline-none focus-visible:ring-2 focus-visible:ring-sage-500",
-              on ? "bg-sage-500" : "bg-ink-200 hover:bg-ink-300"
-            )}
-          >
-            <span
-              className={cx(
-                "pointer-events-none inline-block h-5 w-5 transform rounded-full bg-white shadow ring-0 transition duration-200",
-                on ? "translate-x-5" : "translate-x-0"
-              )}
-            />
-          </button>
-        )}
-      </div>
-
-      {isoTimestamp && (
-        <div className="mt-1 flex items-center gap-1.5">
+    <div className="journey-timing-event">
+      <p className="journey-timing-label">{label}</p>
+      {on && isoTimestamp ? (
+        <>
+          <div className="journey-timing-recorded" title={formatDateTime(isoTimestamp)}>
+            <Check aria-hidden="true" />
+            <span>{recordedLabel} · <time dateTime={isoTimestamp} suppressHydrationWarning>{new Date(isoTimestamp).toLocaleTimeString("en-US", { hour: "numeric", minute: "2-digit" })}</time></span>
+          </div>
           {editingTime ? (
-            <>
-              <input
-                type="datetime-local"
-                value={draftTime}
-                onChange={(e) => setDraftTime(e.target.value)}
-                className="text-xs border border-ink-200 rounded px-1.5 py-1 focus:outline-none focus:ring-2 focus:ring-clay-200"
-              />
-              <button
-                disabled={timeSaving || !draftTime}
-                onClick={() => {
-                  if (draftTime && onTimeChange) onTimeChange(fromDatetimeLocalValue(draftTime));
-                  setEditingTime(false);
-                }}
-                className="text-xs text-clay-600 hover:text-clay-800 font-medium disabled:opacity-50"
-              >
-                {timeSaving ? "Saving…" : "Save"}
-              </button>
-              <button
-                onClick={() => setEditingTime(false)}
-                className="text-xs text-ink-400 hover:text-ink-600"
-              >
-                Cancel
-              </button>
-            </>
+            <div className="journey-timing-time-editor">
+              <input aria-label={`Correct ${label.toLowerCase()} time`} type="datetime-local" value={draftTime} onChange={(event) => setDraftTime(event.target.value)} />
+              <button disabled={timeSaving || !draftTime} onClick={() => {
+                if (draftTime && onTimeChange) onTimeChange(fromDatetimeLocalValue(draftTime));
+                setEditingTime(false);
+              }}>{timeSaving ? "Saving…" : "Save time"}</button>
+              <button onClick={() => setEditingTime(false)}>Cancel</button>
+            </div>
           ) : (
-            <>
-              <p className="text-xs text-ink-400">{formatDateTime(isoTimestamp)}</p>
-              {onTimeChange && (
-                <button
-                  onClick={() => {
-                    setDraftTime(toDatetimeLocalValue(isoTimestamp));
-                    setEditingTime(true);
-                  }}
-                  className="text-ink-300 hover:text-clay-600"
-                  title="Fix the time"
-                >
-                  <Pencil className="h-3 w-3" />
-                </button>
-              )}
-            </>
+            <details className="journey-timing-menu">
+              <summary aria-label={`Manage ${label.toLowerCase()} record`}><MoreHorizontal aria-hidden="true" /></summary>
+              <div>
+                {onTimeChange && <button onClick={(event) => {
+                  event.currentTarget.closest("details")?.removeAttribute("open");
+                  setDraftTime(toDatetimeLocalValue(isoTimestamp));
+                  setEditingTime(true);
+                }}>Edit time</button>}
+                <button disabled={pending} onClick={onToggle}>Remove record</button>
+              </div>
+            </details>
           )}
-        </div>
+        </>
+      ) : (
+        <button className="journey-timing-action" disabled={disabled || pending} onClick={onToggle}>
+          {pending && <Loader2 className="animate-spin" aria-hidden="true" />}
+          {pending ? "Recording…" : actionLabel}
+        </button>
       )}
     </div>
   );

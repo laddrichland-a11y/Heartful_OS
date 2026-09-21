@@ -74,7 +74,7 @@ function aiSummaryDestination(
     case "journey_summary":
       return { href: `/clients/${clientId}/journey-day` };
     case "check_in_12hr_summary":
-      return { href: `/clients/${clientId}/check-in` };
+      return { href: `/clients/${clientId}?tab=Journey%20%26%20AI#check-in` };
     case "integration_1_brief":
       return { href: `/clients/${clientId}/integration-1` };
     case "integration_summary":
@@ -260,7 +260,7 @@ export function buildClientActivity(input: {
         at: c.submitted_at,
         kind: "check_in",
         title: `${c.check_in_type === "12_hour" ? "12-Hour" : "48-Hour"} check-in submitted`,
-        href: `/clients/${cid}/check-in`,
+        href: `/clients/${cid}?tab=Journey%20%26%20AI#check-in`,
       });
     }
   }

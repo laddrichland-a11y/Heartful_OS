@@ -11,6 +11,7 @@ export default function JourneySummaryTextButton({
   practitionerName,
   portalUrl,
   ready,
+  variant = "button",
 }: {
   clientId: string;
   clientName: string;
@@ -19,6 +20,7 @@ export default function JourneySummaryTextButton({
   portalUrl: string;
   /** Only show once there's an actual generated Journey Day Summary - Client to point the client to. */
   ready: boolean;
+  variant?: "button" | "menu";
 }) {
   const [open, setOpen] = useState(false);
 
@@ -29,7 +31,7 @@ export default function JourneySummaryTextButton({
       <button
         type="button"
         onClick={() => setOpen(true)}
-        className="btn-secondary text-xs px-3 py-1.5 flex items-center gap-1.5"
+        className={variant === "menu" ? "session-actions-menu-item" : "btn-secondary text-xs px-3 py-1.5 flex items-center gap-1.5"}
       >
         <MessageSquare className="h-3.5 w-3.5" /> Text Client: Summary Ready
       </button>

@@ -19,6 +19,7 @@ import { PhaseNavKey } from "@/components/client/JourneyStageNav";
 import { AiSummaryType, SessionType } from "@/lib/types";
 import { headers } from "next/headers";
 import ClientHeader from "@/components/client/ClientHeader";
+import ClientPhaseWorkspace from "@/components/client/ClientPhaseWorkspace";
 
 export const dynamic = "force-dynamic";
 
@@ -115,6 +116,7 @@ export default async function SessionDetailPage({
 
   return (
     <AppShell title={client.full_name} variant="wellnest-client">
+      <ClientPhaseWorkspace clientId={id}>
       <ClientHeader
         client={client}
         milestones={milestones}
@@ -151,6 +153,7 @@ export default async function SessionDetailPage({
         initialRecordings={recordings}
         portalUrl={portalUrl}
       />
+      </ClientPhaseWorkspace>
     </AppShell>
   );
 }

@@ -4,7 +4,7 @@ import { useRouter } from "next/navigation";
 import { useRole } from "@/components/RoleContext";
 import { usePractitioner } from "@/components/PractitionerContext";
 import { useClientSwitcher } from "@/components/client/ClientSwitcherContext";
-import { ArrowRight, Bell, Check, ChevronDown, LogOut, Menu, MessageCircle, Plus, Search } from "@/components/ui/HeartfulIcon";
+import { ArrowRight, Bell, Check, ChevronDown, LogOut, Menu, MessageCircle, Plus, Search, Settings } from "@/components/ui/HeartfulIcon";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import MobileNav from "./MobileNav";
 import { logoutAction } from "@/lib/actions";
@@ -221,6 +221,7 @@ export default function Topbar({
               {accountMenuOpen && (
                 <div className="topbar-popover topbar-account-menu" role="menu">
                   <div className="topbar-account-summary"><span className="topbar-avatar">{practitionerInitials}</span><span><strong>{practitionerName}</strong><small>{practiceName}</small></span></div>
+                  <button role="menuitem" onClick={() => { setAccountMenuOpen(false); router.push("/settings"); }}><Settings /><span>Edit practitioner account</span></button>
                   <button role="menuitem" onClick={async () => { try { await logoutAction(); } catch (err) { if (err instanceof Error && err.message === "NEXT_REDIRECT") throw err; } }}><LogOut /><span>Log out</span></button>
                 </div>
               )}

@@ -37,13 +37,15 @@ import {
   Upload,
   Music,
   ScrollText,
+  MoreHorizontal,
+  ChevronDown,
 } from "@/components/ui/HeartfulIcon";
 import SummaryCard from "@/components/ai/SummaryCard";
+import ActionCardHeader from "@/components/client/ActionCardHeader";
 import MilestoneToggleBanner from "@/components/client/MilestoneToggleBanner";
 import JourneyPrepEmailButton from "@/components/client/JourneyPrepEmailButton";
 import JourneySummaryTextButton from "@/components/client/JourneySummaryTextButton";
-import JourneyMarkerSwitch from "@/components/client/JourneyMarkerSwitch";
-import DoseAmountField from "@/components/client/DoseAmountField";
+import JourneyTimingTimeline from "@/components/client/JourneyTimingTimeline";
 import ElapsedTimer from "@/components/client/ElapsedTimer";
 import { useNowTick } from "@/lib/useNowTick";
 import {
@@ -304,6 +306,7 @@ export default function SessionDetailWorkspace({
   const [boosterDoseAt, setBoosterDoseAt] = useState(session.booster_dose_at ?? undefined);
   const [markerPending, setMarkerPending] = useState<JourneyMarker | null>(null);
   const [timeSavingMarker, setTimeSavingMarker] = useState<JourneyMarker | null>(null);
+  const [markerError, setMarkerError] = useState<string | null>(null);
 
   function markerTimestamp(marker: JourneyMarker) {
     return marker === "started" ? journeyStartedAt : marker === "ended" ? journeyEndedAt : boosterDoseAt;
@@ -324,21 +327,32 @@ export default function SessionDetailWorkspace({
   async function toggleJourneyMarker(marker: JourneyMarker) {
     const isOn = !!markerTimestamp(marker);
     setMarkerPending(marker);
-    // Server actions run in the Netlify function (UTC), which has no idea
-    // what timezone the practitioner is actually in — pass the browser's
-    // zone along so the note line written into Manual Notes lands in local
-    // time instead of UTC.
-    const timeZone = Intl.DateTimeFormat().resolvedOptions().timeZone;
-    const updated = await setJourneyMarkerAction(session.id, clientId, marker, !isOn, manualNotes, timeZone);
-    if (updated) applyMarkerResult(updated);
-    setMarkerPending(null);
+    setMarkerError(null);
+    try {
+      // Notes use the practitioner's local time even when the server runs in UTC.
+      const timeZone = Intl.DateTimeFormat().resolvedOptions().timeZone;
+      const updated = await setJourneyMarkerAction(session.id, clientId, marker, !isOn, manualNotes, timeZone);
+      if (updated) applyMarkerResult(updated);
+      else setMarkerError("Couldn't save that time. Please try again.");
+    } catch {
+      setMarkerError("Couldn't save that time. Check your connection and try again.");
+    } finally {
+      setMarkerPending(null);
+    }
   }
 
   async function updateMarkerTime(marker: JourneyMarker, isoTimestamp: string) {
     setTimeSavingMarker(marker);
-    const updated = await updateJourneyMarkerTimeAction(session.id, clientId, marker, isoTimestamp);
-    if (updated) applyMarkerResult(updated);
-    setTimeSavingMarker(null);
+    setMarkerError(null);
+    try {
+      const updated = await updateJourneyMarkerTimeAction(session.id, clientId, marker, isoTimestamp);
+      if (updated) applyMarkerResult(updated);
+      else setMarkerError("Couldn't save that time. Please try again.");
+    } catch {
+      setMarkerError("Couldn't save that time. Check your connection and try again.");
+    } finally {
+      setTimeSavingMarker(null);
+    }
   }
 
   // Quick +/- adjustment for a running timer (Journey Timer, Booster Timer)
@@ -358,23 +372,37 @@ export default function SessionDetailWorkspace({
   const [initialDoseSaving, setInitialDoseSaving] = useState(false);
   const [initialDoseSaved, setInitialDoseSaved] = useState(false);
   const [boosterDoseAmount, setBoosterDoseAmount] = useState(session.booster_dose_amount ?? "");
+  const [recordedBoosterDoseAmount, setRecordedBoosterDoseAmount] = useState(session.booster_dose_amount ?? "");
   const [boosterDoseSaving, setBoosterDoseSaving] = useState(false);
   const [boosterDoseSaved, setBoosterDoseSaved] = useState(false);
 
   async function saveInitialDoseAmount() {
     setInitialDoseSaving(true);
-    await updateInitialDoseAmountAction(session.id, clientId, initialDoseAmount);
-    setInitialDoseSaving(false);
-    setInitialDoseSaved(true);
-    setTimeout(() => setInitialDoseSaved(false), 2000);
+    setMarkerError(null);
+    try {
+      await updateInitialDoseAmountAction(session.id, clientId, initialDoseAmount);
+      setInitialDoseSaved(true);
+      setTimeout(() => setInitialDoseSaved(false), 2000);
+    } catch {
+      setMarkerError("Couldn't save the dose amount. Check your connection and try again.");
+    } finally {
+      setInitialDoseSaving(false);
+    }
   }
 
   async function saveBoosterDoseAmount() {
     setBoosterDoseSaving(true);
-    await updateBoosterDoseAmountAction(session.id, clientId, boosterDoseAmount);
-    setBoosterDoseSaving(false);
-    setBoosterDoseSaved(true);
-    setTimeout(() => setBoosterDoseSaved(false), 2000);
+    setMarkerError(null);
+    try {
+      await updateBoosterDoseAmountAction(session.id, clientId, boosterDoseAmount);
+      setRecordedBoosterDoseAmount(boosterDoseAmount);
+      setBoosterDoseSaved(true);
+      setTimeout(() => setBoosterDoseSaved(false), 2000);
+    } catch {
+      setMarkerError("Couldn't save the dose amount. Check your connection and try again.");
+    } finally {
+      setBoosterDoseSaving(false);
+    }
   }
 
   // 90-minute booster-dose assessment reminder — only ticks (and only
@@ -506,7 +534,7 @@ export default function SessionDetailWorkspace({
   }
 
   return (
-    <div className="max-w-5xl space-y-5">
+    <div className="session-detail-workspace max-w-5xl space-y-5">
       {milestoneKey && (
         <MilestoneToggleBanner
           clientId={clientId}
@@ -554,54 +582,66 @@ export default function SessionDetailWorkspace({
           )}
         </div>}
 
-        <div className={cx("mb-3 max-w-2xl", !milestoneKey && "border-t border-ink-100 pt-4")}>
-          <p className="client-eyebrow text-plum-600">AI Session Brief</p>
-          <p className="mt-1 text-xs leading-5 text-ink-500">A concise briefing based on the client&apos;s intake, previous sessions, intentions, recent themes, risks, and open threads.</p>
-        </div>
-        <div className="flex items-center gap-2 flex-wrap">
-          <button
-            disabled={prepareBusy}
-            onClick={prepareMe}
-            className="btn-primary text-sm px-4 py-2 flex items-center gap-2"
-          >
-            {prepareBusy ? (
-              <Loader2 className="h-4 w-4 animate-spin" />
-            ) : (
-              <FileText className="h-4 w-4" />
+        <div className={cx("session-brief-intro", !milestoneKey && "session-brief-intro--separated")}>
+          <div className="session-brief-intro-row">
+            <div className="session-brief-intro-copy">
+              <h3><Sparkles aria-hidden="true" /> AI Session Brief</h3>
+              <p className="mt-1 text-xs leading-5 text-ink-500">Key focus, context, and risks for this session.</p>
+            </div>
+            {(isScheduled || pastCallSummaries.length > 0) && (
+              <details className="session-actions-menu">
+                  <summary aria-label="More session actions" title="More session actions">
+                    <MoreHorizontal aria-hidden="true" />
+                  </summary>
+                  <div className="session-actions-menu-popover" role="menu" aria-label="Session actions">
+                    {isScheduled && (
+                      <>
+                        <button
+                          disabled={actionBusy === "complete"}
+                          onClick={async () => {
+                            setActionBusy("complete");
+                            await completeSessionAction(session.id, clientId);
+                            setActionBusy(null);
+                          }}
+                          className="session-actions-menu-item"
+                          role="menuitem"
+                        >
+                          {actionBusy === "complete" ? <Loader2 className="h-4 w-4 animate-spin" /> : <CheckCircle2 className="h-4 w-4" />}
+                          Mark Complete
+                        </button>
+                        <button
+                          disabled={actionBusy === "cancel"}
+                          onClick={async () => {
+                            if (!window.confirm("Cancel this session? This cannot be undone.")) return;
+                            setActionBusy("cancel");
+                            await cancelSessionAction(session.id, clientId);
+                            setActionBusy(null);
+                          }}
+                          className="session-actions-menu-item session-actions-menu-item--destructive"
+                          role="menuitem"
+                        >
+                          {actionBusy === "cancel" ? <Loader2 className="h-4 w-4 animate-spin" /> : <X className="h-4 w-4" />}
+                          Cancel Session
+                        </button>
+                      </>
+                    )}
+                    {pastCallSummaries.length > 0 && (
+                      <JourneySummaryTextButton
+                        clientId={clientId}
+                        clientName={clientName}
+                        clientPhone={clientPhone}
+                        practitionerName={practitionerName}
+                        portalUrl={portalUrl}
+                        ready
+                        variant="menu"
+                      />
+                    )}
+                  </div>
+              </details>
             )}
-            Generate Brief
-          </button>
-          {isScheduled && (
-            <>
-              <button
-                disabled={actionBusy === "complete"}
-                onClick={async () => {
-                  setActionBusy("complete");
-                  await completeSessionAction(session.id, clientId);
-                  setActionBusy(null);
-                }}
-                className="btn-secondary text-sm px-4 py-2 flex items-center gap-2"
-              >
-                {actionBusy === "complete" ? (
-                  <Loader2 className="h-4 w-4 animate-spin" />
-                ) : (
-                  <CheckCircle2 className="h-4 w-4" />
-                )}
-                Mark Complete
-              </button>
-              <button
-                disabled={actionBusy === "cancel"}
-                onClick={async () => {
-                  setActionBusy("cancel");
-                  await cancelSessionAction(session.id, clientId);
-                  setActionBusy(null);
-                }}
-                className="btn-ghost text-sm px-4 py-2 text-red-600 hover:bg-red-50"
-              >
-                Cancel Session
-              </button>
-            </>
-          )}
+          </div>
+        </div>
+        <div className="session-brief-footer-actions">
           {session.session_type === "harm_reduction_support" && practitionerName && (
             <JourneyPrepEmailButton
               clientId={clientId}
@@ -613,25 +653,27 @@ export default function SessionDetailWorkspace({
               followUpScheduledAt={followUpScheduledAt}
             />
           )}
-          {/* Available on every appointment type, not just Journey Day — any
-              session can generate a Journey Day Summary - Client (see the
-              fallback card below for non-Journey-Day session types), and the
-              client can view it in their portal regardless of session type. */}
-          <JourneySummaryTextButton
-            clientId={clientId}
-            clientName={clientName}
-            clientPhone={clientPhone}
-            practitionerName={practitionerName}
-            portalUrl={portalUrl}
-            ready={pastCallSummaries.length > 0}
-          />
+          <button
+            disabled={prepareBusy}
+            onClick={prepareMe}
+            className="btn-primary text-sm px-4 py-2 flex items-center gap-2"
+          >
+            {prepareBusy ? (
+              <Loader2 className="h-4 w-4 animate-spin" />
+            ) : (
+              <FileText className="h-4 w-4" />
+            )}
+            {briefing ? "Regenerate" : "Generate Brief"}
+          </button>
         </div>
       </div>
 
       {/* Journey Timing + Manual Notes (Journey Day only) */}
       {session.session_type === "harm_reduction_support" && (
-        <div className="card p-4">
-          <h3 className="font-medium text-sm text-ink-800 mb-3">Journey Timing</h3>
+        <div className="card session-analysis-panel journey-timing-panel p-4">
+          <h3 className="session-panel-heading mb-3">Journey Timing</h3>
+
+          {markerError && <p className="journey-timing-error" role="alert">{markerError}</p>}
 
           {(journeyStartedAt || boosterDoseAt) && (
             <div className="flex flex-wrap gap-8 mb-4">
@@ -655,17 +697,17 @@ export default function SessionDetailWorkspace({
           )}
 
           {showBoosterReminder && (
-            <div className="mb-4 rounded-lg border border-amber-300 bg-amber-50 px-4 py-3 flex items-start gap-3">
-              <AlertTriangle className="h-5 w-5 text-amber-600 shrink-0 mt-0.5" />
+            <div className="journey-timing-reminder">
+              <AlertTriangle className="h-5 w-5 shrink-0 mt-0.5" />
               <div className="flex-1">
-                <p className="text-sm font-semibold text-amber-800">90 minutes in — assess for a booster dose</p>
-                <p className="text-xs text-amber-700 mt-0.5">
-                  Toggle Booster Dose below once given, and log the amount — or dismiss if none is needed.
+                <p className="text-sm font-semibold">90 minutes in — assess for a booster dose</p>
+                <p className="text-xs mt-0.5">
+                  Add a booster dose once given, and log the amount — or dismiss if none is needed.
                 </p>
               </div>
               <button
                 onClick={dismissBoosterReminder}
-                className="p-1 rounded hover:bg-amber-100 text-amber-500 hover:text-amber-700 shrink-0"
+                className="journey-timing-reminder-dismiss"
                 aria-label="Dismiss reminder"
               >
                 <X className="h-4 w-4" />
@@ -673,64 +715,32 @@ export default function SessionDetailWorkspace({
             </div>
           )}
 
-          <div className="flex flex-wrap gap-8">
-            <div className="space-y-2">
-              <JourneyMarkerSwitch
-                label="Journey Begin"
-                on={!!journeyStartedAt}
-                pending={markerPending === "started"}
-                isoTimestamp={journeyStartedAt}
-                onToggle={() => toggleJourneyMarker("started")}
-                onTimeChange={(iso) => updateMarkerTime("started", iso)}
-                timeSaving={timeSavingMarker === "started"}
-              />
-              <DoseAmountField
-                label="Initial dose"
-                value={initialDoseAmount}
-                onChange={setInitialDoseAmount}
-                onSave={saveInitialDoseAmount}
-                saving={initialDoseSaving}
-                saved={initialDoseSaved}
-              />
-            </div>
-
-            <JourneyMarkerSwitch
-              label="Journey End"
-              on={!!journeyEndedAt}
-              pending={markerPending === "ended"}
-              isoTimestamp={journeyEndedAt}
-              onToggle={() => toggleJourneyMarker("ended")}
-              onTimeChange={(iso) => updateMarkerTime("ended", iso)}
-              timeSaving={timeSavingMarker === "ended"}
-            />
-
-            <div className="space-y-2">
-              <JourneyMarkerSwitch
-                label="Booster Dose"
-                on={!!boosterDoseAt}
-                pending={markerPending === "booster"}
-                isoTimestamp={boosterDoseAt}
-                onToggle={() => toggleJourneyMarker("booster")}
-                onTimeChange={(iso) => updateMarkerTime("booster", iso)}
-                timeSaving={timeSavingMarker === "booster"}
-              />
-              {boosterDoseAt && (
-                <DoseAmountField
-                  label="Booster amount"
-                  value={boosterDoseAmount}
-                  onChange={setBoosterDoseAmount}
-                  onSave={saveBoosterDoseAmount}
-                  saving={boosterDoseSaving}
-                  saved={boosterDoseSaved}
-                />
-              )}
-            </div>
-          </div>
+          <JourneyTimingTimeline
+            hasSession
+            journeyStartedAt={journeyStartedAt}
+            boosterDoseAt={boosterDoseAt}
+            journeyEndedAt={journeyEndedAt}
+            markerPending={markerPending}
+            timeSavingMarker={timeSavingMarker}
+            onMarkerToggle={toggleJourneyMarker}
+            onMarkerTimeChange={updateMarkerTime}
+            initialDoseAmount={initialDoseAmount}
+            onInitialDoseChange={setInitialDoseAmount}
+            onInitialDoseSave={saveInitialDoseAmount}
+            initialDoseSaving={initialDoseSaving}
+            initialDoseSaved={initialDoseSaved}
+            boosterDoseAmount={boosterDoseAmount}
+            recordedBoosterDoseAmount={recordedBoosterDoseAmount}
+            onBoosterDoseChange={setBoosterDoseAmount}
+            onBoosterDoseSave={saveBoosterDoseAmount}
+            boosterDoseSaving={boosterDoseSaving}
+            boosterDoseSaved={boosterDoseSaved}
+          />
         </div>
       )}
       {session.session_type === "harm_reduction_support" && (
         <div className="card p-4 space-y-3">
-          <h3 className="font-medium text-sm text-ink-800 flex items-center gap-2">
+          <h3 className="session-panel-heading">
             <FileText className="h-4 w-4 text-ink-400" />
             Manual Notes
           </h3>
@@ -767,6 +777,7 @@ export default function SessionDetailWorkspace({
           />
           <div className="flex items-center gap-2 flex-wrap">
             {manualNotesSaved && <span className="text-xs text-sage-600">Saved</span>}
+            <div className="ml-auto flex items-center gap-2">
             <button
               type="button"
               onClick={insertTimestamp}
@@ -783,10 +794,13 @@ export default function SessionDetailWorkspace({
               {manualNotesSaving ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Save className="h-3.5 w-3.5" />}
               Save Notes
             </button>
+            </div>
           </div>
 
           <div className="pt-3 border-t border-ink-100 space-y-3">
-            <h3 className="font-medium text-sm text-ink-800">Transcripts &amp; Recordings</h3>
+            <div className="session-transcript-heading-row">
+              <h3 className="session-panel-heading">Transcripts &amp; Recordings</h3>
+            </div>
             <p className="text-xs text-ink-400">
               Paste the transcript from your recording device (Plaud, iPhone Voice Memos, etc.) and/or upload the
               actual audio file here. This is the single saved source both the Journey Day Summary - Practitioner and
@@ -799,7 +813,7 @@ export default function SessionDetailWorkspace({
               placeholder="Paste the session recording transcript here…"
               className="w-full border border-ink-200 rounded-xl px-3 py-2.5 text-sm text-ink-800 placeholder:text-ink-300 focus:outline-none focus:ring-2 focus:ring-clay-200 resize-none"
             />
-            <div className="flex items-center gap-2 flex-wrap">
+            <div className="session-transcript-actions session-transcript-actions--bottom">
               {transcriptSaved && <span className="text-xs text-sage-600">Saved</span>}
               <button
                 disabled={transcriptSaving}
@@ -809,10 +823,7 @@ export default function SessionDetailWorkspace({
                 {transcriptSaving ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Save className="h-3.5 w-3.5" />}
                 Save Transcript
               </button>
-            </div>
-
-            <div className="pt-2 border-t border-ink-100">
-              <label className="flex items-center gap-2 text-sm font-medium text-ink-700 cursor-pointer w-fit">
+              <label className="cursor-pointer">
                 <input
                   ref={fileInputRef}
                   type="file"
@@ -826,6 +837,8 @@ export default function SessionDetailWorkspace({
                   Upload Audio Recording
                 </span>
               </label>
+            </div>
+            <div>
               {uploadError && <p className="text-xs text-red-600 mt-1.5">{uploadError}</p>}
 
               {recordings.length > 0 && (
@@ -870,10 +883,20 @@ export default function SessionDetailWorkspace({
           )}
 
           <div className="pt-3 border-t border-ink-100 space-y-3">
-            <h3 className="font-medium text-sm text-ink-800 flex items-center gap-2">
-              <MessageSquareText className="h-4 w-4 text-ink-400" />
-              Journey Day Summary
-            </h3>
+            <div className="flex items-center justify-between gap-3">
+              <h3 className="session-panel-heading">
+                <MessageSquareText className="h-4 w-4 text-ink-400" />
+                Journey Day Summary
+              </h3>
+              <button
+                disabled={callSummaryBusy || !(manualNotes.trim() || transcript.trim())}
+                onClick={generateCallSummary}
+                className="btn-primary shrink-0 text-sm px-4 py-2 flex items-center gap-2 disabled:opacity-50"
+              >
+                {callSummaryBusy ? <Loader2 className="h-4 w-4 animate-spin" /> : <Sparkles className="h-4 w-4" />}
+                Generate Journey Day Summary
+              </button>
+            </div>
 
             {localCallSummaries.length > 0 && (
               <div className="space-y-2">
@@ -941,14 +964,6 @@ export default function SessionDetailWorkspace({
               </div>
             )}
 
-            <button
-              disabled={callSummaryBusy || !(manualNotes.trim() || transcript.trim())}
-              onClick={generateCallSummary}
-              className="btn-primary text-sm px-4 py-2 flex items-center gap-2 disabled:opacity-50"
-            >
-              {callSummaryBusy ? <Loader2 className="h-4 w-4 animate-spin" /> : <Sparkles className="h-4 w-4" />}
-              Generate Journey Day Summary
-            </button>
           </div>
         </div>
       )}
@@ -969,7 +984,7 @@ export default function SessionDetailWorkspace({
       {/* Past briefings */}
       {localPastBriefings.length > 0 && (
         <div className="card p-4">
-          <h3 className="font-medium text-sm text-ink-800 mb-3 flex items-center gap-2">
+          <h3 className="session-panel-heading mb-3">
             <History className="h-4 w-4 text-ink-400" />
             Past Briefings
           </h3>
@@ -1017,29 +1032,35 @@ export default function SessionDetailWorkspace({
       {/* Primary session analysis (client_assessment_summary, journey_brief, etc.) */}
       {localPrimarySummaries.length > 0 && (
         <div className="card p-4">
-          <h3 className="font-medium text-sm text-ink-800 mb-3 flex items-center gap-2">
+          <h3 className="session-panel-heading mb-3">
             <BookOpen className="h-4 w-4 text-ink-400" />
             Session Analysis
           </h3>
-          <div className="space-y-2">
+          <div className="session-analysis-list">
             {localPrimarySummaries.map((ps) => (
-              <div key={ps.id}>
+              <div key={ps.id} className="session-analysis-item">
                 <button
+                  type="button"
                   onClick={() => setExpandedPrimary(expandedPrimary === ps.id ? null : ps.id)}
-                  className="flex items-center gap-2 text-sm text-ink-500 hover:text-ink-800 py-1 text-left w-full"
+                  className="session-analysis-toggle"
+                  aria-expanded={expandedPrimary === ps.id}
+                  aria-controls={`session-analysis-content-${ps.id}`}
                 >
-                  <Clock className="h-3.5 w-3.5 shrink-0" />
-                  <span>{ps.title} — {formatDateTime(ps.created_at)}</span>
-                  <span className="ml-auto text-xs">{expandedPrimary === ps.id ? "▲" : "▼"}</span>
+                  <span className="session-analysis-heading">
+                    <strong>{ps.title}</strong>
+                    <time dateTime={ps.created_at}>{formatDateTime(ps.created_at).replace(", ", " · ")}</time>
+                  </span>
+                  <ChevronDown className="session-analysis-chevron" aria-hidden="true" />
                 </button>
                 {expandedPrimary === ps.id && (
-                  <div className="mt-2">
+                  <div id={`session-analysis-content-${ps.id}`} className="session-analysis-expanded">
                     <SummaryCard
                       title={ps.title}
                       content={ps.content}
                       model={ps.model}
                       onDelete={() => deletePrimarySummary(ps.id)}
                       onSave={(next) => savePrimarySummary(ps.id, next)}
+                      variant={ps.summary_type === "client_assessment_summary" ? "assessment" : ps.summary_type === "journey_brief" ? "journey" : "analysis"}
                     />
                   </div>
                 )}
@@ -1063,14 +1084,18 @@ export default function SessionDetailWorkspace({
       {session.session_type !== "harm_reduction_support" && (
         <>
           <div className="card p-4 space-y-3">
-            <h3 className="font-medium text-sm text-ink-800 flex items-center gap-2">
-              <ScrollText className="h-4 w-4 text-ink-400" />
-              Session Transcript
-            </h3>
-            <p className="text-xs text-ink-400">
-              Paste the session recording transcript here, then generate the session summary — a strictly
-              factual recap, shown to you and to {clientName} in their Client Portal.
-            </p>
+            <ActionCardHeader
+              title={<><ScrollText className="h-4 w-4 text-ink-400" />Session Transcript</>}
+              description={`Generate a factual recap from the transcript for you and ${clientName}'s Client Portal.`}
+              action={<button
+                disabled={callSummaryBusy || !transcript.trim()}
+                onClick={generateCallSummary}
+                className="btn-primary flex items-center gap-2 whitespace-nowrap px-4 py-2 text-sm disabled:opacity-50"
+              >
+                {callSummaryBusy ? <Loader2 className="h-4 w-4 animate-spin" /> : <Sparkles className="h-4 w-4" />}
+                Generate Session Summary
+              </button>}
+            />
             <textarea
               value={transcript}
               onChange={(e) => setTranscript(e.target.value)}
@@ -1078,16 +1103,6 @@ export default function SessionDetailWorkspace({
               placeholder="Paste the full transcript here…"
               className="w-full border border-ink-200 rounded-xl px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-clay-200 resize-y"
             />
-            <div className="flex flex-wrap gap-2 pt-1">
-              <button
-                disabled={callSummaryBusy || !transcript.trim()}
-                onClick={generateCallSummary}
-                className="btn-primary text-sm px-4 py-2 flex items-center gap-2 disabled:opacity-50"
-              >
-                {callSummaryBusy ? <Loader2 className="h-4 w-4 animate-spin" /> : <Sparkles className="h-4 w-4" />}
-                Generate Session Summary
-              </button>
-            </div>
           </div>
 
           {manualNotesSummary && (
@@ -1102,7 +1117,7 @@ export default function SessionDetailWorkspace({
 
           {(localCallSummaries.length > 0 || newCallSummary) && (
             <div className="card p-4 space-y-3">
-              <h3 className="font-medium text-sm text-ink-800 flex items-center gap-2">
+              <h3 className="session-panel-heading">
                 <MessageSquareText className="h-4 w-4 text-ink-400" />
                 Session Summary
               </h3>
@@ -1157,7 +1172,7 @@ export default function SessionDetailWorkspace({
       {/* Related forms */}
       {sessionForms.length > 0 && (
         <div className="card p-4">
-          <h3 className="font-medium text-sm text-ink-800 mb-3 flex items-center gap-2">
+          <h3 className="session-panel-heading mb-3">
             <FileText className="h-4 w-4 text-ink-400" />
             Forms for This Session
           </h3>

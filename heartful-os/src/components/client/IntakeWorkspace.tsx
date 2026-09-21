@@ -3,6 +3,7 @@
 import { useState } from "react";
 import TranscriptInput from "@/components/ai/TranscriptInput";
 import AiGenerateButton from "@/components/ai/AiGenerateButton";
+import ActionCardHeader from "@/components/client/ActionCardHeader";
 import SummaryCard from "@/components/ai/SummaryCard";
 import {
   AiSummary,
@@ -87,19 +88,22 @@ export default function IntakeWorkspace({
       {/* Transcript + AI Summary */}
       <div className="grid md:grid-cols-2 gap-6">
         <div className="card p-4 space-y-4">
-          <h2 className="font-semibold text-ink-900">Session Transcript</h2>
-          <TranscriptInput value={transcript} onChange={setTranscript} />
-          <AiGenerateButton
-            clientId={clientId}
-            summaryType="client_assessment_summary"
-            label="Generate Client Intake Summary"
-            extra={{ transcript }}
-            onDone={(s) => setLatest(s as unknown as AiSummary)}
+          <ActionCardHeader
+            title="Session Transcript"
+            titleAs="h2"
+            description={`Generate a client intake summary from ${clientName}'s transcript and save it to the client record.`}
+            action={
+              <AiGenerateButton
+                clientId={clientId}
+                summaryType="client_assessment_summary"
+                label="Generate Client Intake Summary"
+                extra={{ transcript }}
+                onDone={(s) => setLatest(s as unknown as AiSummary)}
+                className="btn-primary inline-flex items-center gap-2 whitespace-nowrap text-sm disabled:opacity-60"
+              />
+            }
           />
-          <p className="text-xs text-ink-400">
-            AI will analyze the transcript for {clientName}&apos;s goals, history, risk factors, and
-            follow-up recommendations, then save it automatically to the client record.
-          </p>
+          <TranscriptInput value={transcript} onChange={setTranscript} />
         </div>
         <div className="space-y-4">
           <h2 className="font-semibold text-ink-900">Client Intake Summary</h2>

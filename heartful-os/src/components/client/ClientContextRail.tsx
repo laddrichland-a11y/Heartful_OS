@@ -26,7 +26,7 @@ import {
   Task,
   Transcript,
 } from "@/lib/types";
-import { formatDate, formatDateTime, relativeDueLabel, SESSION_TYPE_LABELS } from "@/lib/utils";
+import { formatDate, formatDateTime, getClientJourneyProgress, relativeDueLabel, SESSION_TYPE_LABELS } from "@/lib/utils";
 
 interface Props {
   client: Client;
@@ -42,26 +42,6 @@ interface Props {
   aiSummaries: AiSummary[];
   messages: Message[];
 }
-
-const PHASE_LABELS: Record<string, string> = {
-  intake: "Intake",
-  preparation: "Preparation",
-  harm_reduction_session: "Journey Day",
-  post_journey_check_in: "Post-journey check-in",
-  integration_1: "Integration 1",
-  integration_2: "Integration 2",
-  closed: "Journey complete",
-};
-
-const JOURNEY_STAGE_KEYS = [
-  "intake_complete",
-  "preparation_complete",
-  "journey_complete",
-  "check_in_12hr_complete",
-  "integration_1_complete",
-  "integration_2_complete",
-  "growth_action_plan_complete",
-] as const;
 
 type RailActivity = {
   id: string;
@@ -101,15 +81,8 @@ export default function ClientContextRail({
       : SESSION_TYPE_LABELS[nextSession.session_type] ?? nextSession.session_type.replace(/_/g, " ")
     : "No session scheduled";
 
-  const closed = milestones.some(
-    (milestone) => milestone.milestone_key === "journey_closed" && milestone.completed
-  );
-  const completedStages = JOURNEY_STAGE_KEYS.filter((key) =>
-    key === "growth_action_plan_complete" && closed
-      ? true
-      : milestones.some((milestone) => milestone.milestone_key === key && milestone.completed)
-  ).length;
-  const progress = Math.round((completedStages / JOURNEY_STAGE_KEYS.length) * 100);
+  const journeyProgress = getClientJourneyProgress(client, milestones);
+  const progress = Math.round((journeyProgress.completed / journeyProgress.total) * 100);
 
   const submissionDocumentIds = new Set(formSubmissions.map((submission) => submission.document_id));
   const inProgressDocumentIds = new Set(
@@ -186,16 +159,16 @@ export default function ClientContextRail({
         <RailHeading icon={ClipboardCheck} title="Journey Progress" />
         <p className="wn-rail-kicker">Current stage</p>
         <div className="wn-journey-summary">
-          <strong>{PHASE_LABELS[client.current_phase] ?? client.current_phase.replace(/_/g, " ")}</strong>
-          <span>{completedStages} of {JOURNEY_STAGE_KEYS.length} stages</span>
+          <strong>{journeyProgress.currentStageLabel}</strong>
+          <span>{journeyProgress.completed} of {journeyProgress.total} stages</span>
         </div>
         <div
           className="wn-rail-progress"
           role="progressbar"
           aria-label="Journey stages completed"
           aria-valuemin={0}
-          aria-valuemax={JOURNEY_STAGE_KEYS.length}
-          aria-valuenow={completedStages}
+          aria-valuemax={journeyProgress.total}
+          aria-valuenow={journeyProgress.completed}
         >
           <span style={{ width: `${progress}%` }} />
         </div>
@@ -212,15 +185,19 @@ export default function ClientContextRail({
         {tasks.length > 0 ? (
           <div className="wn-task-list">
             {tasks.map((task) => (
-              <Link key={task.id} className="wn-task-item" href={`/clients/${client.id}/tasks/${task.id}`}>
-                <span className="wn-task-copy">
+              <div key={task.id} className="wn-task-item">
+                <Link className="wn-task-copy" href={`/clients/${client.id}/tasks/${task.id}`}>
                   <strong>{task.title}</strong>
                   {task.due_at && <small>{task.status === "completed" ? "Completed" : relativeDueLabel(task.due_at)}</small>}
-                </span>
-                <span className={task.status === "completed" ? "wn-task-status is-complete" : "wn-task-status"}>
-                  {task.status === "completed" ? "Done" : "Open"}
-                </span>
-              </Link>
+                </Link>
+                {task.status === "completed" ? (
+                  <span className="wn-task-status is-complete">Done</span>
+                ) : (
+                  <Link className="wn-task-open-button" href={`/clients/${client.id}/tasks/${task.id}`} aria-label={`Open task: ${task.title}`}>
+                    Open task <ChevronRight aria-hidden="true" />
+                  </Link>
+                )}
+              </div>
             ))}
           </div>
         ) : (
@@ -234,7 +211,7 @@ export default function ClientContextRail({
           <div className="wn-attention-list">
             <AttentionRow label="Outstanding forms" count={outstandingForms.length} href={`/clients/${client.id}?tab=Documents`} />
             <AttentionRow label="Overdue tasks" count={overdueTasks.length} href={overdueTasks[0] ? `/clients/${client.id}/tasks/${overdueTasks[0].id}` : `/clients/${client.id}?tab=Sessions`} />
-            <AttentionRow label="Pending check-ins" count={pendingCheckIns} href={`/clients/${client.id}/check-in`} />
+            <AttentionRow label="Pending check-ins" count={pendingCheckIns} href={`/clients/${client.id}?tab=${encodeURIComponent("Journey & AI")}#check-in`} />
             <AttentionRow label="Unread messages" count={unreadMessages.length} href={`/clients/${client.id}?tab=Messages`} />
           </div>
         </section>
@@ -318,7 +295,7 @@ function buildRecentActivity({
       category: "submission",
       title: "Client submission",
       detail: checkIn.check_in_type === "12_hour" ? "12-hour check-in" : "48-hour reflection",
-      href: `/clients/${client.id}/check-in`,
+      href: `/clients/${client.id}?tab=${encodeURIComponent("Journey & AI")}#check-in`,
       icon: ClipboardCheck,
     });
   }

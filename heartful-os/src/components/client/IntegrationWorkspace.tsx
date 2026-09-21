@@ -11,8 +11,9 @@ import {
 import TranscriptInput from "@/components/ai/TranscriptInput";
 import AiGenerateButton from "@/components/ai/AiGenerateButton";
 import SummaryCard from "@/components/ai/SummaryCard";
+import ActionCardHeader from "@/components/client/ActionCardHeader";
 import { cx } from "@/lib/utils";
-import { FileText } from "@/components/ui/HeartfulIcon";
+import { FileText, ScrollText, Sparkles } from "@/components/ui/HeartfulIcon";
 import Link from "next/link";
 
 export default function IntegrationWorkspace({
@@ -63,7 +64,8 @@ export default function IntegrationWorkspace({
     <div className="space-y-6">
       {/* Reflection Form */}
       <div className="card p-5">
-        <h2 className="font-semibold text-ink-900 mb-4">
+        <h2 className="flex items-center gap-2 font-semibold text-ink-900 mb-4">
+          <FileText className="h-4 w-4 text-ink-500" />
           Integration Session {sessionNumber} — Reflection Form
         </h2>
         {doc && template ? (
@@ -88,25 +90,26 @@ export default function IntegrationWorkspace({
           "Integration Session One Brief" button that did the same work with
           less context. Briefs already generated stay in the client record. */}
       <div className="card p-5 space-y-4">
-        <h2 className="font-semibold text-ink-900">Session Transcript</h2>
-        <TranscriptInput value={transcript} onChange={setTranscript} />
+        <h2 className="flex items-center gap-2 font-semibold text-ink-900"><ScrollText className="h-4 w-4 text-ink-500" />Session Transcript</h2>
+        <TranscriptInput value={transcript} onChange={setTranscript} hideLabel />
       </div>
-      <div className="card p-5 space-y-3">
-        <h3 className="font-semibold text-ink-900">{summaryLabel}</h3>
-        <AiGenerateButton
-          clientId={clientId}
-          summaryType="integration_summary"
-          label={`Generate ${summaryLabel}`}
-          extra={{ transcript, integrationSession: sessionNumber }}
-          onDone={(s) => setSummary(s as unknown as AiSummary)}
+      <div className="card p-5 space-y-4">
+        <ActionCardHeader
+          title={<><Sparkles className="h-4 w-4 text-ink-500" />{summaryLabel}</>}
+          description={`Generate from the transcript above. Saves to the client record and completes Integration Session ${sessionNumber}.`}
+          action={
+            <AiGenerateButton
+              clientId={clientId}
+              summaryType="integration_summary"
+              label={`Generate ${summaryLabel}`}
+              extra={{ transcript, integrationSession: sessionNumber }}
+              onDone={(s) => setSummary(s as unknown as AiSummary)}
+              className="btn-primary inline-flex items-center gap-2 whitespace-nowrap text-sm disabled:opacity-60"
+            />
+          }
         />
-        {summary ? (
+        {summary && (
           <SummaryCard title={summaryLabel} content={summary.content} model={summary.model} />
-        ) : (
-          <p className="text-xs text-ink-400">
-            Paste the session transcript above, then generate the summary — it saves to the client
-            record and marks Integration Session {sessionNumber} complete.
-          </p>
         )}
       </div>
     </div>

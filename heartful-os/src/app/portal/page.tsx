@@ -40,12 +40,13 @@ import {
   Recording,
 } from "@/lib/types";
 import { AlertCircle, Check, CheckCircle2, Circle, Send, Sparkles, FileText, ChevronDown, ChevronUp, CalendarDays, MapPin, Clock, Pencil, MessageSquareText, Mail, Music, ScrollText, UserRound, LayoutDashboard, ListChecks, Sprout, PanelLeftClose, PanelLeftOpen, Settings, ArrowRight } from "@/components/ui/HeartfulIcon";
-import { formatDate, formatDateTime, relativeDueLabel, cx, isGeneralPaperwork } from "@/lib/utils";
+import { formatDate, formatDateTime, getClientJourneyProgress, relativeDueLabel, cx, isGeneralPaperwork } from "@/lib/utils";
 import JourneyProgressBar from "@/components/JourneyProgressBar";
 import FormRenderer from "@/components/forms/FormRenderer";
 import { buildFormPrefill, FormPrefill } from "@/lib/formPrefill";
 import PortalWelcome from "@/components/portal/PortalWelcome";
 import PortalClientSettings from "@/components/portal/PortalClientSettings";
+import SidebarNatureMessage from "@/components/layout/SidebarNatureMessage";
 
 export const dynamic = "force-dynamic";
 
@@ -253,6 +254,10 @@ function PortalPageInner() {
   // override (dismissed just now, or re-opened via the header link).
   const [welcomeOverride, setWelcomeOverride] = useState<boolean | null>(null);
   const [isPending, startTransition] = useTransition();
+  // Local/Codex runs are a practitioner sandbox even when the browser last
+  // visited a real-looking client URL. Keep preview controls available there,
+  // while production client deep links remain free of practitioner actions.
+  const canUsePortalPreviewControls = isPreview || process.env.NODE_ENV === "development";
 
   // Intro emails link straight to a specific client's portal via
   // /portal?client=<id>. That link is the only "auth" a client has, so it
@@ -462,9 +467,10 @@ function PortalPageInner() {
     })
     .filter((x): x is { doc: ClientDocument; template: FormTemplate; status: string } => x !== null);
   const hasActionItems = pendingTasks.length > 0 || pendingAssignments.length > 0 || incompleteForms.length > 0;
-  const sortedMilestones = [...bundle.milestones].sort((a, b) => a.sort_order - b.sort_order);
-  const completedMilestones = sortedMilestones.filter((milestone) => milestone.completed).length;
-  const currentMilestoneIndex = sortedMilestones.findIndex((milestone) => !milestone.completed);
+  const sortedMilestones = [...bundle.milestones].filter((milestone) => milestone.sort_order <= 7).sort((a, b) => a.sort_order - b.sort_order);
+  const journeyProgress = getClientJourneyProgress(client, bundle.milestones);
+  const completedMilestones = journeyProgress.completed;
+  const currentMilestoneIndex = completedMilestones < sortedMilestones.length ? completedMilestones : -1;
   const currentMilestone = currentMilestoneIndex >= 0 ? sortedMilestones[currentMilestoneIndex] : sortedMilestones.at(-1);
   const nextMilestone = currentMilestoneIndex >= 0 ? sortedMilestones[currentMilestoneIndex + 1] : undefined;
   const nextSession = bundle.sessions
@@ -653,7 +659,7 @@ function PortalPageInner() {
         <div className="flex items-center justify-between px-4 md:px-7 py-3.5">
           <h1 className="app-page-title portal-app-header__title">{PORTAL_PAGE_TITLES[tab]}</h1>
           <div className="topbar-actions">
-            {isPreview && (
+            {canUsePortalPreviewControls && (
               <div className="topbar-view-menu" ref={portalViewMenuRef}>
                 <button
                   type="button"
@@ -698,7 +704,7 @@ function PortalPageInner() {
                 )}
               </div>
             )}
-            {isPreview && <span className="topbar-action-divider" />}
+            {canUsePortalPreviewControls && <span className="topbar-action-divider" />}
             <div className="topbar-account" ref={portalAccountMenuRef}>
               <button
                 type="button"
@@ -728,9 +734,9 @@ function PortalPageInner() {
                     <AlertCircle aria-hidden="true" /><span>About this portal</span>
                   </button>
                   <button type="button" role="menuitem" onClick={() => { setPortalClientSwitcherOpen(false); setTab("Settings"); }}>
-                    <Settings aria-hidden="true" /><span>Settings</span>
+                    <Settings aria-hidden="true" /><span>Edit client account</span>
                   </button>
-                  {isPreview && (
+                  {canUsePortalPreviewControls && (
                     <>
                       <button type="button" role="menuitem" aria-expanded={portalClientListOpen} onClick={() => setPortalClientListOpen((open) => !open)}>
                         <UserRound aria-hidden="true" /><span>Switch client</span><ChevronDown className="portal-client-account-chevron" aria-hidden="true" />
@@ -791,9 +797,9 @@ function PortalPageInner() {
                   <span>Current step</span>
                   <div className="portal-current-step-line"><strong>{currentMilestone?.label ?? "Your journey"}</strong><span className="portal-phase-label">{client.current_phase.replace(/_/g, " ")}</span></div>
                 </div>
-                <div className="portal-journey-progress-copy"><strong>{completedMilestones} of {sortedMilestones.length}</strong><span>completed</span></div>
+                <div className="portal-journey-progress-copy"><strong>{journeyProgress.completed} of {journeyProgress.total}</strong><span>completed</span></div>
               </div>
-              <JourneyProgressBar milestones={bundle.milestones} compact />
+              <JourneyProgressBar client={client} milestones={bundle.milestones} compact />
               <button type="button" className="portal-journey-continue" onClick={() => setTab("Forms & Check-Ins")}>Continue journey <ArrowRight aria-hidden="true" /></button>
             </section>
             <div className="portal-home-secondary-grid">
@@ -1017,6 +1023,10 @@ function PortalSidebar({
           );
         })}
       </nav>
+
+      <div className="sidebar-footer px-5 py-4 border-t border-ink-100 text-xs text-ink-400">
+        <SidebarNatureMessage />
+      </div>
 
     </aside>
   );

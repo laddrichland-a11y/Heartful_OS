@@ -12,26 +12,27 @@ import IntegrationWorkspace from "@/components/client/IntegrationWorkspace";
 import MilestoneToggleBanner from "@/components/client/MilestoneToggleBanner";
 import ClientPhaseNav from "@/components/client/ClientPhaseNav";
 import PhasePrepareMe from "@/components/client/PhasePrepareMe";
+import ClientPhaseWorkspace from "@/components/client/ClientPhaseWorkspace";
 
 export const dynamic = "force-dynamic";
 
 export default async function Integration2Page({ params }: { params: Promise<{ id: string }> }) {
   const { id } = await params;
-  const client = await getClient(id);
-  if (!client) notFound();
-
-  const [documents, formTemplates, formSubmissions, summaries, milestones] = await Promise.all([
+  const [client, documents, formTemplates, formSubmissions, summaries, milestones] = await Promise.all([
+    getClient(id),
     getDocuments(id),
     getFormTemplates(),
     getFormSubmissionsForClient(id),
     getAiSummaries(id, "integration_summary"),
     getMilestones(id),
   ]);
+  if (!client) notFound();
 
   const milestone = milestones.find((m) => m.milestone_key === "integration_2_complete");
 
   return (
     <AppShell title={client.full_name} variant="wellnest-client">
+      <ClientPhaseWorkspace clientId={id} showClientHeader>
       <ClientPhaseNav clientId={id} current="integration_2" />
       <MilestoneToggleBanner
         clientId={id}
@@ -50,6 +51,7 @@ export default async function Integration2Page({ params }: { params: Promise<{ i
         formSubmissions={formSubmissions}
         existingSummary={summaries.find((s) => s.title === "Integration Summary 2")}
       />
+      </ClientPhaseWorkspace>
     </AppShell>
   );
 }

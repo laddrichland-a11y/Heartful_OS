@@ -12,6 +12,7 @@ import PreparationWorkspace from "@/components/client/PreparationWorkspace";
 import MilestoneToggleBanner from "@/components/client/MilestoneToggleBanner";
 import ClientPhaseNav from "@/components/client/ClientPhaseNav";
 import PhasePrepareMe from "@/components/client/PhasePrepareMe";
+import ClientPhaseWorkspace from "@/components/client/ClientPhaseWorkspace";
 
 export const dynamic = "force-dynamic";
 
@@ -32,6 +33,7 @@ export default async function PreparationPage({ params }: { params: Promise<{ id
 
   return (
     <AppShell title={client.full_name} variant="wellnest-client">
+      <ClientPhaseWorkspace clientId={id}>
       <ClientPhaseNav clientId={id} current="preparation" />
       <MilestoneToggleBanner
         clientId={id}
@@ -49,6 +51,7 @@ export default async function PreparationPage({ params }: { params: Promise<{ id
         formSubmissions={formSubmissions}
         existingBrief={summaries[0]}
       />
+      </ClientPhaseWorkspace>
     </AppShell>
   );
 }

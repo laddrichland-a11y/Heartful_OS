@@ -5,20 +5,24 @@ import GrowthActionPlanWorkspace from "@/components/client/GrowthActionPlanWorks
 import MilestoneToggleBanner from "@/components/client/MilestoneToggleBanner";
 import ClientPhaseNav from "@/components/client/ClientPhaseNav";
 import PhasePrepareMe from "@/components/client/PhasePrepareMe";
+import ClientPhaseWorkspace from "@/components/client/ClientPhaseWorkspace";
 
 export const dynamic = "force-dynamic";
 
 export default async function GrowthPlanPage({ params }: { params: Promise<{ id: string }> }) {
   const { id } = await params;
-  const client = await getClient(id);
+  const [client, growthPlan, milestones] = await Promise.all([
+    getClient(id),
+    getGrowthActionPlan(id),
+    getMilestones(id),
+  ]);
   if (!client) notFound();
-
-  const [growthPlan, milestones] = await Promise.all([getGrowthActionPlan(id), getMilestones(id)]);
 
   const milestone = milestones.find((m) => m.milestone_key === "growth_action_plan_complete");
 
   return (
     <AppShell title={client.full_name} variant="wellnest-client">
+      <ClientPhaseWorkspace clientId={id} showClientHeader>
       <ClientPhaseNav clientId={id} current="growth_action_plan" />
       <MilestoneToggleBanner
         clientId={id}
@@ -33,6 +37,7 @@ export default async function GrowthPlanPage({ params }: { params: Promise<{ id:
         clientName={client.full_name}
         existingGrowthPlan={growthPlan ?? undefined}
       />
+      </ClientPhaseWorkspace>
     </AppShell>
   );
 }

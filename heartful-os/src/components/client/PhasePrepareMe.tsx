@@ -1,4 +1,4 @@
-import { getAiSummaries, getSessions, pickPhaseSession } from "@/lib/data";
+import { getAiSummaries, getClient, getSessions, pickPhaseSession } from "@/lib/data";
 import PrepareMeCard from "@/components/client/PrepareMeCard";
 import { SessionType } from "@/lib/types";
 
@@ -38,13 +38,12 @@ export default async function PhasePrepareMe({
   /** Pass directly when the page has already resolved its session, to skip the extra lookup. */
   sessionId?: string;
 }) {
-  let sessionId = sessionIdProp;
-  if (!sessionId && sessionType) {
-    const sessions = await getSessions(clientId);
-    sessionId = pickPhaseSession(sessions, sessionType)?.id;
-  }
-
-  const summaries = await getAiSummaries(clientId, "prepare_me_briefing");
+  const [sessions, summaries, client] = await Promise.all([
+    !sessionIdProp && sessionType ? getSessions(clientId) : Promise.resolve(null),
+    getAiSummaries(clientId, "prepare_me_briefing"),
+    getClient(clientId),
+  ]);
+  const sessionId = sessionIdProp ?? (sessions && sessionType ? pickPhaseSession(sessions, sessionType)?.id : undefined);
   const existing = sessionId
     ? summaries.find((s) => s.session_id === sessionId)
     : summaries.find((s) => !s.session_id && s.stage_label === sessionTypeLabel);
@@ -53,6 +52,7 @@ export default async function PhasePrepareMe({
     <PrepareMeCard
       clientId={clientId}
       sessionTypeLabel={sessionTypeLabel}
+      clientName={client?.full_name}
       sessionId={sessionId}
       existing={existing}
     />

@@ -12,6 +12,7 @@ import IntakeWorkspace from "@/components/client/IntakeWorkspace";
 import MilestoneToggleBanner from "@/components/client/MilestoneToggleBanner";
 import ClientPhaseNav from "@/components/client/ClientPhaseNav";
 import PhasePrepareMe from "@/components/client/PhasePrepareMe";
+import ClientPhaseWorkspace from "@/components/client/ClientPhaseWorkspace";
 
 export const dynamic = "force-dynamic";
 
@@ -32,6 +33,7 @@ export default async function IntakePage({ params }: { params: Promise<{ id: str
 
   return (
     <AppShell title={client.full_name} variant="wellnest-client">
+      <ClientPhaseWorkspace clientId={id}>
       <ClientPhaseNav clientId={id} current="intake" />
       <MilestoneToggleBanner
         clientId={id}
@@ -49,6 +51,7 @@ export default async function IntakePage({ params }: { params: Promise<{ id: str
         formSubmissions={formSubmissions}
         existingSummaries={summaries}
       />
+      </ClientPhaseWorkspace>
     </AppShell>
   );
 }

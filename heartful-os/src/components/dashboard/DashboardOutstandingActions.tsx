@@ -1,6 +1,7 @@
 "use client";
 
 import { completeTaskAction, sendMessageAction } from "@/lib/actions";
+import { Bell, Check } from "@/components/ui/HeartfulIcon";
 import { useRouter } from "next/navigation";
 import { useState, useTransition } from "react";
 
@@ -49,6 +50,7 @@ export default function DashboardOutstandingActions({
         disabled={isPending || reminderSent}
         onClick={sendReminder}
       >
+        <Bell aria-hidden="true" />
         {busyAction === "reminder" ? "Sending…" : reminderSent ? "Reminder sent" : "Send reminder"}
       </button>
       {taskId && (
@@ -58,6 +60,7 @@ export default function DashboardOutstandingActions({
           disabled={isPending}
           onClick={markComplete}
         >
+          <Check aria-hidden="true" />
           {busyAction === "complete" ? "Completing…" : "Mark Complete"}
         </button>
       )}

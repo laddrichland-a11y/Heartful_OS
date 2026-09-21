@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useState } from "react";
 import Link from "next/link";
 import {
   AiConversationMessage,
@@ -22,7 +22,7 @@ import {
   Session,
   Task,
 } from "@/lib/types";
-import { cx, formatDate, formatDateTime, isGeneralPaperwork, phaseForStatus, SESSION_TYPE_LABELS, Tab } from "@/lib/utils";
+import { cx, formatDate, formatDateTime, getClientJourneyProgress, isGeneralPaperwork, phaseForStatus, SESSION_TYPE_LABELS, Tab } from "@/lib/utils";
 import {
   FileText,
   Upload,
@@ -53,7 +53,10 @@ import {
   ChevronLeft,
   ChevronDown,
   ChevronRight,
-  MoreHorizontal,
+  Check,
+  X,
+  ListChecks,
+  BookOpen,
 } from "@/components/ui/HeartfulIcon";
 import {
   uploadDocumentAction,
@@ -70,7 +73,11 @@ import {
 import { SessionType } from "@/lib/types";
 import SummaryCard from "@/components/ai/SummaryCard";
 import { buildClientActivity, ActivityKind } from "@/lib/activity";
-import { getJourneyStageProgress, JourneyStageNav } from "@/components/client/JourneyStageNav";
+import { JourneyStageNav } from "@/components/client/JourneyStageNav";
+import CheckInWorkspace from "@/components/client/CheckInWorkspace";
+import MilestoneToggleBanner from "@/components/client/MilestoneToggleBanner";
+import PrepareMeCard from "@/components/client/PrepareMeCard";
+import JourneyAiSummaries from "@/components/client/JourneyAiSummaries";
 
 const CLIENT_TABS: { value: Tab; label: string }[] = [
   { value: "History", label: "Overview" },
@@ -90,7 +97,6 @@ const SESSION_TYPE_OPTIONS: { value: SessionType; label: string }[] = [
   { value: "integration_2", label: "Integration Session 2" },
   { value: "other", label: "Other" },
 ];
-
 
 export default function ClientRecordTabs({
   client,
@@ -131,7 +137,7 @@ export default function ClientRecordTabs({
 }) {
   const [tab, setTab] = useState<Tab>(defaultTab ?? "History");
   const [aiChatMessages, setAiChatMessages] = useState(aiConversationMessages);
-  const journeyProgress = getJourneyStageProgress(milestones);
+  const journeyProgress = getClientJourneyProgress(client, milestones);
 
   // Sync tab state when the URL ?tab= param changes (e.g. from ClientActionCard
   // links or any other Link that navigates to this page with a tab param).
@@ -176,14 +182,23 @@ export default function ClientRecordTabs({
       {tab === "Sessions" && <SessionsTab clientId={client.id} sessions={sessions} />}
       {tab === "Journey & AI" && (
         <>
-          <section className="client-surface mb-5 px-5 py-4">
+          <section className="client-surface journey-stages-card mb-5 px-5 py-4">
             <div className="mb-3 flex flex-wrap items-end justify-between gap-3">
-              <h2 className="text-base font-semibold text-ink-900">Journey stages</h2>
+              <h2 className="journey-icon-heading text-base font-semibold text-ink-900"><ListChecks aria-hidden="true" />Journey stages</h2>
               <span className="text-xs text-ink-400">{journeyProgress.completed} of {journeyProgress.total} stages complete</span>
             </div>
-            <JourneyStageNav clientId={client.id} sessions={sessions} milestones={milestones} activePhase={phaseForStatus(client.status, client.current_phase)} />
+            <JourneyStageNav clientId={client.id} sessions={sessions} milestones={milestones} activePhase={phaseForStatus(client.status, client.current_phase)} current="post_journey_check_in" />
           </section>
-          <JourneyTab clientId={client.id} aiSummaries={aiSummaries} memory={memory} preparationPlan={preparationPlan} />
+          <JourneyTab
+            clientId={client.id}
+            clientName={client.full_name}
+            sessions={sessions}
+            milestones={milestones}
+            checkIns={checkIns}
+            aiSummaries={aiSummaries}
+            memory={memory}
+            preparationPlan={preparationPlan}
+          />
         </>
       )}
       {tab === "AI Copilot" && (
@@ -678,8 +693,6 @@ function UploadButton({ documentId, clientId }: { documentId: string; clientId: 
 function SessionsTab({ clientId, sessions }: { clientId: string; sessions: Session[] }) {
   const [open, setOpen] = useState(false);
   const [busyId, setBusyId] = useState<string | null>(null);
-  const [actionMenuId, setActionMenuId] = useState<string | null>(null);
-  const actionMenuRef = useRef<HTMLDivElement>(null);
   const [scheduleDate, setScheduleDate] = useState(() => getPrimaryScheduleDate(sessions));
   const scheduleDays = buildScheduleDays(scheduleDate, sessions);
   const selectedDateKey = toDateKey(scheduleDate);
@@ -688,14 +701,6 @@ function SessionsTab({ clientId, sessions }: { clientId: string; sessions: Sessi
     const bTime = b.scheduled_at ? new Date(b.scheduled_at).getTime() : Number.POSITIVE_INFINITY;
     return aTime - bTime;
   });
-
-  useEffect(() => {
-    function closeActionMenu(event: MouseEvent) {
-      if (!actionMenuRef.current?.contains(event.target as Node)) setActionMenuId(null);
-    }
-    document.addEventListener("mousedown", closeActionMenu);
-    return () => document.removeEventListener("mousedown", closeActionMenu);
-  }, []);
 
   return (
     <section className="client-surface wn-sessions-panel" aria-labelledby="sessions-heading">
@@ -756,8 +761,7 @@ function SessionsTab({ clientId, sessions }: { clientId: string; sessions: Sessi
           <thead>
             <tr>
               <th scope="col">Session</th>
-              <th scope="col">Date</th>
-              <th scope="col">Time</th>
+              <th scope="col">Date &amp; time</th>
               <th scope="col">Status</th>
               <th scope="col" className="wn-session-actions-heading">Actions</th>
             </tr>
@@ -773,8 +777,7 @@ function SessionsTab({ clientId, sessions }: { clientId: string; sessions: Sessi
                       {s.location && <span>{s.location}</span>}
                     </Link>
                   </td>
-                  <td><time dateTime={s.scheduled_at}>{formatDate(s.scheduled_at)}</time></td>
-                  <td><time dateTime={s.scheduled_at}>{formatSessionTime(s.scheduled_at)}</time></td>
+                  <td><time dateTime={s.scheduled_at}>{formatDate(s.scheduled_at)} · {formatSessionTime(s.scheduled_at)}</time></td>
                   <td>
                     <span className={cx("badge", sessionStatusClasses(s.status))}>
                       {sessionStatusLabel(s.status)}
@@ -783,35 +786,33 @@ function SessionsTab({ clientId, sessions }: { clientId: string; sessions: Sessi
                   <td className="wn-session-actions-cell">
                     <div className="wn-session-actions">
                       {s.status === "scheduled" && (
-                        <div className="wn-session-menu-wrap" ref={actionMenuId === s.id ? actionMenuRef : undefined}>
-                          <button
-                            type="button"
-                            className="wn-session-menu-trigger"
-                            aria-label={`Actions for ${SESSION_TYPE_LABELS[s.session_type] ?? "session"}`}
-                            aria-haspopup="menu"
-                            aria-expanded={actionMenuId === s.id}
-                            disabled={busyId === s.id}
-                            onClick={() => setActionMenuId((current) => current === s.id ? null : s.id)}
-                          >
-                            <MoreHorizontal aria-hidden="true" />
-                          </button>
-                          {actionMenuId === s.id && (
-                            <div className="wn-session-menu" role="menu">
-                              <button type="button" role="menuitem" disabled={busyId === s.id} onClick={async () => {
-                                setActionMenuId(null);
-                                setBusyId(s.id);
-                                await completeSessionAction(s.id, clientId);
-                                setBusyId(null);
-                              }}>Mark as complete</button>
-                              <button type="button" role="menuitem" className="is-danger" disabled={busyId === s.id} onClick={async () => {
-                                setActionMenuId(null);
-                                setBusyId(s.id);
-                                await cancelSessionAction(s.id, clientId);
-                                setBusyId(null);
-                              }}>Cancel session</button>
-                            </div>
-                          )}
-                        </div>
+                        <button
+                          type="button"
+                          className="wn-session-complete-action"
+                          disabled={busyId === s.id}
+                          onClick={async () => {
+                            setBusyId(s.id);
+                            await completeSessionAction(s.id, clientId);
+                            setBusyId(null);
+                          }}
+                        aria-label={`Complete ${SESSION_TYPE_LABELS[s.session_type] ?? "session"}`}
+                        title="Mark complete"
+                        ><Check aria-hidden="true" /></button>
+                      )}
+                      {s.status === "scheduled" && (
+                        <button
+                          type="button"
+                          className="wn-session-cancel-action"
+                          aria-label={`Cancel ${SESSION_TYPE_LABELS[s.session_type] ?? "session"}`}
+                          title="Cancel session"
+                          disabled={busyId === s.id}
+                          onClick={async () => {
+                            if (!window.confirm("Cancel this session? This cannot be undone.")) return;
+                            setBusyId(s.id);
+                            await cancelSessionAction(s.id, clientId);
+                            setBusyId(null);
+                          }}
+                        ><X aria-hidden="true" /></button>
                       )}
                       <Link href={`/clients/${clientId}/sessions/${s.id}`} className="wn-session-view-link">
                         View <ChevronRight aria-hidden="true" />
@@ -977,94 +978,114 @@ function ScheduleSessionForm({ clientId, onClose }: { clientId: string; onClose:
 
 function JourneyTab({
   clientId,
+  clientName,
+  sessions,
+  milestones,
+  checkIns,
   aiSummaries,
   memory,
   preparationPlan,
 }: {
   clientId: string;
+  clientName: string;
+  sessions: Session[];
+  milestones: JourneyMilestone[];
+  checkIns: CheckIn[];
   aiSummaries: AiSummary[];
   memory: ClientMemoryItem[];
   preparationPlan?: PreparationPlan;
 }) {
-  const [deletingId, setDeletingId] = useState<string | null>(null);
-  const [localSummaries, setLocalSummaries] = useState(aiSummaries);
-
-  async function handleDelete(summaryId: string) {
-    if (!confirm("Delete this AI summary? This cannot be undone.")) return;
-    setDeletingId(summaryId);
-    await deleteAiSummaryAction(summaryId, clientId);
-    setLocalSummaries((prev) => prev.filter((s) => s.id !== summaryId));
-    setDeletingId(null);
-  }
+  const [checkInSubmitted, setCheckInSubmitted] = useState(
+    checkIns.some((checkIn) => checkIn.check_in_type === "12_hour" && Boolean(checkIn.submitted_at))
+  );
+  const [showAllMemory, setShowAllMemory] = useState(false);
+  const twelveHourCheckIn = checkIns.find((checkIn) => checkIn.check_in_type === "12_hour");
+  const planEntries = preparationPlan
+    ? Object.entries(preparationPlan).filter(([key]) => !["id", "client_id", "updated_at"].includes(key))
+    : [];
+  const checkInSession = sessions.find((session) => session.session_type === "check_in_12hr" && session.status === "scheduled") ??
+    sessions
+      .filter((session) => session.session_type === "check_in_12hr")
+      .sort((a, b) => (b.scheduled_at ?? "").localeCompare(a.scheduled_at ?? ""))[0];
+  const checkInMilestone = milestones.find((milestone) => milestone.milestone_key === "check_in_12hr_complete");
+  const checkInBrief = aiSummaries.find((summary) =>
+    summary.summary_type === "prepare_me_briefing" &&
+    (checkInSession ? summary.session_id === checkInSession.id : !summary.session_id && summary.stage_label === "12-Hour Check-In")
+  );
 
   return (
-    <div className="grid md:grid-cols-3 gap-6">
-      <div className="md:col-span-2 space-y-4">
-        <h3 className="font-medium text-ink-900 flex items-center gap-2">
-          <Brain className="h-4 w-4 text-plum-500" /> AI Summaries
-        </h3>
-        {localSummaries.length === 0 && <p className="text-sm text-ink-400">No AI summaries generated yet.</p>}
-        {localSummaries.map((s) => (
-          <div key={s.id} className="card p-4">
-            <div className="flex items-center justify-between mb-2">
-              <span className="font-medium text-sm text-ink-900">{s.title}</span>
-              <div className="flex items-center gap-2">
-                <span className="text-xs text-ink-400">{formatDateTime(s.created_at)}</span>
-                <button
-                  disabled={deletingId === s.id}
-                  onClick={() => handleDelete(s.id)}
-                  className="p-1 rounded hover:bg-red-50 text-ink-300 hover:text-red-500 transition-colors"
-                  title="Delete summary"
-                >
-                  {deletingId === s.id ? (
-                    <Loader2 className="h-3.5 w-3.5 animate-spin" />
+    <>
+      <section id="check-in" className="scroll-mt-5 mb-8">
+        <MilestoneToggleBanner
+          clientId={clientId}
+          milestoneKey="check_in_12hr_complete"
+          label="12-Hour Check-In"
+          meta="Phase 4 · 12-hour check-in"
+          initialCompleted={checkInMilestone?.completed ?? false}
+        />
+        <PrepareMeCard
+          clientId={clientId}
+          sessionTypeLabel="12-Hour Check-In"
+          clientName={clientName}
+          sessionId={checkInSession?.id}
+          existing={checkInBrief}
+        />
+        <CheckInWorkspace
+          clientId={clientId}
+          clientName={clientName}
+          existingCheckIn={twelveHourCheckIn}
+          onSubmitted={() => setCheckInSubmitted(true)}
+        />
+      </section>
+
+      <div className="journey-practitioner-grid">
+        <div className="journey-practitioner-main">
+          <JourneyAiSummaries clientId={clientId} initialSummaries={aiSummaries} checkInSubmitted={checkInSubmitted} />
+          {preparationPlan && (
+            <section className="journey-preparation-plan" aria-labelledby="journey-preparation-plan-heading">
+              <h3 id="journey-preparation-plan-heading" className="journey-icon-heading"><BookOpen aria-hidden="true" />Preparation &amp; Navigation Plan</h3>
+              <div className="journey-preparation-sections">
+                {planEntries.map(([key, value]) => {
+                  const content = String(value ?? "—");
+                  const label = key.replace(/_/g, " ");
+                  return content.length > 320 ? (
+                    <details key={key} className="journey-preparation-section journey-preparation-section--long">
+                      <summary>{label}</summary>
+                      <p>{content}</p>
+                    </details>
                   ) : (
-                    <Trash2 className="h-3.5 w-3.5" />
-                  )}
-                </button>
+                    <div key={key} className="journey-preparation-section">
+                      <h4>{label}</h4>
+                      <p>{content}</p>
+                    </div>
+                  );
+                })}
               </div>
-            </div>
-            <dl className="space-y-1.5">
-              {Object.entries(s.content).map(([k, v]) => (
-                <div key={k}>
-                  <dt className="text-xs uppercase tracking-wide text-ink-400">{k.replace(/_/g, " ")}</dt>
-                  <dd className="text-sm text-ink-700 whitespace-pre-line">
-                    {Array.isArray(v) ? v.join(", ") : String(v)}
-                  </dd>
-                </div>
-              ))}
-            </dl>
-          </div>
-        ))}
-        {preparationPlan && (
-          <div className="card p-4">
-            <span className="font-medium text-sm text-ink-900">Preparation &amp; Navigation Plan</span>
-            <dl className="space-y-1.5 mt-2">
-              {Object.entries(preparationPlan)
-                .filter(([k]) => !["id", "client_id", "updated_at"].includes(k))
-                .map(([k, v]) => (
-                  <div key={k}>
-                    <dt className="text-xs uppercase tracking-wide text-ink-400">{k.replace(/_/g, " ")}</dt>
-                    <dd className="text-sm text-ink-700 whitespace-pre-line">{String(v ?? "—")}</dd>
-                  </div>
-                ))}
-            </dl>
-          </div>
-        )}
-      </div>
-      <div>
-        <h3 className="font-medium text-ink-900 mb-3">Client Memory</h3>
-        <div className="space-y-2">
-          {memory.map((m) => (
-            <div key={m.id} className="card p-3">
-              <span className="badge bg-ink-100 text-ink-600 mb-1 capitalize">{m.item_type.replace(/_/g, " ")}</span>
-              <p className="text-sm text-ink-700">{m.content}</p>
-            </div>
-          ))}
-          {memory.length === 0 && <p className="text-sm text-ink-400">No memory items yet.</p>}
+            </section>
+          )}
         </div>
+        <aside className="journey-client-memory" aria-labelledby="journey-client-memory-heading">
+          <h3 id="journey-client-memory-heading" className="journey-icon-heading"><Brain aria-hidden="true" />Client Memory</h3>
+          {memory.length > 0 ? (
+            <>
+              <ul className="journey-client-memory-list">
+                {(showAllMemory ? memory : memory.slice(0, 4)).map((item) => (
+                  <li key={item.id}>
+                    <span className="journey-client-memory-badge">{item.item_type.replace(/_/g, " ")}</span>
+                    <p>{item.content}</p>
+                  </li>
+                ))}
+              </ul>
+              {memory.length > 4 && (
+                <button type="button" className="journey-client-memory-toggle" onClick={() => setShowAllMemory((visible) => !visible)}>
+                  {showAllMemory ? "Show less" : `View all (${memory.length})`}
+                </button>
+              )}
+            </>
+          ) : <p className="journey-client-memory-empty">No memory items yet.</p>}
+        </aside>
       </div>
-    </div>
+    </>
   );
 }
 

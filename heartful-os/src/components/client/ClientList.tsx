@@ -6,7 +6,7 @@ import { Search, SlidersHorizontal } from "@/components/ui/HeartfulIcon";
 import JourneyProgressBar from "@/components/JourneyProgressBar";
 import FilterSelect from "@/components/client/FilterSelect";
 import { Client, ClientStatus, JourneyMilestone } from "@/lib/types";
-import { clientAvatarSrc, cx, formatDate, initials, statusBadgeClasses } from "@/lib/utils";
+import { clientAvatarSrc, clientStatusBadgeClasses, cx, formatDate, initials } from "@/lib/utils";
 import { useMemo, useState } from "react";
 
 type StageFilter = "all" | "intake" | "preparation" | "journey" | "integration";
@@ -40,16 +40,6 @@ const CLIENT_LIST_STATUS_LABELS: Record<ClientStatus, string> = {
 
 function isCompletedClient(status: ClientStatus) {
   return status === "journey_complete" || status === "journey_closed" || status === "inactive";
-}
-
-function clientListBadgeClasses(status: ClientStatus) {
-  if (status === "journey_complete") {
-    return "client-status--awaiting-integration";
-  }
-  if (status === "preparation" || status === "preparation_complete") {
-    return "client-status--preparation";
-  }
-  return statusBadgeClasses(status);
 }
 
 function clientActionLabel(status: ClientStatus) {
@@ -307,7 +297,7 @@ export default function ClientList({ items, emptyMessage }: { items: ClientListI
                         {client.hold_follow_up_at ? `Follow up ${formatDate(client.hold_follow_up_at)}` : "On hold"}
                       </span>
                     )}
-                    <span className={cx("badge client-list-status", clientListBadgeClasses(client.status))}>
+                    <span className={cx("badge client-list-status", clientStatusBadgeClasses(client.status))}>
                       {CLIENT_LIST_STATUS_LABELS[client.status]}
                     </span>
                     {referralName && (
@@ -328,7 +318,7 @@ export default function ClientList({ items, emptyMessage }: { items: ClientListI
                   </div>
                 </div>
                 <div className="sm:ml-[68px]">
-                  <JourneyProgressBar milestones={milestones} compact subdued={completed} />
+                  <JourneyProgressBar client={client} milestones={milestones} compact subdued={completed} />
                 </div>
               </Link>
             );

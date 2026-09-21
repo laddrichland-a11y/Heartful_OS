@@ -27,7 +27,7 @@ export default function DeleteClientButton({ clientId, clientName }: { clientId:
   }
 
   return (
-    <div className="text-right">
+    <div className="text-right client-delete-button">
       <button
         type="button"
         onClick={handleClick}

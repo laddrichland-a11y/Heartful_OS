@@ -20,8 +20,8 @@ import {
 } from "@/lib/actions";
 import AiGenerateButton from "@/components/ai/AiGenerateButton";
 import SummaryCard from "@/components/ai/SummaryCard";
-import JourneyMarkerSwitch from "@/components/client/JourneyMarkerSwitch";
-import DoseAmountField from "@/components/client/DoseAmountField";
+import ActionCardHeader from "@/components/client/ActionCardHeader";
+import JourneyTimingTimeline from "@/components/client/JourneyTimingTimeline";
 import ElapsedTimer from "@/components/client/ElapsedTimer";
 import { useNowTick } from "@/lib/useNowTick";
 import { cx, formatDateTime, withManualNoteAutoTimestamp, insertManualNoteTimestamp, MANUAL_NOTE_MARKER } from "@/lib/utils";
@@ -406,6 +406,7 @@ export default function JourneyDayWorkspace({
   const [initialDoseSaving, setInitialDoseSaving] = useState(false);
   const [initialDoseSaved, setInitialDoseSaved] = useState(false);
   const [boosterDoseAmount, setBoosterDoseAmount] = useState(initialBoosterDoseAmount);
+  const [recordedBoosterDoseAmount, setRecordedBoosterDoseAmount] = useState(initialBoosterDoseAmount);
   const [boosterDoseSaving, setBoosterDoseSaving] = useState(false);
   const [boosterDoseSaved, setBoosterDoseSaved] = useState(false);
 
@@ -428,6 +429,7 @@ export default function JourneyDayWorkspace({
     setBoosterDoseSaving(true);
     try {
       await updateBoosterDoseAmountAction(sessionId, clientId, boosterDoseAmount);
+      setRecordedBoosterDoseAmount(boosterDoseAmount);
       setBoosterDoseSaved(true);
       setTimeout(() => setBoosterDoseSaved(false), 2000);
     } catch {
@@ -469,18 +471,18 @@ export default function JourneyDayWorkspace({
 
   return (
     <div className="grid lg:grid-cols-3 gap-6">
-      <div className="lg:col-span-3 card p-4">
+      <div className="lg:col-span-3 card journey-timing-panel p-4">
         <h2 className="font-semibold text-ink-900 mb-3">Journey Timing</h2>
 
         {!hasSession && (
-          <p className="text-sm text-ink-500 rounded-lg border border-ink-200 bg-ink-50 px-3 py-2">
+          <p className="journey-timing-notice">
             No Journey Day session is on the calendar for {clientName} yet. Schedule one to start
             recording Journey Begin, Booster Dose, and Journey End times.
           </p>
         )}
 
         {markerError && (
-          <p className="mb-3 text-sm text-red-700 rounded-lg border border-red-200 bg-red-50 px-3 py-2">
+          <p className="journey-timing-error" role="alert">
             {markerError}
           </p>
         )}
@@ -511,17 +513,17 @@ export default function JourneyDayWorkspace({
         )}
 
         {showBoosterReminder && (
-          <div className="mb-4 rounded-lg border border-amber-300 bg-amber-50 px-4 py-3 flex items-start gap-3">
-            <AlertTriangle className="h-5 w-5 text-amber-600 shrink-0 mt-0.5" />
+          <div className="journey-timing-reminder">
+            <AlertTriangle className="h-5 w-5 shrink-0 mt-0.5" />
             <div className="flex-1">
-              <p className="text-sm font-semibold text-amber-800">90 minutes in — assess for a booster dose</p>
-              <p className="text-xs text-amber-700 mt-0.5">
-                Toggle Booster Dose below once given, and log the amount — or dismiss if none is needed.
+              <p className="text-sm font-semibold">90 minutes in — assess for a booster dose</p>
+              <p className="text-xs mt-0.5">
+                Add a booster dose once given, and log the amount — or dismiss if none is needed.
               </p>
             </div>
             <button
               onClick={dismissBoosterReminder}
-              className="p-1 rounded hover:bg-amber-100 text-amber-500 hover:text-amber-700 shrink-0"
+              className="journey-timing-reminder-dismiss"
               aria-label="Dismiss reminder"
             >
               <X className="h-4 w-4" />
@@ -529,59 +531,27 @@ export default function JourneyDayWorkspace({
           </div>
         )}
 
-        <div className="flex flex-wrap gap-8">
-          <div className="space-y-2">
-            <JourneyMarkerSwitch
-              label="Journey Begin"
-              on={!!journeyStartedAt}
-              pending={markerPending === "started"}
-              isoTimestamp={journeyStartedAt}
-              onToggle={() => toggleJourneyMarker("started")}
-              onTimeChange={(iso) => updateMarkerTime("started", iso)}
-              timeSaving={timeSavingMarker === "started"}
-            />
-            <DoseAmountField
-              label="Initial dose"
-              value={initialDoseAmount}
-              onChange={setInitialDoseAmount}
-              onSave={saveInitialDoseAmount}
-              saving={initialDoseSaving}
-              saved={initialDoseSaved}
-            />
-          </div>
-
-          <JourneyMarkerSwitch
-            label="Journey End"
-            on={!!journeyEndedAt}
-            pending={markerPending === "ended"}
-            isoTimestamp={journeyEndedAt}
-            onToggle={() => toggleJourneyMarker("ended")}
-            onTimeChange={(iso) => updateMarkerTime("ended", iso)}
-            timeSaving={timeSavingMarker === "ended"}
-          />
-
-          <div className="space-y-2">
-            <JourneyMarkerSwitch
-              label="Booster Dose"
-              on={!!boosterDoseAt}
-              pending={markerPending === "booster"}
-              isoTimestamp={boosterDoseAt}
-              onToggle={() => toggleJourneyMarker("booster")}
-              onTimeChange={(iso) => updateMarkerTime("booster", iso)}
-              timeSaving={timeSavingMarker === "booster"}
-            />
-            {boosterDoseAt && (
-              <DoseAmountField
-                label="Booster amount"
-                value={boosterDoseAmount}
-                onChange={setBoosterDoseAmount}
-                onSave={saveBoosterDoseAmount}
-                saving={boosterDoseSaving}
-                saved={boosterDoseSaved}
-              />
-            )}
-          </div>
-        </div>
+        <JourneyTimingTimeline
+          hasSession={hasSession}
+          journeyStartedAt={journeyStartedAt}
+          boosterDoseAt={boosterDoseAt}
+          journeyEndedAt={journeyEndedAt}
+          markerPending={markerPending}
+          timeSavingMarker={timeSavingMarker}
+          onMarkerToggle={toggleJourneyMarker}
+          onMarkerTimeChange={updateMarkerTime}
+          initialDoseAmount={initialDoseAmount}
+          onInitialDoseChange={setInitialDoseAmount}
+          onInitialDoseSave={saveInitialDoseAmount}
+          initialDoseSaving={initialDoseSaving}
+          initialDoseSaved={initialDoseSaved}
+          boosterDoseAmount={boosterDoseAmount}
+          recordedBoosterDoseAmount={recordedBoosterDoseAmount}
+          onBoosterDoseChange={setBoosterDoseAmount}
+          onBoosterDoseSave={saveBoosterDoseAmount}
+          boosterDoseSaving={boosterDoseSaving}
+          boosterDoseSaved={boosterDoseSaved}
+        />
           </>
         )}
       </div>
@@ -684,6 +654,7 @@ export default function JourneyDayWorkspace({
         />
         <div className="flex items-center gap-2 flex-wrap">
           {manualNotesSaved && <span className="text-xs text-sage-600">Saved</span>}
+          <div className="ml-auto flex items-center gap-2">
           <button
             type="button"
             onClick={insertTimestamp}
@@ -700,6 +671,7 @@ export default function JourneyDayWorkspace({
             {manualNotesSaving ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Save className="h-3.5 w-3.5" />}
             Save Notes
           </button>
+          </div>
         </div>
 
         <div className="pt-3 border-t border-ink-100 space-y-3">
@@ -787,14 +759,18 @@ export default function JourneyDayWorkspace({
         )}
 
         <div className="pt-3 border-t border-ink-100 space-y-3">
-          <h3 className="font-semibold text-ink-900 flex items-center gap-2 text-sm">
-            <MessageSquareText className="h-4 w-4 text-ink-400" />
-            Journey Day Summary
-          </h3>
-          <p className="text-xs text-ink-400">
-            A strictly factual recap — no interpretation, no clinical language. This is the one shown to{" "}
-            {clientName} in their Client Portal, automatically, once this session is marked complete.
-          </p>
+          <ActionCardHeader
+            title={<><MessageSquareText className="h-4 w-4 text-ink-400" />Journey Day Summary</>}
+            description={`A factual recap shown to ${clientName} in the Client Portal when this session is complete.`}
+            action={<button
+              disabled={callSummaryBusy || !(manualNotes.trim() || transcript.trim())}
+              onClick={generateCallSummary}
+              className="btn-primary flex items-center gap-2 whitespace-nowrap px-4 py-2 text-sm disabled:opacity-50"
+            >
+              {callSummaryBusy ? <Loader2 className="h-4 w-4 animate-spin" /> : <Sparkles className="h-4 w-4" />}
+              Generate Journey Day Summary
+            </button>}
+          />
 
           {localCallSummaries.length > 0 && (
             <div className="space-y-2">
@@ -862,44 +838,47 @@ export default function JourneyDayWorkspace({
             </div>
           )}
 
-          <button
-            disabled={callSummaryBusy || !(manualNotes.trim() || transcript.trim())}
-            onClick={generateCallSummary}
-            className="btn-primary text-sm px-4 py-2 flex items-center gap-2 disabled:opacity-50"
-          >
-            {callSummaryBusy ? <Loader2 className="h-4 w-4 animate-spin" /> : <Sparkles className="h-4 w-4" />}
-            Generate Journey Day Summary
-          </button>
         </div>
       </div>
       </div>
 
       <div className="space-y-4">
-        <div className="card p-4 space-y-3">
-          <h2 className="font-semibold text-ink-900">At Session Completion</h2>
-          <AiGenerateButton
-            clientId={clientId}
-            summaryType="journey_summary"
-            label="Generate Journey Summary"
-            extra={{ transcript: transcriptForAi }}
-            onDone={(s) => setSummary(s as unknown as AiSummary)}
-          />
-          <button
-            disabled={timelineCreated}
-            onClick={() =>
-              startTransition(async () => {
-                await createPostJourneyTimelineAction(clientId, "prac_001");
-                setTimelineCreated(true);
-              })
+        <div className="card p-4 space-y-4">
+          <ActionCardHeader
+            title="At Session Completion"
+            titleAs="h2"
+            description="Turn the session transcript and notes into a Journey Summary."
+            action={
+              <AiGenerateButton
+                clientId={clientId}
+                summaryType="journey_summary"
+                label="Generate Journey Summary"
+                extra={{ transcript: transcriptForAi }}
+                onDone={(s) => setSummary(s as unknown as AiSummary)}
+                className="btn-primary inline-flex items-center gap-2 whitespace-nowrap text-sm disabled:opacity-60"
+              />
             }
-            className="btn-secondary w-full flex items-center justify-center gap-2 text-sm disabled:opacity-60"
-          >
-            <CalendarClock className="h-4 w-4" /> {timelineCreated ? "Post-Journey Timeline Created" : "Create Post-Journey Timeline"}
-          </button>
-          <p className="text-xs text-ink-400">
-            Automatically creates the 12-Hour Check-In task, 48-Hour Reflection reminder, and Integration Session 1 &amp; 2
-            reminders for {clientName}.
-          </p>
+          />
+          <div className="border-t border-ink-100 pt-4">
+            <ActionCardHeader
+              title="Post-Journey Timeline"
+              description={`Create check-in, reflection, and Integration Session reminders for ${clientName}.`}
+              action={
+                <button
+                  disabled={timelineCreated}
+                  onClick={() =>
+                    startTransition(async () => {
+                      await createPostJourneyTimelineAction(clientId, "prac_001");
+                      setTimelineCreated(true);
+                    })
+                  }
+                  className="btn-secondary inline-flex items-center gap-2 whitespace-nowrap text-sm disabled:opacity-60"
+                >
+                  <CalendarClock className="h-4 w-4" /> {timelineCreated ? "Post-Journey Timeline Created" : "Create Post-Journey Timeline"}
+                </button>
+              }
+            />
+          </div>
         </div>
         {summary && (
           <SummaryCard

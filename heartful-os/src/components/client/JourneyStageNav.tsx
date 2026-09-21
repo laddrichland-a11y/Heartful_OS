@@ -42,9 +42,13 @@ export function JourneyStageNav({ clientId, sessions, milestones, activePhase, c
           const session = phaseSession(sessions, stage.sessionType);
           const completed = (stage.phase === "growth_action_plan" && closed) || milestones.some((milestone) => milestone.milestone_key === stage.milestoneKey && milestone.completed);
           const viewing = current === stage.phase;
-          const isCurrent = viewing || (!current && (activePhase === stage.phase || firstIncomplete === stage.phase));
-          const href = session ? `/clients/${clientId}/sessions/${session.id}` : `/clients/${clientId}/${stage.href}`;
-          const statusText = viewing || isCurrent ? "Current stage" : session?.scheduled_at ? formatDate(session.scheduled_at) : "";
+          const isCurrent = activePhase === stage.phase || (!PHASE_LINKS.some((item) => item.phase === activePhase) && firstIncomplete === stage.phase);
+          const href = stage.phase === "post_journey_check_in"
+            ? `/clients/${clientId}?tab=${encodeURIComponent("Journey & AI")}#check-in`
+            : session
+              ? `/clients/${clientId}/sessions/${session.id}`
+              : `/clients/${clientId}/${stage.href}`;
+          const statusText = viewing ? "Viewing stage" : isCurrent ? "Current stage" : session?.scheduled_at ? formatDate(session.scheduled_at) : "";
           return (
             <li
               key={stage.phase}
@@ -54,7 +58,7 @@ export function JourneyStageNav({ clientId, sessions, milestones, activePhase, c
               <Link
                 href={href}
                 aria-current={viewing ? "step" : undefined}
-                aria-label={`${stage.label}: ${completed ? "completed" : isCurrent ? "current stage" : "upcoming"}`}
+                aria-label={`${stage.label}: ${viewing ? "viewing stage" : completed ? "completed" : isCurrent ? "current stage" : "upcoming"}`}
                 className="journey-stage-link"
               >
                 <span className="journey-stage-marker" aria-hidden="true">

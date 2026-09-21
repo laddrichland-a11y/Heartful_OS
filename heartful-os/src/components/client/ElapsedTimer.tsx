@@ -41,23 +41,23 @@ export default function ElapsedTimer({
   const display = h > 0 ? `${h}:${pad(m)}:${pad(s)}` : `${m}:${pad(s)}`;
 
   return (
-    <div>
-      <p className="text-xs font-medium text-ink-500 uppercase tracking-wide">{label}</p>
-      <p className="text-2xl font-semibold tabular-nums text-ink-900">{display}</p>
+    <div className="journey-elapsed-timer">
+      <p className="journey-elapsed-timer-label">{label}</p>
+      <p className="journey-elapsed-timer-value">{display}</p>
       {onAdjustMinutes && (
-        <div className="flex items-center gap-1 mt-1">
+        <div className="journey-elapsed-timer-adjustments">
           {QUICK_ADJUST_MINUTES.map((delta) => (
             <button
               key={delta}
               disabled={adjusting}
               onClick={() => onAdjustMinutes(delta)}
-              className="text-xs px-1.5 py-0.5 rounded border border-ink-200 text-ink-500 hover:bg-ink-50 hover:border-ink-300 disabled:opacity-50"
+              className="journey-elapsed-timer-adjust"
               title={`${delta > 0 ? "Add" : "Subtract"} ${Math.abs(delta)} minute${Math.abs(delta) === 1 ? "" : "s"} ${delta > 0 ? "to" : "from"} the timer`}
             >
               {delta > 0 ? `+${delta}m` : `${delta}m`}
             </button>
           ))}
-          {adjusting && <Loader2 className="h-3 w-3 animate-spin text-ink-400" />}
+          {adjusting && <Loader2 className="h-3 w-3 animate-spin" />}
         </div>
       )}
     </div>

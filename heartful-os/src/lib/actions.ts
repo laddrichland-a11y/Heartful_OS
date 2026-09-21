@@ -5,6 +5,7 @@ import { redirect } from "next/navigation";
 import { cookies } from "next/headers";
 import * as data from "@/lib/data";
 import { SessionNoteField, ClientStatus, JourneyPhase, DocumentType, SessionType, type PaymentMethod } from "@/lib/types";
+import { JOURNEY_PROGRESS_COMPLETED_MILESTONES } from "@/lib/utils";
 import { runAiJson } from "@/lib/ai/generate";
 import { buildAiConversationPrompt, buildProspectIntroSummaryPrompt } from "@/lib/ai/prompts";
 import { mockAiConversationReply } from "@/lib/ai/mocks";
@@ -307,17 +308,29 @@ export async function addClientDocumentAction(
   revalidatePath(`/clients/${clientId}`);
 }
 
+const JOURNEY_PROGRESS_MILESTONES = [
+  "intake_complete",
+  "preparation_complete",
+  "journey_complete",
+  "check_in_12hr_complete",
+  "integration_1_complete",
+  "integration_2_complete",
+  "growth_action_plan_complete",
+  "journey_closed",
+] as const;
+
 export async function updateClientStatusAction(clientId: string, status: ClientStatus, phase: JourneyPhase) {
   await data.updateClient(clientId, { status, current_phase: phase });
-  // The status dropdown is the only way "Journey Closed" gets set — there's
-  // no dedicated page/toggle for it like the other milestones have. Without
-  // this, the last progress dot never turns green even after the journey is
-  // actually closed out. Reversible, matching this control's "either
-  // direction" behavior for every other status change.
-  if (status === "journey_closed") {
-    await data.completeMilestone(clientId, "journey_closed");
-  } else {
-    await data.uncompleteMilestone(clientId, "journey_closed");
+
+  const completedCount = JOURNEY_PROGRESS_COMPLETED_MILESTONES[status];
+  if (completedCount !== undefined) {
+    for (const [index, milestoneKey] of JOURNEY_PROGRESS_MILESTONES.entries()) {
+      if (index < completedCount) {
+        await data.completeMilestone(clientId, milestoneKey);
+      } else {
+        await data.uncompleteMilestone(clientId, milestoneKey);
+      }
+    }
   }
   revalidatePath(`/clients/${clientId}`);
   revalidatePath("/dashboard");
@@ -568,7 +581,6 @@ export async function toggleMilestoneAction(clientId: string, milestoneKey: stri
   revalidatePath(`/clients/${clientId}/intake`);
   revalidatePath(`/clients/${clientId}/preparation`);
   revalidatePath(`/clients/${clientId}/journey-day`);
-  revalidatePath(`/clients/${clientId}/check-in`);
   revalidatePath(`/clients/${clientId}/integration-1`);
   revalidatePath(`/clients/${clientId}/integration-2`);
 }
@@ -590,7 +602,6 @@ export async function reopenCompletedSessionAction(sessionId: string, clientId: 
   revalidatePath(`/clients/${clientId}/intake`);
   revalidatePath(`/clients/${clientId}/preparation`);
   revalidatePath(`/clients/${clientId}/journey-day`);
-  revalidatePath(`/clients/${clientId}/check-in`);
   revalidatePath(`/clients/${clientId}/integration-1`);
   revalidatePath(`/clients/${clientId}/integration-2`);
 }
@@ -687,7 +698,6 @@ export async function submitCheckInAction(
     submitted_by: submittedBy,
     submitted_at: new Date().toISOString(),
   });
-  revalidatePath(`/clients/${clientId}/check-in`);
   revalidatePath(`/clients/${clientId}`);
   revalidatePath("/portal");
 }

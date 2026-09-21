@@ -1,11 +1,9 @@
 "use client";
 
 import { useState, useTransition } from "react";
-import { AiSummary, CheckIn } from "@/lib/types";
+import { CheckIn } from "@/lib/types";
 import { submitCheckInAction } from "@/lib/actions";
-import AiGenerateButton from "@/components/ai/AiGenerateButton";
-import SummaryCard from "@/components/ai/SummaryCard";
-import { Send } from "@/components/ui/HeartfulIcon";
+import { ClipboardList, Send } from "@/components/ui/HeartfulIcon";
 
 const FIELDS: { key: keyof CheckIn; label: string }[] = [
   { key: "emotional_state", label: "Emotional State" },
@@ -19,38 +17,41 @@ export default function CheckInWorkspace({
   clientId,
   clientName,
   existingCheckIn,
-  existingSummary,
+  onSubmitted,
 }: {
   clientId: string;
   clientName: string;
   existingCheckIn?: CheckIn;
-  existingSummary?: AiSummary;
+  onSubmitted?: () => void;
 }) {
   const [fields, setFields] = useState<Record<string, string>>(
     Object.fromEntries(FIELDS.map((f) => [f.key, (existingCheckIn?.[f.key] as string) ?? ""]))
   );
   const [submitted, setSubmitted] = useState(!!existingCheckIn);
-  const [summary, setSummary] = useState(existingSummary);
   const [pending, startTransition] = useTransition();
 
   return (
-    <div className="grid md:grid-cols-2 gap-6">
-      <div className="card p-5 space-y-4">
+      <section className="client-surface mb-6 p-5">
         <div>
-          <h2 className="font-semibold text-ink-900">12-Hour Check-In Form</h2>
-          <p className="text-xs text-ink-400 mt-1">For {clientName} — captures how things feel 12 hours after the journey.</p>
+          <p className="client-eyebrow">Check-in record</p>
+          <h2 className="journey-icon-heading mt-1 text-lg font-semibold text-ink-900"><ClipboardList aria-hidden="true" />12-Hour Check-In Form</h2>
+          <p className="mt-1.5 text-sm leading-6 text-ink-500">
+            For {clientName} — captures how things feel 12 hours after the journey.
+          </p>
         </div>
-        {FIELDS.map((f) => (
-          <div key={f.key}>
-            <label className="text-sm font-medium text-ink-800">{f.label}</label>
-            <textarea
-              value={fields[f.key]}
-              onChange={(e) => setFields((s) => ({ ...s, [f.key]: e.target.value }))}
-              rows={2}
-              className="mt-1 w-full border border-ink-200 rounded-xl px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-clay-200"
-            />
-          </div>
-        ))}
+        <div className="mt-5 space-y-4 border-t border-ink-100 pt-5">
+          {FIELDS.map((f) => (
+            <div key={f.key}>
+              <label className="text-sm font-medium text-ink-800">{f.label}</label>
+              <textarea
+                value={fields[f.key]}
+                onChange={(e) => setFields((s) => ({ ...s, [f.key]: e.target.value }))}
+                rows={2}
+                className="mt-1.5 min-h-[80px] w-full resize-y rounded-xl border border-ink-200 bg-ink-50/30 px-3 py-2.5 text-sm text-ink-800 transition-colors placeholder:text-ink-400 focus:border-clay-300 focus:bg-white focus:outline-none focus:ring-2 focus:ring-clay-100"
+              />
+            </div>
+          ))}
+        </div>
         <button
           disabled={pending}
           onClick={() =>
@@ -67,27 +68,13 @@ export default function CheckInWorkspace({
                 "practitioner"
               );
               setSubmitted(true);
+              onSubmitted?.();
             })
           }
-          className="btn-primary w-full flex items-center justify-center gap-2 text-sm"
+          className="btn-primary mt-5 ml-auto inline-flex items-center justify-center gap-2 text-sm"
         >
           <Send className="h-4 w-4" /> {submitted ? "Update Check-In" : "Submit Check-In"}
         </button>
-      </div>
-      <div className="space-y-4">
-        <h2 className="font-semibold text-ink-900">AI Summary</h2>
-        <AiGenerateButton
-          clientId={clientId}
-          summaryType="check_in_12hr_summary"
-          label="Generate Check-In Summary"
-          onDone={(s) => setSummary(s as unknown as AiSummary)}
-        />
-        {summary ? (
-          <SummaryCard title="12-Hour Check-In Summary" content={summary.content} model={summary.model} />
-        ) : (
-          <div className="card p-6 text-sm text-ink-400 text-center">Submit the check-in, then generate a summary.</div>
-        )}
-      </div>
-    </div>
+      </section>
   );
 }

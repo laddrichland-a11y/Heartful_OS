@@ -12,6 +12,8 @@ export default function AiGenerateButton({
   extra,
   onDone,
   icon = "sparkles",
+  className,
+  disabled = false,
 }: {
   clientId: string;
   summaryType: AiSummaryType;
@@ -19,13 +21,15 @@ export default function AiGenerateButton({
   extra?: Record<string, unknown>;
   onDone?: (summary: { content: Record<string, unknown>; title: string; model?: string }) => void;
   icon?: "sparkles" | "document";
+  className?: string;
+  disabled?: boolean;
 }) {
   const router = useRouter();
   const [busy, setBusy] = useState(false);
 
   return (
     <button
-      disabled={busy}
+      disabled={busy || disabled}
       onClick={async () => {
         setBusy(true);
         try {
@@ -41,7 +45,7 @@ export default function AiGenerateButton({
           setBusy(false);
         }
       }}
-      className="btn-primary flex items-center gap-2 text-sm disabled:opacity-60"
+      className={className ?? "btn-primary flex items-center gap-2 text-sm disabled:opacity-60"}
     >
       {busy ? <Loader2 className="h-4 w-4 animate-spin" /> : icon === "document" ? <FileText className="h-4 w-4" /> : <Sparkles className="h-4 w-4" />}
       {busy ? "Generating..." : label}

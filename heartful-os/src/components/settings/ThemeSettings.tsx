@@ -44,6 +44,21 @@ export function saveTheme(theme: Theme) {
 export function ThemeBootstrap() {
   useEffect(() => {
     applyTheme(getSavedTheme());
+
+    const root = document.documentElement;
+    const enableInteractionStyles = () => {
+      root.dataset.interactionReady = "true";
+    };
+
+    window.addEventListener("pointermove", enableInteractionStyles, { once: true, passive: true });
+    window.addEventListener("pointerdown", enableInteractionStyles, { once: true, passive: true });
+    window.addEventListener("keydown", enableInteractionStyles, { once: true });
+
+    return () => {
+      window.removeEventListener("pointermove", enableInteractionStyles);
+      window.removeEventListener("pointerdown", enableInteractionStyles);
+      window.removeEventListener("keydown", enableInteractionStyles);
+    };
   }, []);
 
   return null;
