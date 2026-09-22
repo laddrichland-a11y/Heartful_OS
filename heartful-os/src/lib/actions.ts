@@ -747,6 +747,34 @@ export async function sendMessageAction(clientId: string, sender: "practitioner"
   revalidatePath("/dashboard");
 }
 
+async function canChangeSentMessage(clientId: string, sender: "practitioner" | "client"): Promise<boolean> {
+  if (await isPractitionerAuthed()) return true;
+  if (sender !== "client") return false;
+  const client = await data.getClient(clientId);
+  return Boolean(client && await isPortalUnlocked(clientId, client.portal_password_hash));
+}
+
+export async function editSentMessageAction(clientId: string, messageId: string, sender: "practitioner" | "client", body: string) {
+  const nextBody = body.trim();
+  if (!nextBody) throw new Error("Message cannot be empty.");
+  if (!(await canChangeSentMessage(clientId, sender))) throw new Error("You cannot edit this message.");
+  const updated = await data.updateMessage(clientId, messageId, sender, nextBody);
+  if (!updated) throw new Error("Message not found or not sent by you.");
+  revalidatePath(`/clients/${clientId}`);
+  revalidatePath("/portal");
+  revalidatePath("/dashboard");
+  return updated;
+}
+
+export async function deleteSentMessageAction(clientId: string, messageId: string, sender: "practitioner" | "client") {
+  if (!(await canChangeSentMessage(clientId, sender))) throw new Error("You cannot delete this message.");
+  const deleted = await data.deleteMessage(clientId, messageId, sender);
+  if (!deleted) throw new Error("Message not found or not sent by you.");
+  revalidatePath(`/clients/${clientId}`);
+  revalidatePath("/portal");
+  revalidatePath("/dashboard");
+}
+
 // Lightweight poll target for the sidebar's unread-message badge — kept
 // separate from the full dashboard summary so it stays cheap to call often.
 export async function getUnreadMessageCountAction(): Promise<number> {

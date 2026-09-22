@@ -460,6 +460,7 @@ export interface Message {
   sender_id?: string;
   body: string;
   read_at?: string;
+  edited_at?: string;
   created_at: string;
 }
 

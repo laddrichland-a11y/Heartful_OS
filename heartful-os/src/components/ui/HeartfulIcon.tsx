@@ -10,14 +10,15 @@ import * as Lucide from "lucide-react";
 import styles from "./HeartfulIcon.module.css";
 
 /**
- * The product icon gateway, backed by the Iconstica Broken and Filled sets.
- * Interactive parents switch the glyph to Filled on hover/focus/active state.
+ * The product icon gateway uses the Iconstica family throughout: Line at
+ * rest, then Filled for interactive hover, focus, and selected states.
  */
 export type HeartfulIcon = React.ForwardRefExoticComponent<
   SVGProps<SVGSVGElement> & { size?: string | number }
 >;
 
 type IconStyle = CSSProperties & {
+  "--heartful-icon-line": string;
   "--heartful-icon-filled": string;
 };
 
@@ -38,7 +39,7 @@ function glyph(name: string, StrokeIcon: StrokeIcon): HeartfulIcon {
       },
       ref,
     ) {
-      // Iconstica supplies the stroke weight as part of each Broken asset.
+      // Iconstica supplies the visual weight as part of each SVG asset.
       void strokeWidth;
 
       const iconStyle: IconStyle = {
@@ -47,6 +48,7 @@ function glyph(name: string, StrokeIcon: StrokeIcon): HeartfulIcon {
         ...(width !== undefined ? { width } : {}),
         ...(height !== undefined ? { height } : {}),
         ...(color !== undefined ? { color } : {}),
+        "--heartful-icon-line": `url("/icons/iconstica/line/${name}.svg")`,
         "--heartful-icon-filled": `url("/icons/iconstica/filled/${name}.svg")`,
       };
 
@@ -58,6 +60,7 @@ function glyph(name: string, StrokeIcon: StrokeIcon): HeartfulIcon {
           {...(props as HTMLAttributes<HTMLSpanElement>)}
         >
           <StrokeIcon className={styles.regular} strokeWidth={strokeWidth ?? 1.8} aria-hidden="true" />
+          <span className={`${styles.layer} ${styles.line}`} aria-hidden="true" />
           <span className={`${styles.layer} ${styles.filled}`} aria-hidden="true" />
         </span>
       );

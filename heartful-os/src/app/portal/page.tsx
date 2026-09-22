@@ -12,6 +12,8 @@ import {
   completeTaskAction,
   completePortalAssignmentAction,
   sendMessageAction,
+  editSentMessageAction,
+  deleteSentMessageAction,
   submitCheckInAction,
   saveFormProgressAction,
   submitClientFormAction,
@@ -39,7 +41,7 @@ import {
   Session,
   Recording,
 } from "@/lib/types";
-import { AlertCircle, Check, CheckCircle2, Circle, Send, Sparkles, FileText, ChevronDown, ChevronUp, CalendarDays, MapPin, Clock, Pencil, MessageSquareText, Mail, Music, ScrollText, UserRound, LayoutDashboard, ListChecks, Sprout, PanelLeftClose, PanelLeftOpen, Settings, ArrowRight } from "@/components/ui/HeartfulIcon";
+import { AlertCircle, Check, CheckCircle2, Circle, Send, Sparkles, FileText, ChevronDown, ChevronUp, CalendarDays, MapPin, Clock, Pencil, Trash2, MessageSquareText, Mail, Music, ScrollText, UserRound, LayoutDashboard, ListChecks, Sprout, PanelLeftClose, PanelLeftOpen, Settings, ArrowRight } from "@/components/ui/HeartfulIcon";
 import { formatDate, formatDateTime, getClientJourneyProgress, relativeDueLabel, cx, isGeneralPaperwork } from "@/lib/utils";
 import JourneyProgressBar from "@/components/JourneyProgressBar";
 import FormRenderer from "@/components/forms/FormRenderer";
@@ -47,6 +49,7 @@ import { buildFormPrefill, FormPrefill } from "@/lib/formPrefill";
 import PortalWelcome from "@/components/portal/PortalWelcome";
 import PortalClientSettings from "@/components/portal/PortalClientSettings";
 import SidebarNatureMessage from "@/components/layout/SidebarNatureMessage";
+import ConfirmDialog from "@/components/ui/ConfirmDialog";
 
 export const dynamic = "force-dynamic";
 
@@ -1176,7 +1179,7 @@ function SessionRow({
   }
 
   return (
-    <li className="portal-session-row border-b border-ink-100 pb-3 last:border-0">
+    <li className="portal-session-row">
       <div className="flex items-start justify-between gap-3 text-sm">
         <div>
           <div className="font-medium text-ink-800">{sessionTypeLabel(s.session_type)}</div>
@@ -1505,25 +1508,111 @@ function CheckInCard({ clientId, checkIn, onSaved }: { clientId: string; checkIn
 function MessagesPanel({ clientId, messages, onSent }: { clientId: string; messages: Message[]; onSent: () => void }) {
   const [body, setBody] = useState("");
   const [pending, startTransition] = useTransition();
+  const composerRef = useRef<HTMLTextAreaElement>(null);
+  const [messageOverrides, setMessageOverrides] = useState<Record<string, Message>>({});
+  const [deletedIds, setDeletedIds] = useState<string[]>([]);
+  const [editingId, setEditingId] = useState<string | null>(null);
+  const [editDraft, setEditDraft] = useState("");
+  const [busyId, setBusyId] = useState<string | null>(null);
+  const [messageError, setMessageError] = useState("");
+  const [pendingDeleteId, setPendingDeleteId] = useState<string | null>(null);
+
+  const visibleMessages = messages
+    .filter((message) => !deletedIds.includes(message.id))
+    .map((message) => messageOverrides[message.id] ?? message);
+
+  async function saveEdit(messageId: string) {
+    if (!editDraft.trim()) return;
+    setBusyId(messageId);
+    setMessageError("");
+    try {
+      const updated = await editSentMessageAction(clientId, messageId, "client", editDraft);
+      setMessageOverrides((current) => ({ ...current, [messageId]: updated }));
+      setEditingId(null);
+      onSent();
+    } catch (error) {
+      setMessageError(error instanceof Error ? error.message : "Could not edit the message.");
+    } finally {
+      setBusyId(null);
+    }
+  }
+
+  async function confirmRemoveMessage() {
+    if (!pendingDeleteId) return;
+    const messageId = pendingDeleteId;
+    setBusyId(messageId);
+    setMessageError("");
+    try {
+      await deleteSentMessageAction(clientId, messageId, "client");
+      setDeletedIds((current) => [...current, messageId]);
+      if (editingId === messageId) setEditingId(null);
+      onSent();
+    } catch (error) {
+      setMessageError(error instanceof Error ? error.message : "Could not delete the message.");
+    } finally {
+      setBusyId(null);
+      setPendingDeleteId(null);
+    }
+  }
 
   return (
     <div className="card p-5 portal-messages-panel flex flex-col h-[60vh]">
       <h2 className="font-semibold text-ink-900 mb-3">Messages with your Practitioner</h2>
-      <div className="flex-1 overflow-y-auto space-y-2 pr-1">
-        {messages.map((m) => (
-          <div key={m.id} className={cx("max-w-[80%] rounded-2xl px-3 py-2 text-sm", m.sender === "client" ? "bg-clay-500 text-white ml-auto" : "bg-ink-100 text-ink-800")}>
-            {m.body}
-            <div className={cx("text-xs mt-1", m.sender === "client" ? "text-clay-100" : "text-ink-400")}>{formatDate(m.created_at)}</div>
+      <div className="message-thread-scroll flex-1 overflow-y-auto space-y-2 pr-1">
+        {visibleMessages.map((m) => (
+          <div key={m.id} className={cx("max-w-[80%] break-words rounded-2xl px-3 py-2 text-sm", m.sender === "client" ? "bg-clay-500 text-white ml-auto" : "bg-ink-100 text-ink-800")}>
+            {editingId === m.id ? (
+              <div className="space-y-2">
+                <textarea
+                  value={editDraft}
+                  onChange={(event) => setEditDraft(event.target.value)}
+                  rows={6}
+                  aria-label="Edit message"
+                  className="min-h-36 w-full resize-y rounded-lg border border-ink-200 bg-white px-2 py-1.5 text-ink-900 focus:outline-none focus:ring-2 focus:ring-clay-200"
+                />
+                <div className="flex justify-end gap-2">
+                  <button type="button" onClick={() => setEditingId(null)} disabled={busyId === m.id} className="text-xs text-white/80 hover:text-white">Cancel</button>
+                  <button type="button" onClick={() => saveEdit(m.id)} disabled={!editDraft.trim() || busyId === m.id} className="rounded-md bg-white px-2 py-1 text-xs font-medium text-clay-700 disabled:opacity-60">Save</button>
+                </div>
+              </div>
+            ) : <div className="whitespace-pre-wrap">{m.body}</div>}
+            <div className="mt-1 flex items-center justify-between gap-3">
+              <span className={cx("text-xs", m.sender === "client" ? "text-white/70" : "text-ink-400")}>{formatDate(m.created_at)}{m.edited_at ? " · Edited" : ""}</span>
+              {m.sender === "client" && editingId !== m.id && (
+                <div className="flex shrink-0 items-center gap-1">
+                  <button type="button" onClick={() => { setEditingId(m.id); setEditDraft(m.body); setMessageError(""); }} disabled={busyId === m.id} aria-label="Edit message" title="Edit message" className="rounded p-1 text-white/75 hover:bg-white/15 hover:text-white disabled:opacity-50"><Pencil className="h-3.5 w-3.5" /></button>
+                  <button type="button" onClick={() => setPendingDeleteId(m.id)} disabled={busyId === m.id} aria-label="Delete message" title="Delete message" className="rounded p-1 text-white/75 hover:bg-white/15 hover:text-white disabled:opacity-50"><Trash2 className="h-3.5 w-3.5" /></button>
+                </div>
+              )}
+            </div>
           </div>
         ))}
-        {messages.length === 0 && <p className="text-sm text-ink-400">No messages yet.</p>}
+        {visibleMessages.length === 0 && <p className="text-sm text-ink-400">No messages yet.</p>}
       </div>
-      <div className="flex gap-2 mt-3">
-        <input
+      {messageError && <p role="alert" className="mt-2 text-xs text-red-600">{messageError}</p>}
+      <div className="mt-3 flex items-end gap-2">
+        <textarea
+          ref={composerRef}
           value={body}
-          onChange={(e) => setBody(e.target.value)}
+          onChange={(event) => {
+            setBody(event.target.value);
+            resizePortalMessageComposer(event.currentTarget);
+          }}
+          onKeyDown={(event) => {
+            if (event.key !== "Enter" || event.shiftKey || event.nativeEvent.isComposing) return;
+            event.preventDefault();
+            if (!body.trim() || pending) return;
+            startTransition(async () => {
+              await sendMessageAction(clientId, "client", body);
+              setBody("");
+              composerRef.current?.style.removeProperty("height");
+              onSent();
+            });
+          }}
+          rows={1}
           placeholder="Type a message..."
-          className="flex-1 border border-ink-200 rounded-xl px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-clay-200"
+          aria-label="Type a message"
+          className="message-composer min-h-10 max-h-36 flex-1 resize-none overflow-y-auto rounded-xl border border-ink-200 px-3 py-2 text-sm leading-5 focus:outline-none focus:ring-2 focus:ring-clay-200"
         />
         <button
           aria-label="Send message"
@@ -1532,6 +1621,7 @@ function MessagesPanel({ clientId, messages, onSent }: { clientId: string; messa
             startTransition(async () => {
               await sendMessageAction(clientId, "client", body);
               setBody("");
+              composerRef.current?.style.removeProperty("height");
               onSent();
             })
           }
@@ -1540,8 +1630,22 @@ function MessagesPanel({ clientId, messages, onSent }: { clientId: string; messa
           <Send className="h-4 w-4" />
         </button>
       </div>
+      <ConfirmDialog
+        open={pendingDeleteId !== null}
+        title="Delete this message?"
+        description="This action cannot be undone."
+        confirmLabel="Delete message"
+        busy={pendingDeleteId !== null && busyId === pendingDeleteId}
+        onCancel={() => setPendingDeleteId(null)}
+        onConfirm={() => void confirmRemoveMessage()}
+      />
     </div>
   );
+}
+
+function resizePortalMessageComposer(textarea: HTMLTextAreaElement) {
+  textarea.style.height = "auto";
+  textarea.style.height = `${Math.min(textarea.scrollHeight, 144)}px`;
 }
 
 // Shown when getPortalBundleAction reports the client's data is locked —

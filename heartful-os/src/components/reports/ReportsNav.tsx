@@ -5,8 +5,8 @@ const ITEMS = [
   { label: "Revenue", href: "/reports/revenue", key: "revenue" },
 ] as const;
 
-export default function ReportsNav({ current }: { current: "overview" | "revenue" }) {
+export default function ReportsNav({ current, query = "" }: { current: "overview" | "revenue"; query?: string }) {
   return <nav className="reports-tabs" aria-label="Reports views">
-    {ITEMS.map((item) => <Link key={item.key} href={item.href} aria-current={current === item.key ? "page" : undefined}>{item.label}</Link>)}
+    {ITEMS.map((item) => <Link key={item.key} href={`${item.href}${query ? `?${query}` : ""}`} aria-current={current === item.key ? "page" : undefined}>{item.label}</Link>)}
   </nav>;
 }

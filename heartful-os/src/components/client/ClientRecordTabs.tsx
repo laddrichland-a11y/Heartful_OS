@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import Link from "next/link";
 import {
   AiConversationMessage,
@@ -47,6 +47,7 @@ import {
   EyeOff,
   Eye,
   Trash2,
+  Pencil,
   PlayCircle,
   StopCircle,
   Pill,
@@ -61,6 +62,8 @@ import {
 import {
   uploadDocumentAction,
   sendMessageAction,
+  editSentMessageAction,
+  deleteSentMessageAction,
   addClientDocumentAction,
   addSessionAction,
   cancelSessionAction,
@@ -78,6 +81,7 @@ import CheckInWorkspace from "@/components/client/CheckInWorkspace";
 import MilestoneToggleBanner from "@/components/client/MilestoneToggleBanner";
 import PrepareMeCard from "@/components/client/PrepareMeCard";
 import JourneyAiSummaries from "@/components/client/JourneyAiSummaries";
+import ConfirmDialog from "@/components/ui/ConfirmDialog";
 
 const CLIENT_TABS: { value: Tab; label: string }[] = [
   { value: "History", label: "Overview" },
@@ -1549,6 +1553,50 @@ function MessagesTab({
 }) {
   const [draft, setDraft] = useState("");
   const [sending, setSending] = useState(false);
+  const composerRef = useRef<HTMLTextAreaElement>(null);
+  const [messageOverrides, setMessageOverrides] = useState<Record<string, Message>>({});
+  const [deletedIds, setDeletedIds] = useState<string[]>([]);
+  const [editingId, setEditingId] = useState<string | null>(null);
+  const [editDraft, setEditDraft] = useState("");
+  const [busyId, setBusyId] = useState<string | null>(null);
+  const [messageError, setMessageError] = useState("");
+  const [pendingDeleteId, setPendingDeleteId] = useState<string | null>(null);
+
+  const visibleMessages = messages
+    .filter((message) => !deletedIds.includes(message.id))
+    .map((message) => messageOverrides[message.id] ?? message);
+
+  async function saveEdit(messageId: string) {
+    if (!editDraft.trim()) return;
+    setBusyId(messageId);
+    setMessageError("");
+    try {
+      const updated = await editSentMessageAction(clientId, messageId, "practitioner", editDraft);
+      setMessageOverrides((current) => ({ ...current, [messageId]: updated }));
+      setEditingId(null);
+    } catch (error) {
+      setMessageError(error instanceof Error ? error.message : "Could not edit the message.");
+    } finally {
+      setBusyId(null);
+    }
+  }
+
+  async function confirmRemoveMessage() {
+    if (!pendingDeleteId) return;
+    const messageId = pendingDeleteId;
+    setBusyId(messageId);
+    setMessageError("");
+    try {
+      await deleteSentMessageAction(clientId, messageId, "practitioner");
+      setDeletedIds((current) => [...current, messageId]);
+      if (editingId === messageId) setEditingId(null);
+    } catch (error) {
+      setMessageError(error instanceof Error ? error.message : "Could not delete the message.");
+    } finally {
+      setBusyId(null);
+      setPendingDeleteId(null);
+    }
+  }
 
   return (
     <div className="grid md:grid-cols-3 gap-6">
@@ -1556,45 +1604,85 @@ function MessagesTab({
         <h3 className="font-medium text-ink-900 mb-3 flex items-center gap-2">
           <MessageSquare className="h-4 w-4 text-clay-500" /> Secure Messages
         </h3>
-        <div className="flex-1 overflow-y-auto space-y-2 pr-1">
-          {messages.map((m) => (
+        <div className="message-thread-scroll flex-1 overflow-y-auto space-y-2 pr-1">
+          {visibleMessages.map((m) => (
             <div
               key={m.id}
               className={cx(
-                "max-w-[80%] rounded-2xl px-3 py-2 text-sm",
+                "max-w-[80%] break-words rounded-2xl px-3 py-2 text-sm",
                 m.sender === "practitioner" ? "bg-clay-500 text-white ml-auto" : "bg-ink-100 text-ink-800"
               )}
             >
-              {m.body}
-              <div className={cx("text-xs mt-0.5", m.sender === "practitioner" ? "text-white/70" : "text-ink-400")}>
-                {formatDateTime(m.created_at)}
+              {editingId === m.id ? (
+                <div className="space-y-2">
+                  <textarea
+                    value={editDraft}
+                    onChange={(event) => setEditDraft(event.target.value)}
+                    rows={3}
+                    aria-label="Edit message"
+                    className="w-full resize-y rounded-lg border border-ink-200 bg-white px-2 py-1.5 text-ink-900 focus:outline-none focus:ring-2 focus:ring-clay-200"
+                  />
+                  <div className="flex justify-end gap-2">
+                    <button type="button" onClick={() => setEditingId(null)} disabled={busyId === m.id} className="text-xs text-white/80 hover:text-white">Cancel</button>
+                    <button type="button" onClick={() => saveEdit(m.id)} disabled={!editDraft.trim() || busyId === m.id} className="rounded-md bg-white px-2 py-1 text-xs font-medium text-clay-700 disabled:opacity-60">Save</button>
+                  </div>
+                </div>
+              ) : <div className="whitespace-pre-wrap">{m.body}</div>}
+              <div className="mt-1 flex items-center justify-between gap-3">
+                <span className={cx("text-xs", m.sender === "practitioner" ? "text-white/70" : "text-ink-400")}>
+                  {formatDateTime(m.created_at)}{m.edited_at ? " · Edited" : ""}
+                </span>
+                {m.sender === "practitioner" && editingId !== m.id && (
+                  <div className="flex shrink-0 items-center gap-1">
+                    <button type="button" onClick={() => { setEditingId(m.id); setEditDraft(m.body); setMessageError(""); }} disabled={busyId === m.id} aria-label="Edit message" title="Edit message" className="rounded p-1 text-white/75 hover:bg-white/15 hover:text-white disabled:opacity-50"><Pencil className="h-3.5 w-3.5" /></button>
+                    <button type="button" onClick={() => setPendingDeleteId(m.id)} disabled={busyId === m.id} aria-label="Delete message" title="Delete message" className="rounded p-1 text-white/75 hover:bg-white/15 hover:text-white disabled:opacity-50"><Trash2 className="h-3.5 w-3.5" /></button>
+                  </div>
+                )}
               </div>
             </div>
           ))}
-          {messages.length === 0 && <p className="text-sm text-ink-400">No messages yet.</p>}
+          {visibleMessages.length === 0 && <p className="text-sm text-ink-400">No messages yet.</p>}
         </div>
+        {messageError && <p role="alert" className="mt-2 text-xs text-red-600">{messageError}</p>}
         <form
-          className="flex items-center gap-2 mt-3 pt-3 border-t border-ink-100"
+          className="mt-3 flex items-end gap-2 border-t border-ink-100 pt-3"
           onSubmit={async (e) => {
             e.preventDefault();
             if (!draft.trim()) return;
             setSending(true);
             await sendMessageAction(clientId, "practitioner", draft.trim());
             setDraft("");
+            composerRef.current?.style.removeProperty("height");
             setSending(false);
           }}
         >
-          <input
+          <textarea
+            ref={composerRef}
             value={draft}
-            onChange={(e) => setDraft(e.target.value)}
+            onChange={(event) => {
+              setDraft(event.target.value);
+              resizeMessageComposer(event.currentTarget);
+            }}
+            onKeyDown={submitMessageOnEnter}
+            rows={1}
             placeholder="Write a message..."
-            className="flex-1 border border-ink-200 rounded-xl px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-clay-200"
+            aria-label="Write a message"
+            className="message-composer min-h-10 max-h-36 flex-1 resize-none overflow-y-auto rounded-xl border border-ink-200 px-3 py-2 text-sm leading-5 focus:outline-none focus:ring-2 focus:ring-clay-200"
           />
           <button type="submit" disabled={sending} className="btn-primary p-2">
             <Send className="h-4 w-4" />
           </button>
         </form>
       </div>
+      <ConfirmDialog
+        open={pendingDeleteId !== null}
+        title="Delete this message?"
+        description="This action cannot be undone."
+        confirmLabel="Delete message"
+        busy={pendingDeleteId !== null && busyId === pendingDeleteId}
+        onCancel={() => setPendingDeleteId(null)}
+        onConfirm={() => void confirmRemoveMessage()}
+      />
       <div>
         <h3 className="font-medium text-ink-900 mb-3">Portal Assignments</h3>
         <div className="space-y-2">
@@ -1614,4 +1702,15 @@ function MessagesTab({
       </div>
     </div>
   );
+}
+
+function resizeMessageComposer(textarea: HTMLTextAreaElement) {
+  textarea.style.height = "auto";
+  textarea.style.height = `${Math.min(textarea.scrollHeight, 144)}px`;
+}
+
+function submitMessageOnEnter(event: React.KeyboardEvent<HTMLTextAreaElement>) {
+  if (event.key !== "Enter" || event.shiftKey || event.nativeEvent.isComposing) return;
+  event.preventDefault();
+  event.currentTarget.form?.requestSubmit();
 }

@@ -24,8 +24,12 @@
   inset: 0;
   width: 100%;
   height: 100%;
+  opacity: 0;
+}
+
+.line {
+  mask-image: var(--heartful-icon-line);
   opacity: 1;
-  transition: opacity 150ms ease;
 }
 
 .filled {
@@ -33,18 +37,30 @@
   opacity: 0;
 }
 
-:where(a, button, [role="button"]):is(:hover, :focus-visible) .regular,
-:where([aria-current="page"], [aria-pressed="true"], [data-active="true"], [data-selected="true"]) .regular {
+:global(a:hover) .line,
+:global(button:hover) .line,
+:global([role="button"]:hover) .line,
+:global(a:focus-visible) .line,
+:global(button:focus-visible) .line,
+:global([role="button"]:focus-visible) .line,
+:global([aria-current="page"]) .line,
+:global([aria-selected="true"]) .line {
   opacity: 0;
 }
 
-:where(a, button, [role="button"]):is(:hover, :focus-visible) .filled,
-:where([aria-current="page"], [aria-pressed="true"], [data-active="true"], [data-selected="true"]) .filled {
+:global(a:hover) .filled,
+:global(button:hover) .filled,
+:global([role="button"]:hover) .filled,
+:global(a:focus-visible) .filled,
+:global(button:focus-visible) .filled,
+:global([role="button"]:focus-visible) .filled,
+:global([aria-current="page"]) .filled,
+:global([aria-selected="true"]) .filled {
   opacity: 1;
 }
 
 @media (prefers-reduced-motion: reduce) {
-  .layer, .regular {
+  .layer {
     transition: none;
   }
 }

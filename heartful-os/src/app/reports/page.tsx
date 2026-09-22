@@ -1,14 +1,17 @@
 import AppShell from "@/components/layout/AppShell";
 import { ClientGrowthChart, ReferralBarChart, StatusDonutChart } from "@/components/reports/ReportsCharts";
 import ReportsNav from "@/components/reports/ReportsNav";
-import { getReportsSummary } from "@/lib/data";
+import ReportsFilterBar from "@/components/reports/ReportsFilterBar";
+import { getReferralSources, getReportsSummary, parseReportsFilter } from "@/lib/data";
 import { STATUS_LABELS } from "@/lib/types";
 import { ClipboardList, TrendingUp, UserRound, Users } from "@/components/ui/HeartfulIcon";
 
 export const dynamic = "force-dynamic";
 
-export default async function ReportsOverviewPage() {
-  const summary = await getReportsSummary();
+export default async function ReportsOverviewPage({ searchParams }: { searchParams: Promise<Record<string, string | undefined>> }) {
+  const params = await searchParams;
+  const [summary, referralSources] = await Promise.all([getReportsSummary(parseReportsFilter(params)), getReferralSources()]);
+  const query = new URLSearchParams(Object.entries(params).filter(([, value]) => value !== undefined) as [string, string][]).toString();
   const statusCounts = new Map<string, number>();
   for (const client of summary.clients) {
     const label = STATUS_LABELS[client.status];
@@ -45,26 +48,27 @@ export default async function ReportsOverviewPage() {
   return <AppShell title="Reports">
     <header className="reports-header">
       <div><h2 className="app-section-title text-ink-900">Practice analytics</h2><p>Understand how your practice is performing over time.</p></div>
-      <ReportsNav current="overview" />
+      <ReportsNav current="overview" query={query} />
     </header>
+    <ReportsFilterBar referralSources={referralSources} />
     <section className="reports-kpi-grid" aria-label="Practice overview">
-      <ReportMetric label="Total clients" value={summary.totalClients} icon={Users} tone="clay" />
-      <ReportMetric label="Active clients" value={summary.activeClients} icon={UserRound} tone="sage" />
-      <ReportMetric label="Journey completion rate" value={`${summary.journeyCompletionRate}%`} icon={ClipboardList} tone="vanilla" />
+      <ReportMetric label="Current matching clients" value={summary.totalClients} icon={Users} tone="clay" />
+      <ReportMetric label="Current active clients" value={summary.activeClients} icon={UserRound} tone="sage" />
+      <ReportMetric label="Current journey completion" value={`${summary.journeyCompletionRate}%`} icon={ClipboardList} tone="vanilla" />
       <ReportMetric
-        label="Average journey progress"
+        label="Current journey progress"
         value={`${summary.journeyPerformance.averageCompletionRate}%`}
         icon={TrendingUp}
         tone="sage"
       />
     </section>
     <div className="reports-grid reports-grid--balanced">
-      <ReportCard title="Client growth" description="New clients over the last 12 months"><ClientGrowthChart data={summary.clientGrowth} /></ReportCard>
+      <ReportCard title="Client growth" description="New clients in the selected period"><ClientGrowthChart data={summary.clientGrowth} /></ReportCard>
       <ReportCard title="Clients by journey status" description="Current distribution across the client journey"><StatusDonutChart data={statusData} /></ReportCard>
     </div>
     <div className="reports-grid reports-grid--referrals">
       <ReportCard title="Referral sources" description="Where current client relationships began"><ReferralBarChart data={summary.referralBreakdown} /></ReportCard>
-      <ReportCard title="Journey performance" description="Aggregate progress across all client journeys">
+      <ReportCard title="Journey performance" description="Completed journey activity in the selected period">
         <div className="journey-performance-grid">
           {journeyMetrics.map((metric) => <div key={metric.label} className="journey-performance-metric"><strong>{metric.value}</strong><span>{metric.label}</span>{metric.note && <small>{metric.note}</small>}</div>)}
         </div>

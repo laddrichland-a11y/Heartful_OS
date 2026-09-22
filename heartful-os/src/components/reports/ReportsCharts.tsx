@@ -1,5 +1,7 @@
 "use client";
 
+import { useCallback, useRef, useState, type MouseEvent } from "react";
+import { createPortal } from "react-dom";
 import { Area, Bar, BarChart, CartesianGrid, Cell, ComposedChart, Line, Pie, PieChart, ResponsiveContainer, Tooltip, XAxis, YAxis } from "recharts";
 
 type ChartDatum = { name: string; value: number };
@@ -20,6 +22,53 @@ export function ClientGrowthChart({ data }: { data: ChartDatum[] }) {
 
 export function StatusDonutChart({ data }: { data: ChartDatum[] }) {
   const total = data.reduce((sum, item) => sum + item.value, 0);
+  const chartRef = useRef<HTMLDivElement>(null);
+  const [hover, setHover] = useState<{ item: ChartDatum; x: number; y: number; placement: "top" | "right" | "bottom" | "left" } | null>(null);
+  const animateTooltipContent = useCallback((element: HTMLSpanElement | null) => {
+    if (!element || window.matchMedia("(prefers-reduced-motion: reduce)").matches) return;
+    element.animate(
+      [{ opacity: 0.35, transform: "translateY(3px)" }, { opacity: 1, transform: "translateY(0)" }],
+      { duration: 160, easing: "ease-out" },
+    );
+  }, []);
+
+  function showStatus(index: number, event: MouseEvent<SVGElement>) {
+    const chart = chartRef.current;
+    const item = data[index];
+    if (!chart || !item) return;
+
+    const rect = chart.getBoundingClientRect();
+    const cardRect = chart.closest(".report-card")?.getBoundingClientRect();
+    const leftBoundary = Math.max(8, cardRect?.left ?? 8);
+    const rightBoundary = Math.min(window.innerWidth - 8, cardRect?.right ?? window.innerWidth - 8);
+    const centerX = rect.left + rect.width / 2;
+    const centerY = rect.top + rect.height / 2;
+    const dx = event.clientX - centerX;
+    const dy = event.clientY - centerY;
+    const offset = 104; // Outside the 92px donut radius, with a 12px gap.
+    const tooltipWidth = 210;
+    const tooltipHeight = 44;
+    const edge = 8;
+    let x: number;
+    let y: number;
+    let placement: "top" | "right" | "bottom" | "left";
+
+    if (Math.abs(dx) > Math.abs(dy) && (dx > 0
+      ? centerX + offset + tooltipWidth < rightBoundary
+      : centerX - offset - tooltipWidth > leftBoundary)) {
+      x = dx > 0 ? centerX + offset : centerX - offset - tooltipWidth;
+      y = Math.max(edge, Math.min(event.clientY - tooltipHeight / 2, window.innerHeight - tooltipHeight - edge));
+      placement = dx > 0 ? "right" : "left";
+    } else {
+      x = Math.max(leftBoundary + edge, Math.min(event.clientX - tooltipWidth / 2, rightBoundary - tooltipWidth - edge));
+      y = dy < 0 ? centerY - offset - tooltipHeight : centerY + offset;
+      placement = dy < 0 ? "top" : "bottom";
+      if (y < 68) { y = centerY + offset; placement = "bottom"; }
+      if (y + tooltipHeight > window.innerHeight - edge) { y = centerY - offset - tooltipHeight; placement = "top"; }
+    }
+
+    setHover({ item, x, y, placement });
+  }
   const colors = [
     "var(--report-chart-primary, #f3774d)",
     "var(--report-chart-secondary, #74768a)",
@@ -29,16 +78,29 @@ export function StatusDonutChart({ data }: { data: ChartDatum[] }) {
     "var(--report-status-sixth, var(--report-chart-dark, #27293d))",
   ];
   return <div className="status-chart-layout">
-    <div className="status-donut">
-      <ResponsiveContainer width="100%" height={230}>
-        <PieChart>
-          <Pie data={data} dataKey="value" nameKey="name" innerRadius={62} outerRadius={92} paddingAngle={2} stroke="var(--surface-nested)" strokeWidth={2}>
-            {data.map((item, index) => <Cell key={item.name} fill={colors[index % colors.length]} />)}
-          </Pie>
-          <Tooltip contentStyle={tooltip} formatter={(value) => [Number(value), "Clients"]} />
-        </PieChart>
-      </ResponsiveContainer>
-      <div className="status-donut-total"><strong>{total}</strong><span>Total clients</span></div>
+    <div className="status-donut" style={{ paddingBottom: 0 }}>
+      <div className="status-donut-chart" ref={chartRef} onMouseLeave={() => setHover(null)}>
+        <ResponsiveContainer width="100%" height={230}>
+          <PieChart>
+            <Pie
+              data={data}
+              dataKey="value"
+              nameKey="name"
+              innerRadius={62}
+              outerRadius={92}
+              paddingAngle={2}
+              stroke="var(--surface-nested)"
+              strokeWidth={2}
+              onMouseEnter={(_entry, index, event) => showStatus(index, event)}
+              onMouseMove={(_entry, index, event) => showStatus(index, event)}
+              onMouseLeave={() => setHover(null)}
+            >
+              {data.map((item, index) => <Cell key={item.name} fill={colors[index % colors.length]} />)}
+            </Pie>
+          </PieChart>
+        </ResponsiveContainer>
+        <div className="status-donut-total"><strong>{total}</strong><span>Total clients</span></div>
+      </div>
     </div>
     <div className="status-breakdown" aria-label="Journey status breakdown">
       {data.map((item, index) => {
@@ -49,6 +111,38 @@ export function StatusDonutChart({ data }: { data: ChartDatum[] }) {
         </div>;
       })}
     </div>
+    {hover && createPortal(
+      <div
+        key={hover.placement}
+        className="status-donut-floating"
+        role="status"
+        style={{
+          position: "fixed",
+          zIndex: 100,
+          left: hover.x,
+          top: hover.y,
+          display: "flex",
+          alignItems: "baseline",
+          gap: ".45rem",
+          maxWidth: 210,
+          padding: ".5rem .65rem",
+          border: "1px solid var(--divider)",
+          borderRadius: 10,
+          background: "var(--surface-nested)",
+          boxShadow: "0 8px 24px color-mix(in srgb, var(--text-primary) 8%, transparent)",
+          pointerEvents: "none",
+          transition: window.matchMedia("(prefers-reduced-motion: reduce)").matches
+            ? "none"
+            : "left 140ms ease-out, top 140ms ease-out",
+        }}
+      >
+        <span key={`${hover.item.name}-${hover.item.value}`} ref={animateTooltipContent} style={{ display: "inline-flex", alignItems: "baseline", gap: ".45rem" }}>
+          <span style={{ minWidth: 0, color: "var(--text-primary)", fontSize: ".75rem", lineHeight: 1.35 }}>{hover.item.name}</span>
+          <strong style={{ flex: "0 0 auto", color: "var(--brand-accent)", fontSize: ".75rem", fontWeight: 600, lineHeight: 1.35 }}>{hover.item.value}</strong>
+        </span>
+      </div>,
+      document.body,
+    )}
   </div>;
 }
 

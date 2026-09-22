@@ -5,7 +5,7 @@ import { ChevronLeft, ChevronRight } from "@/components/ui/HeartfulIcon";
 
 const months = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"];
 
-export default function MonthYearPicker({ value, onChange }: { value: Date; onChange: (date: Date) => void }) {
+export default function MonthYearPicker({ value, onChange, triggerClassName }: { value: Date; onChange: (date: Date) => void; triggerClassName?: string }) {
   const [open, setOpen] = useState(false);
   const [year, setYear] = useState(value.getFullYear());
   const root = useRef<HTMLDivElement>(null);
@@ -37,7 +37,7 @@ export default function MonthYearPicker({ value, onChange }: { value: Date; onCh
   return <div ref={root} className="calendar-month-picker" onBlur={(event) => {
     if (!event.currentTarget.contains(event.relatedTarget)) setOpen(false);
   }}>
-    <button ref={trigger} type="button" className="calendar-month-trigger text-lg font-semibold text-ink-900 min-w-[160px] text-center" aria-expanded={open} aria-controls={id} aria-haspopup="dialog" onClick={() => {
+    <button ref={trigger} type="button" className={triggerClassName ?? "calendar-month-trigger text-lg font-semibold text-ink-900 min-w-[160px] text-center"} aria-expanded={open} aria-controls={id} aria-haspopup="dialog" onClick={() => {
       if (!open) setYear(value.getFullYear());
       setOpen(!open);
     }}>{value.toLocaleDateString("en-US", { month: "long", year: "numeric" })}</button>

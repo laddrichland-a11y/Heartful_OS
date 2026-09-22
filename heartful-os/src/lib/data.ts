@@ -2,7 +2,7 @@ import { createHash } from "crypto";
 import { store } from "@/lib/mock/store";
 import { nextId } from "@/lib/mock/seed";
 import { isFirebaseConfigured, getBucket } from "@/lib/firebaseAdmin";
-import { isGeneralPaperwork, isPastDue } from "@/lib/utils";
+import { isGeneralPaperwork, isPastDue, phaseForStatus } from "@/lib/utils";
 import {
   allDocs,
   deleteDoc,
@@ -1644,6 +1644,22 @@ export async function addMessage(clientId: string, sender: Message["sender"], bo
   return create(store.messages, "messages", m);
 }
 
+export async function updateMessage(clientId: string, messageId: string, sender: Message["sender"], body: string): Promise<Message | undefined> {
+  const message = await findById(store.messages, "messages", messageId);
+  if (!message || message.client_id !== clientId || message.sender !== sender) return undefined;
+  return patchById(store.messages, "messages", messageId, {
+    body,
+    edited_at: new Date().toISOString(),
+  });
+}
+
+export async function deleteMessage(clientId: string, messageId: string, sender: Message["sender"]): Promise<boolean> {
+  const message = await findById(store.messages, "messages", messageId);
+  if (!message || message.client_id !== clientId || message.sender !== sender) return false;
+  await removeById(store.messages, "messages", messageId);
+  return true;
+}
+
 export interface UnreadMessageThread {
   client_id: string;
   client_name: string;
@@ -1884,27 +1900,81 @@ export async function getJourneyCompletionRate() {
   return Math.round((closed / total) * 100);
 }
 
-export async function getReportsSummary() {
-  const [clients, clientsForRevenue, payments] = await Promise.all([
+export type ReportsFilter = {
+  period?: "all" | "30d" | "3m" | "6m" | "year" | "custom";
+  status?: "all" | "active" | "completed";
+  stage?: "all" | JourneyPhase;
+  referral?: string;
+  start?: string;
+  end?: string;
+};
+
+export function parseReportsFilter(input: Record<string, string | undefined>): ReportsFilter {
+  const periods = new Set(["all", "30d", "3m", "6m", "year", "custom"]);
+  const statuses = new Set(["all", "active", "completed"]);
+  const stages = new Set<JourneyPhase>(["intake", "preparation", "harm_reduction_session", "post_journey_check_in", "integration_1", "integration_2", "closed"]);
+  return {
+    period: periods.has(input.period ?? "") ? input.period as ReportsFilter["period"] : "all",
+    status: statuses.has(input.status ?? "") ? input.status as ReportsFilter["status"] : "all",
+    stage: input.stage === "all" || stages.has(input.stage as JourneyPhase) ? input.stage as ReportsFilter["stage"] : "all",
+    referral: input.referral ?? "all",
+    start: input.start,
+    end: input.end,
+  };
+}
+
+function reportPeriodStart(filter: ReportsFilter, now: Date) {
+  if (filter.period === "30d") return new Date(now.getFullYear(), now.getMonth(), now.getDate() - 29);
+  if (filter.period === "3m") return new Date(now.getFullYear(), now.getMonth() - 2, 1);
+  if (filter.period === "6m") return new Date(now.getFullYear(), now.getMonth() - 5, 1);
+  if (filter.period === "year") return new Date(now.getFullYear(), 0, 1);
+  if (filter.period === "custom" && filter.start) return new Date(`${filter.start}T00:00:00`);
+  return null;
+}
+
+export async function getReportsSummary(filter: ReportsFilter = {}) {
+  const [allClients, allClientsForRevenue, allPayments, referralSources] = await Promise.all([
     getClients(), getClientsIncludingOnHold(), getPayments(),
+    getReferralSources(),
   ]);
   const [milestonesByClient, sessionsByClient] = await Promise.all([
-    Promise.all(clients.map((client) => getMilestones(client.id))),
-    Promise.all(clients.map((client) => getSessions(client.id))),
+    Promise.all(allClients.map((client) => getMilestones(client.id))),
+    Promise.all(allClients.map((client) => getSessions(client.id))),
   ]);
   const now = new Date();
+  const periodStart = reportPeriodStart(filter, now);
+  const periodEnd = filter.period === "custom" && filter.end ? new Date(`${filter.end}T23:59:59`) : now;
+  const milestoneMap = new Map(allClients.map((client, index) => [client.id, milestonesByClient[index]]));
+  const sessionMap = new Map(allClients.map((client, index) => [client.id, sessionsByClient[index]]));
+  const clients = allClients.filter((client) => {
+    if (filter.status === "active" && !ACTIVE_STATUSES.includes(client.status)) return false;
+    if (filter.status === "completed" && client.status !== "journey_closed") return false;
+    if (filter.referral && filter.referral !== "all" && client.referral_source_id !== filter.referral) return false;
+    return !filter.stage || filter.stage === "all" || phaseForStatus(client.status, client.current_phase) === filter.stage;
+  });
+  const selectedClientIds = new Set(clients.map((client) => client.id));
+  const clientsForRevenue = allClientsForRevenue.filter((client) => selectedClientIds.has(client.id));
+  const payments = allPayments.filter((payment) => selectedClientIds.has(payment.client_id));
+  const periodPayments = payments.filter((payment) => {
+    const paidAt = new Date(`${payment.paid_at.slice(0, 10)}T12:00:00`);
+    return (!periodStart || paidAt >= periodStart) && paidAt <= periodEnd;
+  });
+  const scopedMilestonesByClient = clients.map((client) => milestoneMap.get(client.id) ?? []);
+  const scopedSessionsByClient = clients.map((client) => sessionMap.get(client.id) ?? []);
   const currentYear = now.getFullYear().toString();
   const currentYearMonth = `${currentYear}-${String(now.getMonth() + 1).padStart(2, "0")}`;
-  const revenueTotal = clientsForRevenue.reduce((sum, client) => sum + (client.amount_paid ?? 0), 0);
   const datedTotal = payments.reduce((sum, payment) => sum + payment.amount, 0);
-  const averagePayment = payments.length ? datedTotal / payments.length : 0;
-  const legacyRevenue = Math.max(0, revenueTotal - datedTotal);
+  const revenueTotal = periodPayments.reduce((sum, payment) => sum + payment.amount, 0) + (periodStart ? 0 : Math.max(0, clientsForRevenue.reduce((sum, client) => sum + (client.amount_paid ?? 0), 0) - datedTotal));
+  const averagePayment = periodPayments.length ? periodPayments.reduce((sum, payment) => sum + payment.amount, 0) / periodPayments.length : 0;
+  const legacyRevenue = periodStart ? 0 : Math.max(0, clientsForRevenue.reduce((sum, client) => sum + (client.amount_paid ?? 0), 0) - datedTotal);
   const revenueMTD = payments.filter((payment) => payment.paid_at.startsWith(currentYearMonth)).reduce((sum, payment) => sum + payment.amount, 0);
   const revenueYTD = legacyRevenue + payments.filter((payment) => payment.paid_at.startsWith(currentYear)).reduce((sum, payment) => sum + payment.amount, 0);
   const expectedTotal = clientsForRevenue.reduce((sum, client) => sum + (client.package_value ?? 0), 0);
   const outstandingBalance = clientsForRevenue.reduce((sum, client) => sum + Math.max(0, (client.package_value ?? 0) - (client.amount_paid ?? 0)), 0);
-  const monthKeys = Array.from({ length: 12 }, (_, index) => {
-    const date = new Date(now.getFullYear(), now.getMonth() - 11 + index, 1);
+  const chartStart = periodStart ?? new Date(now.getFullYear(), now.getMonth() - 11, 1);
+  const monthCount = Math.max(1, (periodEnd.getFullYear() - chartStart.getFullYear()) * 12 + periodEnd.getMonth() - chartStart.getMonth() + 1);
+  const monthKeys = Array.from({ length: monthCount }, (_, index) => {
+    const date = new Date(chartStart.getFullYear(), chartStart.getMonth() + index, 1);
     const nextMonth = new Date(date.getFullYear(), date.getMonth() + 1, 1);
     return {
       key: `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, "0")}`,
@@ -1914,12 +1984,12 @@ export async function getReportsSummary() {
   });
   const closedAtByClient = new Map(clients.map((client, index) => [
     client.id,
-    milestonesByClient[index].find((milestone) => milestone.milestone_key === "journey_closed")?.completed_at,
+    scopedMilestonesByClient[index].find((milestone) => milestone.milestone_key === "journey_closed")?.completed_at,
   ]));
   const revenueByMonth = monthKeys.map((month) => ({
     key: month.key,
     name: month.name,
-    value: payments.filter((payment) => payment.paid_at.startsWith(month.key)).reduce((sum, payment) => sum + payment.amount, 0),
+    value: periodPayments.filter((payment) => payment.paid_at.startsWith(month.key)).reduce((sum, payment) => sum + payment.amount, 0),
     activeClients: clients.filter((client) => {
       const isCurrentlyActive = ACTIVE_STATUSES.includes(client.status);
       const hasHistoricalClosedJourney = client.status === "journey_closed";
@@ -1929,34 +1999,39 @@ export async function getReportsSummary() {
     }).length,
   }));
   const clientGrowth = monthKeys.map((month) => ({ name: month.name, value: clients.filter((client) => client.created_at.startsWith(month.key)).length }));
-  const referralSources = await getReferralSources();
   const referralCounts = new Map<string, number>();
   for (const client of clients) {
     const source = referralSources.find((item) => item.id === client.referral_source_id);
     const name = source?.name ?? "Direct / unknown";
     referralCounts.set(name, (referralCounts.get(name) ?? 0) + 1);
   }
-  const completedJourneys = clients.filter((client) => client.status === "journey_closed").length;
+  const completedJourneysCurrent = clients.filter((client) => client.status === "journey_closed").length;
+  const completedJourneys = clients.filter((client, index) => {
+    const closedAt = scopedMilestonesByClient[index].find((milestone) => milestone.milestone_key === "journey_closed")?.completed_at;
+    if (!closedAt) return false;
+    const closedDate = new Date(closedAt);
+    return (!periodStart || closedDate >= periodStart) && closedDate <= periodEnd;
+  }).length;
   const activeClients = clients.filter((client) => ACTIVE_STATUSES.includes(client.status)).length;
-  const averageCompletionRate = milestonesByClient.length
-    ? Math.round(milestonesByClient.reduce((total, milestones) => total + (milestones.length ? milestones.filter((milestone) => milestone.completed).length / milestones.length : 0), 0) / milestonesByClient.length * 100)
+  const averageCompletionRate = scopedMilestonesByClient.length
+    ? Math.round(scopedMilestonesByClient.reduce((total, milestones) => total + (milestones.length ? milestones.filter((milestone) => milestone.completed).length / milestones.length : 0), 0) / scopedMilestonesByClient.length * 100)
     : 0;
   const completionDurations = clients.flatMap((client, index) => {
-    const closedAt = milestonesByClient[index].find((milestone) => milestone.milestone_key === "journey_closed")?.completed_at;
+    const closedAt = scopedMilestonesByClient[index].find((milestone) => milestone.milestone_key === "journey_closed")?.completed_at;
     if (!closedAt) return [];
     const duration = Math.floor((new Date(closedAt).getTime() - new Date(client.created_at).getTime()) / 86_400_000);
     return duration > 0 ? [duration] : [];
   });
   const completedJourneySessionCounts = clients.flatMap((client, index) => {
     if (client.status !== "journey_closed") return [];
-    const closedAt = milestonesByClient[index].find((milestone) => milestone.milestone_key === "journey_closed")?.completed_at;
-    const completedSessions = sessionsByClient[index].filter((session) => {
+    const closedAt = scopedMilestonesByClient[index].find((milestone) => milestone.milestone_key === "journey_closed")?.completed_at;
+    const completedSessions = scopedSessionsByClient[index].filter((session) => {
       if (session.status !== "completed") return false;
       return !closedAt || !session.scheduled_at || new Date(session.scheduled_at).getTime() <= new Date(closedAt).getTime();
     });
     return [completedSessions.length];
   });
-  const sessionIntervalsInDays = sessionsByClient.flatMap((sessions) => {
+  const sessionIntervalsInDays = scopedSessionsByClient.flatMap((sessions) => {
     const datedSessions = sessions
       .filter((session) => session.status === "completed" && session.scheduled_at)
       .sort((a, b) => a.scheduled_at!.localeCompare(b.scheduled_at!));
@@ -1972,13 +2047,13 @@ export async function getReportsSummary() {
     amount: Math.max(0, (client.package_value ?? 0) - (client.amount_paid ?? 0)),
     dueDate: client.payment_due_date ?? null, status: "Outstanding" as const,
   })).filter((payment) => payment.amount > 0).sort((a, b) => b.amount - a.amount);
-  const recentPayments = [...payments].sort((a, b) => b.paid_at.localeCompare(a.paid_at)).slice(0, 8).map((payment) => ({
+  const recentPayments = [...periodPayments].sort((a, b) => b.paid_at.localeCompare(a.paid_at)).slice(0, 8).map((payment) => ({
     id: payment.id, clientId: payment.client_id, client: clientNames.get(payment.client_id) ?? "Unknown client",
     amount: payment.amount, date: payment.paid_at, method: payment.method, notes: payment.notes, status: "Paid" as const,
   }));
   return {
     totalClients: clients.length, activeClients,
-    journeyCompletionRate: clients.length ? Math.round((completedJourneys / clients.length) * 100) : 0,
+    journeyCompletionRate: clients.length ? Math.round((completedJourneysCurrent / clients.length) * 100) : 0,
     revenueTotal, revenueMTD, revenueYTD, expectedTotal, outstandingBalance, averagePayment, revenueByMonth,
     revenuePayments: payments.map((payment) => ({ date: payment.paid_at, amount: payment.amount })), clientGrowth,
     referralBreakdown: Array.from(referralCounts.entries()).map(([name, count]) => ({ name, count })).sort((a, b) => b.count - a.count),

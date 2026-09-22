@@ -33,6 +33,7 @@
     linear-gradient(180deg, #ffffff 0%, #fdfcf9 58%, #faf8f2 100%);
   --card-background: #fafaf9;
   --divider: #e8e7e4;
+  --divider-inner: color-mix(in srgb, var(--divider) 58%, transparent);
   --text-primary: var(--color-maritime-blue);
   --text-secondary: #696a78;
   --icon-color: #858694;
@@ -842,6 +843,122 @@ small {
 
 * {
   scrollbar-width: thin;
+}
+
+/* Message panels and expanded composers need a quiet scrollbar that sits
+   inside the surface instead of visually joining its top and bottom edges. */
+.message-thread-scroll,
+.message-composer {
+  scrollbar-color: color-mix(in srgb, var(--text-muted) 46%, transparent) transparent;
+  scrollbar-width: thin;
+}
+
+.message-thread-scroll::-webkit-scrollbar,
+.message-composer::-webkit-scrollbar {
+  width: 10px;
+}
+
+.message-thread-scroll::-webkit-scrollbar-track,
+.message-composer::-webkit-scrollbar-track {
+  margin-block: 1rem;
+  background: transparent;
+}
+
+.message-thread-scroll::-webkit-scrollbar-track-piece:vertical:start,
+.message-composer::-webkit-scrollbar-track-piece:vertical:start {
+  margin-top: 1rem;
+}
+
+.message-thread-scroll::-webkit-scrollbar-track-piece:vertical:end,
+.message-composer::-webkit-scrollbar-track-piece:vertical:end {
+  margin-bottom: 1rem;
+}
+
+.message-thread-scroll::-webkit-scrollbar-thumb,
+.message-composer::-webkit-scrollbar-thumb {
+  border: 3px solid transparent;
+  border-radius: 999px;
+  background: color-mix(in srgb, var(--text-muted) 44%, transparent);
+  background-clip: content-box;
+}
+
+.message-thread-scroll::-webkit-scrollbar-thumb:hover,
+.message-composer::-webkit-scrollbar-thumb:hover {
+  background-color: color-mix(in srgb, var(--text-muted) 64%, transparent);
+}
+
+.message-thread-scroll::-webkit-scrollbar-button,
+.message-composer::-webkit-scrollbar-button {
+  width: 0;
+  height: 0;
+  display: none;
+}
+
+.confirm-dialog-backdrop {
+  position: fixed;
+  z-index: 100;
+  inset: 0;
+  display: grid;
+  place-items: center;
+  padding: 1.5rem;
+  background: color-mix(in srgb, var(--text-primary) 36%, transparent);
+}
+
+.confirm-dialog {
+  width: min(100%, 26rem);
+  padding: 1.25rem;
+  border: 1px solid var(--border-strong);
+  border-radius: var(--radius-card);
+  background: var(--surface-card);
+  box-shadow: 0 1.125rem 2.75rem color-mix(in srgb, var(--text-primary) 24%, transparent);
+}
+
+.confirm-dialog h2 {
+  margin: 0;
+  color: var(--text-primary);
+  font-size: var(--font-size-card-title);
+  line-height: var(--line-height-heading);
+}
+
+.confirm-dialog p {
+  margin: .5rem 0 0;
+  color: var(--text-secondary);
+  font-size: var(--font-size-control);
+  line-height: 1.5;
+}
+
+.confirm-dialog-actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: .625rem;
+  margin-top: 1.25rem;
+}
+
+.confirm-dialog-danger {
+  min-height: 2.5rem;
+  padding: .5rem .85rem;
+  border: 1px solid color-mix(in srgb, var(--danger-text) 36%, var(--border-strong));
+  border-radius: var(--radius-control);
+  background: var(--danger-surface);
+  color: var(--danger-text);
+  font: inherit;
+  font-size: var(--font-size-control);
+  font-weight: 650;
+  cursor: pointer;
+}
+
+.confirm-dialog-danger:hover:not(:disabled) {
+  background: color-mix(in srgb, var(--danger-text) 14%, var(--danger-surface));
+}
+
+.confirm-dialog-danger:focus-visible {
+  outline: 2px solid var(--brand-accent);
+  outline-offset: 2px;
+}
+
+.confirm-dialog-danger:disabled {
+  cursor: wait;
+  opacity: .65;
 }
 
 .card {
@@ -3087,6 +3204,7 @@ button:not([class~="rounded"]):not([class*="rounded-"]) {
 }
 
 .wellnest-client-screen .wn-task-copy {
+  flex: 1 1 auto;
   min-width: 0;
 }
 
@@ -3096,14 +3214,13 @@ button:not([class~="rounded"]):not([class*="rounded-"]) {
 }
 
 .wellnest-client-screen .wn-task-copy strong {
-  overflow: hidden;
   color: #394a50;
   font-family: inherit;
-  font-size: var(--font-size-control);
-  font-weight: 650;
+  font-size: 13px;
+  font-weight: 400;
   line-height: var(--line-height-heading);
-  text-overflow: ellipsis;
-  white-space: nowrap;
+  overflow-wrap: anywhere;
+  white-space: normal;
 }
 
 .wellnest-client-screen .wn-task-item:hover .wn-task-copy strong {
@@ -3757,6 +3874,13 @@ textarea:focus-visible {
   line-height: 1.55;
 }
 
+/* Full-screen modal layers must cover the sticky header as well as the page
+   content. Restrict this to full-viewport overlays so notices and popovers
+   keep their existing elevation. */
+.app-workspace-frame .fixed.inset-0.z-50 {
+  z-index: 200 !important;
+}
+
 .sidebar-nature-message {
   position: relative;
   display: flex;
@@ -3860,7 +3984,7 @@ textarea:focus-visible {
 
 .card,
 .client-surface {
-  border-color: transparent;
+  border-color: var(--divider);
   border-radius: var(--radius-card);
   background: var(--card-background);
   box-shadow: none;
@@ -6282,9 +6406,9 @@ html:not([data-interaction-ready]) .heartful-site-shell .app-sidebar .sidebar-na
 .heartful-site-shell:not(.wellnest-client-screen) .card,
 .portal-shell .card,
 .auth-shell .card {
-  /* Sarah Klein's workspace uses tonal separation, not a second card
-     treatment. Keep every non-client surface on that same flat layer. */
-  border: 0;
+  /* Content surfaces use the shared low-contrast divider so their boundaries
+     remain clear without introducing a theme-specific card treatment. */
+  border: 1px solid var(--divider);
   border-radius: var(--radius-card);
   background: var(--surface-nested);
   box-shadow: none;
@@ -7009,7 +7133,7 @@ html:not([data-interaction-ready]) .heartful-site-shell .app-sidebar .sidebar-na
 .portal-journey-card .w-full > .flex { margin-top: .2rem; }
 .portal-journey-continue { margin-top: 1rem; }
 .portal-next-session-content { display: grid; gap: .65rem; }
-.portal-next-session-content > div { display: grid; min-width: 0; gap: .15rem; margin: -.35rem; margin-left: -.9rem; padding: .35rem; padding-left: .9rem; border-radius: var(--radius-control); transition: background-color 150ms ease, color 150ms ease; }
+.portal-next-session-content > div { display: grid; min-width: 0; gap: .15rem; margin: 0; padding: .6rem .75rem; border: 1px solid var(--divider-inner); border-radius: var(--radius-control); transition: background-color 150ms ease, color 150ms ease; }
 .portal-next-session-content > div:hover { background: var(--surface-hover); }
 .portal-next-session-content > div:hover strong,
 .portal-next-session-content > div:hover .heartful-icon { color: var(--brand-accent); }
@@ -7329,6 +7453,7 @@ html:not([data-interaction-ready]) .heartful-site-shell .app-sidebar .sidebar-na
 
 .dashboard-metric-icon--clients { background: var(--brand-accent-soft); color: var(--brand-accent); }
 .dashboard-metric-icon--integration { background: var(--status-warning-bg); color: var(--status-warning-text); }
+:root[data-theme="dark"] .dashboard-metric-icon--integration { color: var(--color-orange-200); }
 .dashboard-metric-icon--outstanding { background: var(--status-neutral-bg); color: var(--status-neutral-text); }
 .dashboard-metric-icon--revenue { background: var(--status-success-bg); color: var(--status-success-text); }
 
@@ -7399,6 +7524,7 @@ html:not([data-interaction-ready]) .heartful-site-shell .app-sidebar .sidebar-na
   flex-direction: column;
   justify-content: center;
   padding: .8rem 1rem;
+  border: 1px solid var(--divider);
   border-radius: var(--radius-card);
   background: var(--surface-nested);
 }
@@ -7488,6 +7614,7 @@ html:not([data-interaction-ready]) .heartful-site-shell .app-sidebar .sidebar-na
   gap: .75rem;
 }
 .status-donut { position: relative; width: 200px; }
+.status-donut-chart { position: relative; height: 230px; }
 .status-donut-total {
   position: absolute;
   top: 50%;
@@ -7527,6 +7654,10 @@ html:not([data-interaction-ready]) .heartful-site-shell .app-sidebar .sidebar-na
 .report-table td:nth-child(3) { width: 19%; }
 .report-table th:nth-child(4),
 .report-table td:nth-child(4) { width: 22%; }
+.report-table--recent th:first-child,
+.report-table--recent td:first-child { width: 33%; }
+.report-table--recent th:nth-child(4),
+.report-table--recent td:nth-child(4) { width: 17%; }
 .report-table td:first-child a { color: var(--text-primary); font-weight: 600; }
 .report-table td:first-child a:hover { color: var(--brand-accent); }
 .report-client-link { display: inline-flex; align-items: center; gap: .5rem; }
@@ -7594,6 +7725,23 @@ html:not([data-interaction-ready]) .heartful-site-shell .app-sidebar .sidebar-na
   .status-donut { max-width: 260px; margin-inline: auto; }
   .journey-performance-grid { grid-template-columns: 1fr; }
 }
+
+.reports-filter-bar {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: .5rem;
+  margin: .15rem 0 1rem;
+}
+.reports-filter-control { width: 154px; }
+.reports-filter-period { width: 170px; }
+.reports-filter-referral { width: min(208px, 100%); }
+.reports-filter-bar .reports-filter-control button { height: 36px; padding-inline: .75rem; font-size: var(--font-size-control); }
+.reports-filter-range { display: flex; gap: .35rem; }
+.reports-filter-range input { width: 132px; height: 32px; padding: .35rem .5rem; border: 1px solid var(--border-subtle); border-radius: var(--radius-control); background: var(--surface-control); color: var(--text-primary); font-size: var(--font-size-meta); }
+.reports-filter-reset { padding: .35rem .45rem; color: var(--text-secondary); font-size: var(--font-size-meta); font-weight: 600; white-space: nowrap; }
+.reports-filter-reset:hover { color: var(--brand-accent); }
+@media (max-width: 700px) { .reports-filter-control, .reports-filter-period, .reports-filter-referral { flex: 1 1 150px; width: auto; } .reports-filter-range { width: 100%; } .reports-filter-range input { flex: 1; min-width: 0; } }
 
 .dashboard-text-action svg {
   width: 12px;
@@ -8053,7 +8201,7 @@ html:not([data-interaction-ready]) .heartful-site-shell .app-sidebar .sidebar-na
   font-weight: 650;
 }
 .dashboard-month-navigation span { text-align: center; }
-.dashboard-month-navigation button {
+.dashboard-month-navigation > button {
   display: grid;
   width: 28px;
   height: 28px;
@@ -8064,11 +8212,11 @@ html:not([data-interaction-ready]) .heartful-site-shell .app-sidebar .sidebar-na
   cursor: pointer;
   transition: background-color 150ms ease, color 150ms ease;
 }
-.dashboard-month-navigation button:hover {
+.dashboard-month-navigation > button:hover {
   background: var(--surface-hover);
   color: var(--text-primary);
 }
-.dashboard-month-navigation button:focus-visible {
+.dashboard-month-navigation > button:focus-visible {
   outline: 2px solid var(--text-secondary);
   outline-offset: 2px;
 }
@@ -8085,9 +8233,21 @@ html:not([data-interaction-ready]) .heartful-site-shell .app-sidebar .sidebar-na
 .calendar-picker-months button:hover, .calendar-picker-year button:hover { background: var(--surface-hover); color: var(--text-primary); }
 .calendar-picker-months button[aria-pressed="true"] { background: var(--primary-action); color: var(--primary-action-foreground); font-weight: 650; }
 .calendar-month-picker button:focus-visible { outline: 2px solid var(--brand-accent-muted); outline-offset: 2px; }
-.dashboard-month-navigation .dashboard-month-label { width: auto; min-width: 92px; border: 0; border-radius: 6px; padding-inline: 10px; font-weight: inherit; color: inherit; }
-.dashboard-all-sessions { margin: .2rem 1.125rem .4rem; color: var(--text-secondary); font-size: .75rem; cursor: pointer; }
-.dashboard-all-sessions:hover { color: var(--text-primary); }
+.dashboard-month-navigation .dashboard-month-label { width: auto; min-width: 120px; min-height: 28px; border: 0; border-radius: 6px; padding-inline: 10px; font-size: inherit; font-weight: inherit; color: inherit; white-space: nowrap; }
+.dashboard-month-navigation .calendar-month-popover { left: 50%; width: min(300px, calc(100vw - 32px)); transform: translateX(-50%); }
+.dashboard-sessions-panel { overflow: visible; }
+.dashboard-today-action {
+  min-height: 28px;
+  padding: .25rem .5rem;
+  border: 1px solid var(--border-subtle);
+  border-radius: var(--radius-control);
+  color: var(--text-secondary);
+  font-size: .75rem;
+  font-weight: 650;
+  cursor: pointer;
+}
+.dashboard-today-action:hover { background: var(--surface-hover); color: var(--text-primary); }
+.dashboard-today-action:focus-visible { outline: 2px solid var(--brand-accent-muted); outline-offset: 2px; }
 .dashboard-filtered-sessions { min-height: 244px; }
 .dashboard-sessions-panel > .dashboard-text-action { padding-left: 1.125rem; }
 .dashboard-date { cursor: pointer; }
@@ -8256,13 +8416,13 @@ select:not([multiple]):not([size]) {
 .portal-primary-nav__item:focus-visible, .portal-header-actions button:focus-visible, .portal-brand:focus-visible, .portal-action-list button:focus-visible { outline: 2px solid var(--brand-accent); outline-offset: 3px; }
 .portal-eyebrow, .portal-phase-label { font-size: var(--font-size-meta); }
 .portal-action-list { gap: .35rem; }
-.portal-action-list > li { min-height: 46px; padding: .5rem .6rem; border: 0; border-radius: var(--radius-control); background: var(--surface-card); }
+.portal-action-list > li { min-height: 46px; padding: .5rem .6rem; border: 1px solid var(--divider-inner); border-radius: var(--radius-control); background: var(--surface-card); }
 .portal-action-list > li:hover { background: var(--surface-hover); }
 .portal-action-list > li > span, .portal-action-list svg { flex: 0 0 auto; }
 .portal-appointments-grid { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); gap: var(--space-component); align-items: start; }
 .portal-shell:not(.portal-onboarding) .card .portal-appointments-heading { color: var(--brand-accent); }
 .portal-appointments-card > .portal-appointments-grid { gap: var(--space-component); }
-.portal-session-row { padding: .875rem .5rem; border-color: var(--divider); border-radius: var(--radius-control); transition: background-color 150ms ease; }
+.portal-session-row { padding: .875rem .75rem; border: 1px solid var(--divider-inner); border-radius: var(--radius-control); transition: background-color 150ms ease; }
 .portal-session-row:hover { background: var(--surface-selected); }
 .portal-session-row > div:first-child > div:first-child { min-width: 0; }
 .portal-session-row > div:first-child > div:first-child > div:nth-child(2) { flex-wrap: wrap; gap: .4rem .8rem; }
