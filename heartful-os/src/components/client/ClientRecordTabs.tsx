@@ -139,16 +139,14 @@ export default function ClientRecordTabs({
   emailLogs: EmailLog[];
   defaultTab?: Tab;
 }) {
-  const [tab, setTab] = useState<Tab>(defaultTab ?? "History");
+  const [tabSelection, setTabSelection] = useState<{ tab: Tab; defaultTab?: Tab }>({
+    tab: defaultTab ?? "History",
+    defaultTab,
+  });
+  const tab = tabSelection.defaultTab === defaultTab ? tabSelection.tab : defaultTab ?? "History";
+  const setTab = (next: Tab) => setTabSelection({ tab: next, defaultTab });
   const [aiChatMessages, setAiChatMessages] = useState(aiConversationMessages);
   const journeyProgress = getClientJourneyProgress(client, milestones);
-
-  // Sync tab state when the URL ?tab= param changes (e.g. from ClientActionCard
-  // links or any other Link that navigates to this page with a tab param).
-  useEffect(() => {
-    if (defaultTab && defaultTab !== tab) setTab(defaultTab);
-  // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [defaultTab]);
 
   // Whenever the practitioner is looking at (or lands directly on, via the
   // dashboard's unread-messages link) this client's Messages tab, clear the
@@ -191,7 +189,7 @@ export default function ClientRecordTabs({
               <h2 className="journey-icon-heading text-base font-semibold text-ink-900"><ListChecks aria-hidden="true" />Journey stages</h2>
               <span className="text-xs text-ink-400">{journeyProgress.completed} of {journeyProgress.total} stages complete</span>
             </div>
-            <JourneyStageNav clientId={client.id} sessions={sessions} milestones={milestones} activePhase={phaseForStatus(client.status, client.current_phase)} current="post_journey_check_in" />
+            <JourneyStageNav clientId={client.id} sessions={sessions} milestones={milestones} activePhase={phaseForStatus(client.status, client.current_phase)} />
           </section>
           <JourneyTab
             clientId={client.id}

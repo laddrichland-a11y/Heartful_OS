@@ -1,23 +1,14 @@
 import AppShell from "@/components/layout/AppShell";
 import { getClients, getOnHoldClients, getMilestones, getReferralSources, getSessions } from "@/lib/data";
 import Link from "next/link";
-import { cx } from "@/lib/utils";
-import { ClientStatus } from "@/lib/types";
+import { cx, isActiveClient, isAwaitingIntegrationClient, isCompletedClient } from "@/lib/utils";
 import ClientList from "@/components/client/ClientList";
 import NewClientButton from "@/components/client/NewClientButton";
 import { PauseCircle } from "@/components/ui/HeartfulIcon";
 
 export const dynamic = "force-dynamic";
 
-function isCompletedClient(status: ClientStatus) {
-  return status === "journey_complete" || status === "journey_closed" || status === "inactive";
-}
-
-type ClientFilter = "all" | "active" | "awaiting_integration" | "completed";
-
-function isAwaitingIntegrationClient(status: ClientStatus) {
-  return status === "journey_complete" || status === "check_in_complete" || status === "integration_1_complete";
-}
+type ClientFilter = "all" | "active" | "awaiting_integration" | "completed" | "inactive";
 
 export default async function ClientsPage({
   searchParams,
@@ -27,7 +18,7 @@ export default async function ClientsPage({
   const { view, new: newClient, filter } = await searchParams;
   const showingHeld = view === "hold";
   const selectedFilter: ClientFilter =
-    filter === "active" || filter === "awaiting_integration" || filter === "completed" ? filter : "all";
+    filter === "active" || filter === "awaiting_integration" || filter === "completed" || filter === "inactive" ? filter : "all";
 
   const [allClients, held, referralSources] = await Promise.all([
     getClients(),
@@ -35,18 +26,21 @@ export default async function ClientsPage({
     getReferralSources(),
   ]);
   const completedCount = allClients.filter((client) => isCompletedClient(client.status)).length;
-  const activeCount = allClients.length - completedCount;
+  const activeCount = allClients.filter((client) => isActiveClient(client.status)).length;
   const awaitingIntegrationCount = allClients.filter((client) => isAwaitingIntegrationClient(client.status)).length;
+  const inactiveCount = allClients.filter((client) => client.status === "inactive").length;
   const filterOptions: Array<{ key: ClientFilter; label: string; count: number; href: string }> = [
     { key: "all", label: "All", count: allClients.length, href: "/clients" },
     { key: "active", label: "Active", count: activeCount, href: "/clients?filter=active" },
     { key: "awaiting_integration", label: "Awaiting Integration", count: awaitingIntegrationCount, href: "/clients?filter=awaiting_integration" },
     { key: "completed", label: "Completed", count: completedCount, href: "/clients?filter=completed" },
+    { key: "inactive", label: "Inactive", count: inactiveCount, href: "/clients?filter=inactive" },
   ];
   const filteredClients = allClients.filter((client) => {
-    if (selectedFilter === "active") return !isCompletedClient(client.status);
+    if (selectedFilter === "active") return isActiveClient(client.status);
     if (selectedFilter === "awaiting_integration") return isAwaitingIntegrationClient(client.status);
     if (selectedFilter === "completed") return isCompletedClient(client.status);
+    if (selectedFilter === "inactive") return client.status === "inactive";
     return true;
   });
   const clients = showingHeld ? held : filteredClients;
@@ -142,6 +136,8 @@ export default async function ClientsPage({
                 ? "No clients are awaiting integration."
               : selectedFilter === "completed"
                 ? "No completed clients."
+                : selectedFilter === "inactive"
+                  ? "No inactive clients."
                 : "No clients yet."
         }
       />

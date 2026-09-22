@@ -34,12 +34,13 @@ export default function JourneyProgressBar({
         {sorted.map((m, i) => {
           const completed = i < completedCount;
           const isCurrent = !subdued && i === currentIndex;
+          const label = m.milestone_key === "journey_complete" ? "Journey Day Complete" : m.label;
 
           return (
           <div key={m.id} className="group/step relative flex flex-1 items-center last:flex-none">
             <div
-              title={m.label}
-              aria-label={`${i + 1}. ${m.label}${completed ? ", completed" : isCurrent ? ", current stage" : ""}`}
+              title={label}
+              aria-label={`${i + 1}. ${label}${completed ? ", completed" : isCurrent ? ", current stage" : ""}`}
               aria-current={isCurrent ? "step" : undefined}
               className={cx(
                 "flex shrink-0 items-center justify-center rounded-full transition-colors",
@@ -64,7 +65,7 @@ export default function JourneyProgressBar({
               />
             )}
             <div className="pointer-events-none absolute bottom-full left-1/2 z-10 mb-2 -translate-x-1/2 whitespace-nowrap rounded bg-ink-900 px-2 py-1 text-xs text-white opacity-0 transition-opacity group-hover/step:opacity-100">
-              {i + 1}. {m.label}
+              {i + 1}. {label}
             </div>
           </div>
           );

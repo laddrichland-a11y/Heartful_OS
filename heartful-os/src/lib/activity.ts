@@ -283,7 +283,7 @@ export function buildClientActivity(input: {
         id: m.id,
         at: m.completed_at,
         kind: "milestone",
-        title: `Milestone reached: ${m.label}`,
+        title: `Milestone reached: ${m.milestone_key === "journey_complete" ? "Journey Day Complete" : m.label}`,
         tab: "Journey & AI",
       });
     }

@@ -2,7 +2,7 @@ import { createHash } from "crypto";
 import { store } from "@/lib/mock/store";
 import { nextId } from "@/lib/mock/seed";
 import { isFirebaseConfigured, getBucket } from "@/lib/firebaseAdmin";
-import { isGeneralPaperwork, isPastDue, phaseForStatus } from "@/lib/utils";
+import { isActiveClient, isAwaitingIntegrationClient, isGeneralPaperwork, isPastDue, phaseForStatus } from "@/lib/utils";
 import {
   allDocs,
   deleteDoc,
@@ -1786,23 +1786,9 @@ export async function updatePayment(
 // AGGREGATES — dashboard, reporting, search
 // ---------------------------------------------------------------------------
 
-const ACTIVE_STATUSES: ClientStatus[] = [
-  "inquiry",
-  "intake_scheduled",
-  "intake_complete",
-  "preparation",
-  "preparation_complete",
-  "journey_scheduled",
-  "check_in_complete",
-  "integration_1",
-  "integration_1_complete",
-  "integration_2",
-  "integration_2_complete", // still active until journey is formally closed
-];
-
 export async function getActiveClientCount(): Promise<number> {
   const clients = await getClients();
-  return clients.filter((client) => ACTIVE_STATUSES.includes(client.status)).length;
+  return clients.filter((client) => isActiveClient(client.status)).length;
 }
 
 export async function getDashboardSummary() {
@@ -1818,10 +1804,8 @@ export async function getDashboardSummary() {
     getPayments(),
     getReferralSources(),
   ]);
-  const activeClients = clients.filter((c) => ACTIVE_STATUSES.includes(c.status));
-  const awaitingIntegration = clients.filter(
-    (c) => c.status === "journey_complete" || c.status === "check_in_complete" || c.status === "integration_1_complete"
-  );
+  const activeClients = clients.filter((c) => isActiveClient(c.status));
+  const awaitingIntegration = clients.filter((c) => isAwaitingIntegrationClient(c.status));
   const urgencyReference = Date.now();
   const urgencyRank = (item: (typeof outstandingTasks)[number] | (typeof outstandingForms)[number]) => {
     if (item.status === "overdue") return 0;
@@ -1947,7 +1931,7 @@ export async function getReportsSummary(filter: ReportsFilter = {}) {
   const milestoneMap = new Map(allClients.map((client, index) => [client.id, milestonesByClient[index]]));
   const sessionMap = new Map(allClients.map((client, index) => [client.id, sessionsByClient[index]]));
   const clients = allClients.filter((client) => {
-    if (filter.status === "active" && !ACTIVE_STATUSES.includes(client.status)) return false;
+    if (filter.status === "active" && !isActiveClient(client.status)) return false;
     if (filter.status === "completed" && client.status !== "journey_closed") return false;
     if (filter.referral && filter.referral !== "all" && client.referral_source_id !== filter.referral) return false;
     return !filter.stage || filter.stage === "all" || phaseForStatus(client.status, client.current_phase) === filter.stage;
@@ -1991,7 +1975,7 @@ export async function getReportsSummary(filter: ReportsFilter = {}) {
     name: month.name,
     value: periodPayments.filter((payment) => payment.paid_at.startsWith(month.key)).reduce((sum, payment) => sum + payment.amount, 0),
     activeClients: clients.filter((client) => {
-      const isCurrentlyActive = ACTIVE_STATUSES.includes(client.status);
+      const isCurrentlyActive = isActiveClient(client.status);
       const hasHistoricalClosedJourney = client.status === "journey_closed";
       if ((!isCurrentlyActive && !hasHistoricalClosedJourney) || new Date(client.created_at).getTime() >= month.endAt) return false;
       const closedAt = closedAtByClient.get(client.id);
@@ -2012,7 +1996,7 @@ export async function getReportsSummary(filter: ReportsFilter = {}) {
     const closedDate = new Date(closedAt);
     return (!periodStart || closedDate >= periodStart) && closedDate <= periodEnd;
   }).length;
-  const activeClients = clients.filter((client) => ACTIVE_STATUSES.includes(client.status)).length;
+  const activeClients = clients.filter((client) => isActiveClient(client.status)).length;
   const averageCompletionRate = scopedMilestonesByClient.length
     ? Math.round(scopedMilestonesByClient.reduce((total, milestones) => total + (milestones.length ? milestones.filter((milestone) => milestone.completed).length / milestones.length : 0), 0) / scopedMilestonesByClient.length * 100)
     : 0;

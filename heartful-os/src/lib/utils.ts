@@ -212,8 +212,8 @@ export const STATUS_PHASE_MAP: Partial<Record<ClientStatus, JourneyPhase>> = {
   intake_scheduled: "intake",
   intake_complete: "preparation",
   preparation: "preparation",
-  preparation_complete: "preparation",
-  journey_scheduled: "preparation",
+  preparation_complete: "harm_reduction_session",
+  journey_scheduled: "harm_reduction_session",
   journey_complete: "post_journey_check_in",
   check_in_complete: "integration_1",
   integration_1: "integration_1",
@@ -225,6 +225,42 @@ export const STATUS_PHASE_MAP: Partial<Record<ClientStatus, JourneyPhase>> = {
 
 export function phaseForStatus(status: ClientStatus, fallback: JourneyPhase): JourneyPhase {
   return STATUS_PHASE_MAP[status] ?? fallback;
+}
+
+/** Journey Day complete is not the same as a closed client journey. */
+export function isCompletedClient(status: ClientStatus): boolean {
+  return status === "journey_closed";
+}
+
+export function isActiveClient(status: ClientStatus): boolean {
+  return status !== "journey_closed" && status !== "inactive";
+}
+
+export function isAwaitingIntegrationClient(status: ClientStatus): boolean {
+  return status === "journey_complete" || status === "check_in_complete" || status === "integration_1_complete";
+}
+
+export const CLIENT_JOURNEY_STAGE_OPTIONS = [
+  { value: "intake", label: "Intake" },
+  { value: "preparation", label: "Preparation" },
+  { value: "journey", label: "Journey Day" },
+  { value: "check_in", label: "12-Hour Check-In" },
+  { value: "integration", label: "Integration" },
+  { value: "growth_plan", label: "Growth Plan" },
+  { value: "completed", label: "Completed" },
+] as const;
+
+export type ClientJourneyStageFilter = (typeof CLIENT_JOURNEY_STAGE_OPTIONS)[number]["value"];
+
+export function clientJourneyStageForStatus(status: ClientStatus, phase: JourneyPhase): ClientJourneyStageFilter {
+  if (status === "journey_closed") return "completed";
+  if (status === "integration_2_complete") return "growth_plan";
+  const current = phaseForStatus(status, phase);
+  if (current === "post_journey_check_in") return "check_in";
+  if (current === "harm_reduction_session") return "journey";
+  if (current === "integration_1" || current === "integration_2") return "integration";
+  if (current === "closed") return "growth_plan";
+  return current;
 }
 
 /**
@@ -277,7 +313,10 @@ export function getClientJourneyProgress(
     total: JOURNEY_PROGRESS_STAGE_COUNT,
     phase,
     /** Inactive is a relationship status, never a journey-stage label. */
-    currentStageLabel: closed ? "Journey complete" : phaseLabel(phase),
+    currentStageLabel: closed ? "Journey complete" : [
+      "Intake", "Preparation", "Journey Day", "12-Hour Check-In",
+      "Integration Session 1", "Integration Session 2", "Growth Plan",
+    ][completed] ?? "Ready to close",
   };
 }
 

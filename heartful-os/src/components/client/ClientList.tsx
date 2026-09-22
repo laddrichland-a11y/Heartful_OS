@@ -6,10 +6,10 @@ import { Search, SlidersHorizontal } from "@/components/ui/HeartfulIcon";
 import JourneyProgressBar from "@/components/JourneyProgressBar";
 import FilterSelect from "@/components/client/FilterSelect";
 import { Client, ClientStatus, JourneyMilestone } from "@/lib/types";
-import { clientAvatarSrc, clientStatusBadgeClasses, cx, formatDate, initials } from "@/lib/utils";
+import { CLIENT_JOURNEY_STAGE_OPTIONS, clientAvatarSrc, clientJourneyStageForStatus, clientStatusBadgeClasses, cx, formatDate, initials, isCompletedClient, type ClientJourneyStageFilter } from "@/lib/utils";
 import { useMemo, useState } from "react";
 
-type StageFilter = "all" | "intake" | "preparation" | "journey" | "integration";
+type StageFilter = "all" | ClientJourneyStageFilter;
 type PaymentFilter = "all" | "paid" | "balance";
 type PortalFilter = "all" | "enabled" | "not_enabled";
 type SessionFilter = "all" | "scheduled" | "not_scheduled";
@@ -27,7 +27,7 @@ const CLIENT_LIST_STATUS_LABELS: Record<ClientStatus, string> = {
   intake_complete: "Intake",
   preparation: "Preparation",
   preparation_complete: "Preparation",
-  journey_scheduled: "Journey",
+  journey_scheduled: "Journey Day",
   journey_complete: "Awaiting Integration",
   check_in_complete: "Check-in",
   integration_1: "Integration 1",
@@ -38,39 +38,36 @@ const CLIENT_LIST_STATUS_LABELS: Record<ClientStatus, string> = {
   inactive: "Inactive",
 };
 
-function isCompletedClient(status: ClientStatus) {
-  return status === "journey_complete" || status === "journey_closed" || status === "inactive";
-}
-
 function clientActionLabel(status: ClientStatus) {
-  if (isCompletedClient(status)) return "View client →";
-  if (status === "intake_scheduled" || status === "intake_complete") return "Open intake →";
-  if (status === "preparation" || status === "preparation_complete") return "Continue preparation →";
-  if (status === "journey_scheduled") return "Open journey →";
-  if (status === "check_in_complete") return "Review check-in →";
+  if (isCompletedClient(status) || status === "inactive") return "View client →";
+  if (status === "inquiry" || status === "intake_scheduled") return "Open intake →";
+  if (status === "intake_complete" || status === "preparation") return "Continue preparation →";
+  if (status === "preparation_complete" || status === "journey_scheduled") return "Open Journey Day →";
+  if (status === "journey_complete") return "Review check-in →";
+  if (status === "check_in_complete") return "Continue integration →";
+  if (status === "integration_2_complete") return "Open growth plan →";
   if (status.startsWith("integration")) return "Continue integration →";
   return "Open client →";
 }
 
-function stageForStatus(status: ClientStatus): Exclude<StageFilter, "all"> {
-  if (status === "inquiry" || status.startsWith("intake")) return "intake";
-  if (status.startsWith("preparation")) return "preparation";
-  if (status === "journey_scheduled" || status === "journey_complete" || status === "journey_closed") {
-    return "journey";
-  }
-  return "integration";
+function clientStageHref(client: Client): string {
+  const base = `/clients/${client.id}`;
+  if (client.status === "inactive" || isCompletedClient(client.status)) return base;
+  const stage = clientJourneyStageForStatus(client.status, client.current_phase);
+  if (stage === "check_in") return `${base}?tab=${encodeURIComponent("Journey & AI")}#check-in`;
+  const path = {
+    intake: "intake",
+    preparation: "preparation",
+    journey: "journey-day",
+    integration: client.status === "integration_2" || client.status === "integration_1_complete" ? "integration-2" : "integration-1",
+    growth_plan: "growth-plan",
+    completed: "",
+  }[stage];
+  return path ? `${base}/${path}` : base;
 }
 
 const controlClass =
   "h-9 rounded-lg border border-ink-100 bg-[var(--surface-control)] text-sm text-ink-600 outline-none transition-colors hover:border-ink-200 focus:border-clay-300 focus:ring-2 focus:ring-clay-100";
-
-const STAGE_OPTIONS = [
-  { value: "all", label: "Stage" },
-  { value: "intake", label: "Intake" },
-  { value: "preparation", label: "Preparation" },
-  { value: "journey", label: "Journey" },
-  { value: "integration", label: "Integration" },
-];
 
 const PAYMENT_OPTIONS = [
   { value: "all", label: "Any payment status" },
@@ -129,7 +126,7 @@ export default function ClientList({ items, emptyMessage }: { items: ClientListI
       ) {
         return false;
       }
-      if (stage !== "all" && stageForStatus(client.status) !== stage) return false;
+      if (stage !== "all" && clientJourneyStageForStatus(client.status, client.current_phase) !== stage) return false;
       if (referral !== "all" && client.referral_source_id !== referral) return false;
 
       const paidInFull = Boolean(client.package_value && (client.amount_paid ?? 0) >= client.package_value);
@@ -180,11 +177,14 @@ export default function ClientList({ items, emptyMessage }: { items: ClientListI
         <FilterSelect
           ariaLabel="Stage"
           value={stage}
-          options={STAGE_OPTIONS}
+          options={CLIENT_JOURNEY_STAGE_OPTIONS}
           onChange={(value) => setStage(value as StageFilter)}
           active={stage !== "all"}
-          className="w-full lg:w-40 lg:shrink-0"
-          menuClassName="left-auto right-0 w-40"
+          placeholder="Stage"
+          menuLabel="Stage"
+          clearValue="all"
+          className="w-full lg:w-44 lg:shrink-0"
+          menuClassName="left-auto right-0 w-[232px]"
         />
 
         <FilterSelect
@@ -267,7 +267,7 @@ export default function ClientList({ items, emptyMessage }: { items: ClientListI
             return (
               <Link
                 key={client.id}
-                href={`/clients/${client.id}`}
+                href={clientStageHref(client)}
                 className={cx(
                   "group/card card block border border-ink-100 p-4 transition-colors hover:border-ink-200 hover:bg-ink-50",
                   client.on_hold_at && "opacity-75"
