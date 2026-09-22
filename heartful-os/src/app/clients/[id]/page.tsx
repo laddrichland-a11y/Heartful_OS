@@ -27,6 +27,7 @@ import { headers } from "next/headers";
 import ClientHeader from "@/components/client/ClientHeader";
 import ClientRecordTabs from "@/components/client/ClientRecordTabs";
 import ClientContextRail from "@/components/client/ClientContextRail";
+import ClientWorkspace from "@/components/client/ClientWorkspace";
 import { TABS, Tab } from "@/lib/utils";
 
 export const dynamic = "force-dynamic";
@@ -36,10 +37,10 @@ export default async function ClientPage({
   searchParams,
 }: {
   params: Promise<{ id: string }>;
-  searchParams: Promise<{ intro?: string; tab?: string }>;
+  searchParams: Promise<{ intro?: string; tab?: string; stage?: string }>;
 }) {
   const { id } = await params;
-  const { intro, tab: rawTab } = await searchParams;
+  const { intro, tab: rawTab, stage } = await searchParams;
   const tab = TABS.includes(rawTab as Tab) ? (rawTab as Tab) : undefined;
   const client = await getClient(id);
   if (!client) notFound();
@@ -94,7 +95,22 @@ export default async function ClientPage({
       <Link href="/clients" className="wn-back-link text-sm text-ink-400 hover:text-ink-700 flex items-center gap-1 mb-4">
         <ArrowLeft className="h-3.5 w-3.5" /> All Clients
       </Link>
-      <div className="wn-client-page-grid">
+      <ClientWorkspace rail={
+        <ClientContextRail
+          client={client}
+          sessions={sessions}
+          milestones={milestones}
+          documents={documents}
+          formSubmissions={formSubmissions}
+          tasks={tasks}
+          portalAssignments={portalAssignments}
+          checkIns={checkIns}
+          postIntegrationForms={postIntegrationForms}
+          transcripts={transcripts}
+          aiSummaries={aiSummaries}
+          messages={messages}
+        />
+      }>
         <div className="wn-client-primary">
           <ClientHeader
             client={client}
@@ -123,23 +139,10 @@ export default async function ClientPage({
             milestones={milestones}
             emailLogs={emailLogs}
             defaultTab={tab}
+            defaultStage={stage}
           />
         </div>
-        <ClientContextRail
-          client={client}
-          sessions={sessions}
-          milestones={milestones}
-          documents={documents}
-          formSubmissions={formSubmissions}
-          tasks={tasks}
-          portalAssignments={portalAssignments}
-          checkIns={checkIns}
-          postIntegrationForms={postIntegrationForms}
-          transcripts={transcripts}
-          aiSummaries={aiSummaries}
-          messages={messages}
-        />
-      </div>
+      </ClientWorkspace>
     </AppShell>
   );
 }

@@ -2400,6 +2400,10 @@ button:not([class~="rounded"]):not([class*="rounded-"]) {
   background: #fff !important;
 }
 
+/* Stage links return the practitioner to the complete Journey navigator,
+   rather than landing partway through a workspace below it. */
+.wellnest-client-screen .journey-stages-card { scroll-margin-top: 1rem; }
+
 /* Journey workspaces use the shared 12px metadata floor as their minimum. */
 .wellnest-client-screen .client-eyebrow,
 .wellnest-client-screen .badge,
@@ -4447,6 +4451,69 @@ textarea {
 .wellnest-client-screen .wn-client-page-grid {
   grid-template-columns: minmax(0, 1fr) 260px;
   gap: 16px;
+  position: relative;
+  transition: grid-template-columns 180ms ease, column-gap 180ms ease;
+}
+
+.wellnest-client-screen .wn-context-rail-frame {
+  min-width: 0;
+  overflow: hidden;
+  transition: opacity 140ms ease;
+}
+
+.wellnest-client-screen .wn-context-rail-frame > .wn-context-rail {
+  width: 260px;
+}
+
+.wellnest-client-screen .wn-context-rail-toggle {
+  position: absolute;
+  z-index: 2;
+  top: 10px;
+  right: calc(260px - 14px);
+  display: grid;
+  width: 28px;
+  height: 28px;
+  place-items: center;
+  border: 1px solid var(--divider);
+  border-radius: var(--radius-control);
+  background: var(--surface-control);
+  color: var(--text-secondary);
+  cursor: pointer;
+  transition: right 180ms ease, border-color 140ms ease, background-color 140ms ease, color 140ms ease;
+}
+
+.wellnest-client-screen .wn-context-rail-toggle .heartful-icon {
+  width: 16px;
+  height: 16px;
+  transform: scaleX(-1);
+}
+
+.wellnest-client-screen .wn-context-rail-toggle:hover {
+  border-color: var(--brand-accent-muted);
+  background: var(--surface-hover);
+  color: var(--text-primary);
+}
+
+.wellnest-client-screen .wn-context-rail-toggle:focus-visible {
+  outline: 2px solid var(--brand-accent);
+  outline-offset: 2px;
+}
+
+@media (min-width: 1001px) {
+  .wellnest-client-screen .wn-client-page-grid[data-context-collapsed="true"] {
+    grid-template-columns: minmax(0, 1fr) 0;
+    column-gap: 0;
+  }
+
+  .wellnest-client-screen .wn-client-page-grid[data-context-collapsed="true"] .wn-context-rail-frame {
+    height: 0;
+    opacity: 0;
+    visibility: hidden;
+  }
+
+  .wellnest-client-screen .wn-client-page-grid[data-context-collapsed="true"] .wn-context-rail-toggle {
+    right: 0;
+  }
 }
 
 .wellnest-client-screen .wn-context-rail {
@@ -4510,6 +4577,35 @@ textarea {
 @media (max-width: 1000px) {
   .wellnest-client-screen .wn-client-page-grid {
     grid-template-columns: minmax(0, 1fr);
+  }
+
+  .wellnest-client-screen .wn-context-rail-frame {
+    grid-row: 2;
+    overflow: visible;
+  }
+
+  .wellnest-client-screen .wn-context-rail-frame > .wn-context-rail {
+    width: auto;
+    grid-row: auto;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
+  .wellnest-client-screen .wn-context-rail-toggle {
+    display: none;
+  }
+}
+
+@media (max-width: 760px) {
+  .wellnest-client-screen .wn-context-rail-frame > .wn-context-rail {
+    grid-template-columns: 1fr;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .wellnest-client-screen .wn-client-page-grid,
+  .wellnest-client-screen .wn-context-rail-frame,
+  .wellnest-client-screen .wn-context-rail-toggle {
+    transition: none;
   }
 }
 

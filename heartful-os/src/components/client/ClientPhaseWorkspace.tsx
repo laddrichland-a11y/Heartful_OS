@@ -16,6 +16,7 @@ import {
   getReferralSources,
 } from "@/lib/data";
 import ClientContextRail from "@/components/client/ClientContextRail";
+import ClientWorkspace from "@/components/client/ClientWorkspace";
 import ClientHeader from "@/components/client/ClientHeader";
 import { headers } from "next/headers";
 
@@ -30,15 +31,16 @@ export default function ClientPhaseWorkspace({
   showClientHeader?: boolean;
 }) {
   return (
-    <div className="wn-client-page-grid">
+    <ClientWorkspace rail={
+      <Suspense fallback={<aside className="wn-context-rail" aria-label="Loading client context" />}>
+        <ClientPhaseContextRail clientId={clientId} />
+      </Suspense>
+    }>
       <div className="wn-client-primary">
         {showClientHeader && <ClientPhaseHeader clientId={clientId} />}
         {children}
       </div>
-      <Suspense fallback={<aside className="wn-context-rail" aria-label="Loading client context" />}>
-        <ClientPhaseContextRail clientId={clientId} />
-      </Suspense>
-    </div>
+    </ClientWorkspace>
   );
 }
 
