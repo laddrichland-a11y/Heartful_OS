@@ -76,10 +76,9 @@ import {
 import { SessionType } from "@/lib/types";
 import SummaryCard from "@/components/ai/SummaryCard";
 import { buildClientActivity, ActivityKind } from "@/lib/activity";
-import { JourneyStageNav } from "@/components/client/JourneyStageNav";
+import { JourneyStageNav, PHASE_LINKS, PhaseNavKey } from "@/components/client/JourneyStageNav";
 import CheckInWorkspace from "@/components/client/CheckInWorkspace";
 import MilestoneToggleBanner from "@/components/client/MilestoneToggleBanner";
-import PrepareMeCard from "@/components/client/PrepareMeCard";
 import JourneyAiSummaries from "@/components/client/JourneyAiSummaries";
 import ConfirmDialog from "@/components/ui/ConfirmDialog";
 
@@ -120,6 +119,7 @@ export default function ClientRecordTabs({
   milestones,
   emailLogs,
   defaultTab,
+  defaultStage,
 }: {
   client: Client;
   documents: ClientDocument[];
@@ -138,6 +138,7 @@ export default function ClientRecordTabs({
   milestones: JourneyMilestone[];
   emailLogs: EmailLog[];
   defaultTab?: Tab;
+  defaultStage?: string;
 }) {
   const [tabSelection, setTabSelection] = useState<{ tab: Tab; defaultTab?: Tab }>({
     tab: defaultTab ?? "History",
@@ -147,6 +148,9 @@ export default function ClientRecordTabs({
   const setTab = (next: Tab) => setTabSelection({ tab: next, defaultTab });
   const [aiChatMessages, setAiChatMessages] = useState(aiConversationMessages);
   const journeyProgress = getClientJourneyProgress(client, milestones);
+  const viewingStage = PHASE_LINKS.some((stage) => stage.phase === defaultStage)
+    ? defaultStage as PhaseNavKey
+    : undefined;
 
   // Whenever the practitioner is looking at (or lands directly on, via the
   // dashboard's unread-messages link) this client's Messages tab, clear the
@@ -184,12 +188,12 @@ export default function ClientRecordTabs({
       {tab === "Sessions" && <SessionsTab clientId={client.id} sessions={sessions} />}
       {tab === "Journey & AI" && (
         <>
-          <section className="client-surface journey-stages-card mb-5 px-5 py-4">
+          <section id="journey-stages" className="client-surface journey-stages-card mb-5 px-5 py-4">
             <div className="mb-3 flex flex-wrap items-end justify-between gap-3">
               <h2 className="journey-icon-heading text-base font-semibold text-ink-900"><ListChecks aria-hidden="true" />Journey stages</h2>
               <span className="text-xs text-ink-400">{journeyProgress.completed} of {journeyProgress.total} stages complete</span>
             </div>
-            <JourneyStageNav clientId={client.id} sessions={sessions} milestones={milestones} activePhase={phaseForStatus(client.status, client.current_phase)} />
+            <JourneyStageNav clientId={client.id} sessions={sessions} milestones={milestones} activePhase={phaseForStatus(client.status, client.current_phase)} current={viewingStage} />
           </section>
           <JourneyTab
             clientId={client.id}
@@ -1010,10 +1014,6 @@ function JourneyTab({
       .filter((session) => session.session_type === "check_in_12hr")
       .sort((a, b) => (b.scheduled_at ?? "").localeCompare(a.scheduled_at ?? ""))[0];
   const checkInMilestone = milestones.find((milestone) => milestone.milestone_key === "check_in_12hr_complete");
-  const checkInBrief = aiSummaries.find((summary) =>
-    summary.summary_type === "prepare_me_briefing" &&
-    (checkInSession ? summary.session_id === checkInSession.id : !summary.session_id && summary.stage_label === "12-Hour Check-In")
-  );
 
   return (
     <>
@@ -1024,13 +1024,7 @@ function JourneyTab({
           label="12-Hour Check-In"
           meta="Phase 4 · 12-hour check-in"
           initialCompleted={checkInMilestone?.completed ?? false}
-        />
-        <PrepareMeCard
-          clientId={clientId}
-          sessionTypeLabel="12-Hour Check-In"
-          clientName={clientName}
-          sessionId={checkInSession?.id}
-          existing={checkInBrief}
+          prepareMeSessionId={checkInSession?.id}
         />
         <CheckInWorkspace
           clientId={clientId}

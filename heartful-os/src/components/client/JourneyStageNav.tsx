@@ -1,4 +1,7 @@
+"use client";
+
 import Link from "next/link";
+import { useEffect } from "react";
 import { JourneyMilestone, Session } from "@/lib/types";
 import { formatDate } from "@/lib/utils";
 import { Check } from "@/components/ui/HeartfulIcon";
@@ -14,6 +17,14 @@ export const PHASE_LINKS: { phase: PhaseNavKey; label: string; href: string; ses
   { phase: "integration_2", label: "Integration 2", href: "integration-2", sessionType: "integration_2", milestoneKey: "integration_2_complete" },
   { phase: "growth_action_plan", label: "Growth Plan", href: "growth-plan", milestoneKey: "growth_action_plan_complete" },
 ];
+
+function headerIsExpanded(clientId: string) {
+  return window.sessionStorage.getItem(`heartful:client-header:${clientId}:expanded`) !== "false";
+}
+
+function stageScrollKey(clientId: string) {
+  return `heartful:stage-scroll:${clientId}`;
+}
 
 export function getJourneyStageProgress(milestones: JourneyMilestone[]) {
   const closed = milestones.some((milestone) => milestone.milestone_key === "journey_closed" && milestone.completed);
@@ -35,6 +46,21 @@ export function JourneyStageNav({ clientId, sessions, milestones, activePhase, c
   const closed = milestones.some((milestone) => milestone.milestone_key === "journey_closed" && milestone.completed);
   const firstIncomplete = PHASE_LINKS.find((stage) => !(stage.phase === "growth_action_plan" && closed) && !milestones.some((milestone) => milestone.milestone_key === stage.milestoneKey && milestone.completed))?.phase;
 
+  useEffect(() => {
+    const savedPosition = window.sessionStorage.getItem(stageScrollKey(clientId));
+    if (!savedPosition) return;
+    window.sessionStorage.removeItem(stageScrollKey(clientId));
+    const scrollTop = savedPosition === "top" ? 0 : Number(savedPosition);
+    if (Number.isFinite(scrollTop)) window.setTimeout(() => window.scrollTo({ top: scrollTop, behavior: "auto" }), 80);
+  }, [clientId, current]);
+
+  function saveStageNavigationPosition() {
+    window.sessionStorage.setItem(
+      stageScrollKey(clientId),
+      headerIsExpanded(clientId) ? String(window.scrollY) : "top",
+    );
+  }
+
   return (
     <div className="journey-stage-nav" aria-label="Journey stages">
       <ol>
@@ -44,7 +70,7 @@ export function JourneyStageNav({ clientId, sessions, milestones, activePhase, c
           const viewing = current === stage.phase;
           const isCurrent = activePhase === stage.phase || (!PHASE_LINKS.some((item) => item.phase === activePhase) && firstIncomplete === stage.phase);
           const href = stage.phase === "post_journey_check_in"
-            ? `/clients/${clientId}?tab=${encodeURIComponent("Journey & AI")}#check-in`
+            ? `/clients/${clientId}?tab=${encodeURIComponent("Journey & AI")}&stage=${stage.phase}`
             : session
               ? `/clients/${clientId}/sessions/${session.id}`
               : `/clients/${clientId}/${stage.href}`;
@@ -60,6 +86,8 @@ export function JourneyStageNav({ clientId, sessions, milestones, activePhase, c
                 aria-current={viewing ? "step" : undefined}
                 aria-label={`${stage.label}: ${viewing ? "viewing stage" : completed ? "completed" : isCurrent ? "current stage" : "upcoming"}`}
                 className="journey-stage-link"
+                scroll={false}
+                onClick={saveStageNavigationPosition}
               >
                 <span className="journey-stage-marker" aria-hidden="true">
                   {completed ? <Check className="h-3.5 w-3.5" strokeWidth={2.5} /> : index + 1}

@@ -6,7 +6,7 @@ import { Search, SlidersHorizontal } from "@/components/ui/HeartfulIcon";
 import JourneyProgressBar from "@/components/JourneyProgressBar";
 import FilterSelect from "@/components/client/FilterSelect";
 import { Client, ClientStatus, JourneyMilestone } from "@/lib/types";
-import { CLIENT_JOURNEY_STAGE_OPTIONS, clientAvatarSrc, clientJourneyStageForStatus, clientStatusBadgeClasses, cx, formatDate, initials, isCompletedClient, type ClientJourneyStageFilter } from "@/lib/utils";
+import { CLIENT_JOURNEY_STAGE_OPTIONS, clientAvatarSrc, clientJourneyStageForStatus, clientJourneyWorkspaceHref, clientStatusBadgeClasses, cx, formatDate, initials, isCompletedClient, type ClientJourneyStageFilter } from "@/lib/utils";
 import { useMemo, useState } from "react";
 
 type StageFilter = "all" | ClientJourneyStageFilter;
@@ -51,19 +51,7 @@ function clientActionLabel(status: ClientStatus) {
 }
 
 function clientStageHref(client: Client): string {
-  const base = `/clients/${client.id}`;
-  if (client.status === "inactive" || isCompletedClient(client.status)) return base;
-  const stage = clientJourneyStageForStatus(client.status, client.current_phase);
-  if (stage === "check_in") return `${base}?tab=${encodeURIComponent("Journey & AI")}#check-in`;
-  const path = {
-    intake: "intake",
-    preparation: "preparation",
-    journey: "journey-day",
-    integration: client.status === "integration_2" || client.status === "integration_1_complete" ? "integration-2" : "integration-1",
-    growth_plan: "growth-plan",
-    completed: "",
-  }[stage];
-  return path ? `${base}/${path}` : base;
+  return clientJourneyWorkspaceHref(client);
 }
 
 const controlClass =

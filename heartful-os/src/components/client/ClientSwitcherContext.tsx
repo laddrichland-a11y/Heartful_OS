@@ -5,6 +5,7 @@ import { createContext, useContext } from "react";
 export type ClientSwitcherOption = {
   id: string;
   fullName: string;
+  workspaceHref: string;
 };
 
 type ClientSwitcherValue = {

@@ -14,6 +14,8 @@ export default function AiGenerateButton({
   icon = "sparkles",
   className,
   disabled = false,
+  buttonId,
+  onError,
 }: {
   clientId: string;
   summaryType: AiSummaryType;
@@ -23,12 +25,15 @@ export default function AiGenerateButton({
   icon?: "sparkles" | "document";
   className?: string;
   disabled?: boolean;
+  buttonId?: string;
+  onError?: () => void;
 }) {
   const router = useRouter();
   const [busy, setBusy] = useState(false);
 
   return (
     <button
+      id={buttonId}
       disabled={busy || disabled}
       onClick={async () => {
         setBusy(true);
@@ -39,8 +44,11 @@ export default function AiGenerateButton({
             body: JSON.stringify({ clientId, summaryType, ...extra }),
           });
           const json = await res.json();
-          if (json.summary && onDone) onDone(json.summary);
+          if (!res.ok || !json.summary) throw new Error("AI generation failed");
+          if (onDone) onDone(json.summary);
           router.refresh();
+        } catch {
+          onError?.();
         } finally {
           setBusy(false);
         }

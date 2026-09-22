@@ -57,10 +57,13 @@ const SESSION_MILESTONE_KEY: Partial<Record<SessionType, string>> = {
 
 export default async function SessionDetailPage({
   params,
+  searchParams,
 }: {
   params: Promise<{ id: string; sessionId: string }>;
+  searchParams: Promise<{ prepare?: string }>;
 }) {
   const { id, sessionId } = await params;
+  const { prepare } = await searchParams;
   const [client, session] = await Promise.all([getClient(id), getSession(sessionId)]);
   if (!client || !session) notFound();
 
@@ -152,6 +155,7 @@ export default async function SessionDetailPage({
         initialTranscript={session.transcript ?? ""}
         initialRecordings={recordings}
         portalUrl={portalUrl}
+        autoPrepare={prepare === "1"}
       />
       </ClientPhaseWorkspace>
     </AppShell>

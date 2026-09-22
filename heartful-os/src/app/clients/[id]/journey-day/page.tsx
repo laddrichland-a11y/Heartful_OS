@@ -11,15 +11,15 @@ import {
   getRecordings,
   pickPhaseSession,
 } from "@/lib/data";
-import { notFound } from "next/navigation";
+import { notFound, redirect } from "next/navigation";
 import { DOCUMENT_LABELS } from "@/lib/types";
 import JourneyDayWorkspace from "@/components/client/JourneyDayWorkspace";
 import MilestoneToggleBanner from "@/components/client/MilestoneToggleBanner";
 import ClientPhaseNav from "@/components/client/ClientPhaseNav";
-import PhasePrepareMe from "@/components/client/PhasePrepareMe";
 import JourneyPrepEmailButton from "@/components/client/JourneyPrepEmailButton";
 import JourneySummaryTextButton from "@/components/client/JourneySummaryTextButton";
 import ClientPhaseWorkspace from "@/components/client/ClientPhaseWorkspace";
+import PhasePrepareMe from "@/components/client/PhasePrepareMe";
 import { headers } from "next/headers";
 
 export const dynamic = "force-dynamic";
@@ -49,6 +49,8 @@ export default async function JourneyDayPage({ params }: { params: Promise<{ id:
   // back to the most recent one by date (completed/cancelled) — see
   // pickPhaseSession, which every stage page now shares.
   const session = pickPhaseSession(sessions, "harm_reduction_support");
+  const canonicalSessionHref = session ? `/clients/${id}/sessions/${session.id}` : undefined;
+  if (canonicalSessionHref) redirect(canonicalSessionHref);
   const notes = session ? await getSessionNotes(session.id) : [];
   const recordings = session ? await getRecordings(id, session.id) : [];
   const milestone = milestones.find((m) => m.milestone_key === "journey_complete");
@@ -68,7 +70,7 @@ export default async function JourneyDayPage({ params }: { params: Promise<{ id:
 
   return (
     <AppShell title={client.full_name} variant="wellnest-client">
-      <ClientPhaseWorkspace clientId={id}>
+      <ClientPhaseWorkspace clientId={id} showClientHeader>
       <ClientPhaseNav clientId={id} current="harm_reduction_session" />
       <div className="mb-4 flex items-center justify-end gap-3">
         <div className="flex items-center gap-2">

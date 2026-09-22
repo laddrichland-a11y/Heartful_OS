@@ -4,7 +4,7 @@ import { useState } from "react";
 import ClientAvatarImage from "@/components/client/ClientAvatarImage";
 import { CalendarDays, CheckCircle2, ChevronDown, ChevronUp, CircleDollarSign, KeyRound, Mail, PauseCircle, Phone, UserRound } from "@/components/ui/HeartfulIcon";
 import { Client, JourneyMilestone, Profile, ReferralSource, Session } from "@/lib/types";
-import { clientAvatarSrc, cx, formatCurrency, formatDate, formatDateTime, initials } from "@/lib/utils";
+import { clientAvatarSrc, cx, formatCurrency, formatDate, formatDateTime, getNextScheduledSession, initials, phaseForStatus } from "@/lib/utils";
 import ClientStatusControl from "@/components/client/ClientStatusControl";
 import ClientHeaderActions from "@/components/client/ClientHeaderActions";
 import QuickNoteButton from "@/components/client/QuickNoteButton";
@@ -23,19 +23,29 @@ export default function ClientHeader({ client, sessions = [], referralSources, p
   portalUrl: string;
   autoOpenIntro?: boolean;
 }) {
-  const [expanded, setExpanded] = useState(true);
+  const headerStateKey = `heartful:client-header:${client.id}:expanded`;
+  const [expanded, setExpanded] = useState(() => {
+    if (typeof window === "undefined") return true;
+    return window.sessionStorage.getItem(headerStateKey) !== "false";
+  });
   const referral = referralSources.find((source) => source.id === client.referral_source_id);
   const avatarSrc = clientAvatarSrc(client.full_name);
   const balance = Math.max(0, (client.package_value ?? 0) - (client.amount_paid ?? 0));
   const now = new Date().toISOString();
-  const nextSession = sessions
-    .filter((session) => session.status === "scheduled" && session.scheduled_at && session.scheduled_at > now)
-    .sort((a, b) => (a.scheduled_at ?? "").localeCompare(b.scheduled_at ?? ""))[0];
+  const nextSession = getNextScheduledSession(
+    sessions,
+    now,
+    phaseForStatus(client.status, client.current_phase)
+  );
   const nextSessionLabel = nextSession ? formatDateTime(nextSession.scheduled_at) : "No session scheduled";
   const paymentLabel = balance > 0 ? `${formatCurrency(balance)} outstanding` : "Paid in full";
 
   function toggleExpanded() {
-    setExpanded((current) => !current);
+    setExpanded((current) => {
+      const next = !current;
+      window.sessionStorage.setItem(headerStateKey, String(next));
+      return next;
+    });
   }
 
   const introActionProps = {

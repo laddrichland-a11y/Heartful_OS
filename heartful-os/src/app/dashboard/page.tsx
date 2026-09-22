@@ -10,7 +10,7 @@ import {
 import ClientAvatarImage from "@/components/client/ClientAvatarImage";
 import Link from "next/link";
 import {
-  clientAvatarSrc, clientStatusBadgeClasses, cx, formatDateTime, initials, isPastDue, outstandingItemHref,
+  clientAvatarSrc, clientJourneyWorkspaceHref, clientStatusBadgeClasses, cx, formatDateTime, initials, isPastDue, outstandingItemHref,
   relativeDueLabel, SESSION_TYPE_LABELS,
 } from "@/lib/utils";
 import { STATUS_LABELS } from "@/lib/types";
@@ -77,7 +77,7 @@ export default async function DashboardPage() {
                 const agreement = agreementByClient.get(client.id);
                 const avatarSrc = clientAvatarSrc(client.full_name);
                 return (
-                  <Link key={client.id} href={`/clients/${client.id}`} className="dashboard-active-client">
+                  <Link key={client.id} href={clientJourneyWorkspaceHref(client)} className="dashboard-active-client">
                     <div className="dashboard-active-client-top">
                       <span className="dashboard-active-client-identity">
                         <span className="dashboard-active-client-avatar" aria-hidden="true">

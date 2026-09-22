@@ -1,4 +1,4 @@
-import { Client, ClientStatus, DocumentType, JourneyMilestone, JourneyPhase } from "@/lib/types";
+import { Client, ClientStatus, DocumentType, JourneyMilestone, JourneyPhase, Session } from "@/lib/types";
 import type { StaticImageData } from "next/image";
 import mayaChenAvatar from "../../public/images/clients/maya-chen.webp";
 import danielOrtizAvatar from "../../public/images/clients/daniel-ortiz.webp";
@@ -8,6 +8,60 @@ import sarahKleinAvatar from "../../public/images/clients/sarah-klein.webp";
 
 export function cx(...args: (string | false | null | undefined)[]) {
   return args.filter(Boolean).join(" ");
+}
+
+const SESSION_PHASE_ORDER: Partial<Record<Session["session_type"], number>> = {
+  intake_assessment: 0,
+  preparation: 1,
+  harm_reduction_support: 2,
+  check_in_12hr: 3,
+  integration_1: 4,
+  integration_2: 5,
+  other: 6,
+};
+
+const JOURNEY_PHASE_ORDER: Record<JourneyPhase, number> = {
+  intake: 0,
+  preparation: 1,
+  harm_reduction_session: 2,
+  post_journey_check_in: 3,
+  integration_1: 4,
+  integration_2: 5,
+  closed: 6,
+};
+
+/**
+ * Keep every client surface in agreement about the appointment to show.
+ * When a phase is supplied, do not skip an earlier outstanding journey step
+ * merely because a later session has a future date. Seeded and imported
+ * records can retain a "scheduled" status after their timestamp passes; the
+ * earliest outstanding stage remains the relevant next session in that case.
+ */
+export function getNextScheduledSession<
+  T extends Pick<Session, "status" | "scheduled_at" | "session_type">,
+>(sessions: T[], now = new Date().toISOString(), currentPhase?: JourneyPhase): T | undefined {
+  let scheduled = sessions.filter(
+    (session) => session.status === "scheduled" && Boolean(session.scheduled_at)
+  );
+
+  if (currentPhase) {
+    const currentOrder = JOURNEY_PHASE_ORDER[currentPhase];
+    const relevant = scheduled.filter(
+      (session) => (SESSION_PHASE_ORDER[session.session_type] ?? Number.POSITIVE_INFINITY) >= currentOrder
+    );
+    const earliestOutstandingOrder = Math.min(
+      ...relevant.map((session) => SESSION_PHASE_ORDER[session.session_type] ?? Number.POSITIVE_INFINITY)
+    );
+
+    if (Number.isFinite(earliestOutstandingOrder)) {
+      scheduled = relevant.filter(
+        (session) => SESSION_PHASE_ORDER[session.session_type] === earliestOutstandingOrder
+      );
+    }
+  }
+
+  scheduled.sort((a, b) => (a.scheduled_at ?? "").localeCompare(b.scheduled_at ?? ""));
+  return scheduled.find((session) => (session.scheduled_at ?? "") > now) ?? scheduled.at(-1);
 }
 
 // Client record tab definitions — kept here (not in ClientRecordTabs.tsx)
@@ -225,6 +279,48 @@ export const STATUS_PHASE_MAP: Partial<Record<ClientStatus, JourneyPhase>> = {
 
 export function phaseForStatus(status: ClientStatus, fallback: JourneyPhase): JourneyPhase {
   return STATUS_PHASE_MAP[status] ?? fallback;
+}
+
+/** The full client workspace route whose content matches the displayed phase. */
+export function clientJourneyWorkspaceHref(
+  client: Pick<Client, "id" | "status" | "current_phase">,
+  sessions: Session[] = [],
+): string {
+  const base = `/clients/${client.id}`;
+  const phase = phaseForStatus(client.status, client.current_phase);
+  const sessionType: Partial<Record<JourneyPhase, Session["session_type"]>> = {
+    intake: "intake_assessment",
+    preparation: "preparation",
+    harm_reduction_session: "harm_reduction_support",
+    integration_1: "integration_1",
+    integration_2: "integration_2",
+  };
+  const matchingType = sessionType[phase];
+  const matchingSession = matchingType
+    ? sessions.find((session) => session.session_type === matchingType && session.status === "scheduled") ??
+      sessions
+        .filter((session) => session.session_type === matchingType)
+        .sort((a, b) => (b.scheduled_at ?? "").localeCompare(a.scheduled_at ?? ""))[0]
+    : undefined;
+
+  if (matchingSession) return `${base}/sessions/${matchingSession.id}`;
+
+  switch (phase) {
+    case "intake":
+      return `${base}/intake`;
+    case "preparation":
+      return `${base}/preparation`;
+    case "harm_reduction_session":
+      return `${base}/journey-day`;
+    case "post_journey_check_in":
+      return `${base}?tab=${encodeURIComponent("Journey & AI")}&stage=post_journey_check_in`;
+    case "integration_1":
+      return `${base}/integration-1`;
+    case "integration_2":
+      return `${base}/integration-2`;
+    case "closed":
+      return `${base}/growth-plan`;
+  }
 }
 
 /** Journey Day complete is not the same as a closed client journey. */

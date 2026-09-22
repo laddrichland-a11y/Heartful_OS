@@ -1,4 +1,5 @@
 import { ReactNode, Suspense } from "react";
+import Link from "next/link";
 import {
   getAiSummaries,
   getCheckIns,
@@ -18,6 +19,7 @@ import {
 import ClientContextRail from "@/components/client/ClientContextRail";
 import ClientWorkspace from "@/components/client/ClientWorkspace";
 import ClientHeader from "@/components/client/ClientHeader";
+import { ArrowLeft } from "@/components/ui/HeartfulIcon";
 import { headers } from "next/headers";
 
 /** Keeps dedicated stage routes in the same two-column client workspace as the record page. */
@@ -37,6 +39,9 @@ export default function ClientPhaseWorkspace({
       </Suspense>
     }>
       <div className="wn-client-primary">
+        <Link href="/clients" className="wn-back-link mb-4 flex items-center gap-1 text-sm text-ink-400 hover:text-ink-700">
+          <ArrowLeft className="h-3.5 w-3.5" /> All Clients
+        </Link>
         {showClientHeader && <ClientPhaseHeader clientId={clientId} />}
         {children}
       </div>

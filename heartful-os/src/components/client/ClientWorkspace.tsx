@@ -47,6 +47,9 @@ export default function ClientWorkspace({ children, rail }: { children: ReactNod
           aria-expanded={!hidden}
         >
           {hidden ? <PanelLeftOpen aria-hidden="true" /> : <PanelLeftClose aria-hidden="true" />}
+          <span className="wn-context-rail-toggle-label">
+            {hidden ? "Show context panel" : "Hide context panel"}
+          </span>
         </button>
         <div id="client-context-panel" className="wn-context-rail-content" inert={hidden} aria-hidden={hidden}>
           {rail}

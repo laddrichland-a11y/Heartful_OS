@@ -6,13 +6,15 @@ import {
   getFormTemplates,
   getFormSubmissionsForClient,
   getMilestones,
+  getSessions,
+  pickPhaseSession,
 } from "@/lib/data";
-import { notFound } from "next/navigation";
+import { notFound, redirect } from "next/navigation";
 import PreparationWorkspace from "@/components/client/PreparationWorkspace";
 import MilestoneToggleBanner from "@/components/client/MilestoneToggleBanner";
 import ClientPhaseNav from "@/components/client/ClientPhaseNav";
-import PhasePrepareMe from "@/components/client/PhasePrepareMe";
 import ClientPhaseWorkspace from "@/components/client/ClientPhaseWorkspace";
+import PhasePrepareMe from "@/components/client/PhasePrepareMe";
 
 export const dynamic = "force-dynamic";
 
@@ -21,19 +23,23 @@ export default async function PreparationPage({ params }: { params: Promise<{ id
   const client = await getClient(id);
   if (!client) notFound();
 
-  const [summaries, documents, formTemplates, formSubmissions, milestones] = await Promise.all([
+  const [summaries, documents, formTemplates, formSubmissions, milestones, sessions] = await Promise.all([
     getAiSummaries(id, "journey_brief"),
     getDocuments(id),
     getFormTemplates(),
     getFormSubmissionsForClient(id),
     getMilestones(id),
+    getSessions(id),
   ]);
+
+  const session = pickPhaseSession(sessions, "preparation");
+  if (session) redirect(`/clients/${id}/sessions/${session.id}`);
 
   const milestone = milestones.find((m) => m.milestone_key === "preparation_complete");
 
   return (
     <AppShell title={client.full_name} variant="wellnest-client">
-      <ClientPhaseWorkspace clientId={id}>
+      <ClientPhaseWorkspace clientId={id} showClientHeader>
       <ClientPhaseNav clientId={id} current="preparation" />
       <MilestoneToggleBanner
         clientId={id}

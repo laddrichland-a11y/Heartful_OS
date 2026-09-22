@@ -97,6 +97,7 @@ export default function SessionDetailWorkspace({
   initialTranscript = "",
   initialRecordings = [],
   portalUrl,
+  autoPrepare = false,
 }: {
   clientId: string;
   clientName: string;
@@ -119,9 +120,8 @@ export default function SessionDetailWorkspace({
   initialTranscript?: string;
   initialRecordings?: Recording[];
   portalUrl: string;
+  autoPrepare?: boolean;
 }) {
-  const [prepareBusy, setPrepareBusy] = useState(false);
-  const [briefing, setBriefing] = useState<AiSummary | null>(null);
   // Auto-expand the most recent past briefing so it's immediately visible
   const [expandedPast, setExpandedPast] = useState<string | null>(pastBriefings[0]?.id ?? null);
   const [actionBusy, setActionBusy] = useState<"complete" | "cancel" | null>(null);
@@ -436,19 +436,6 @@ export default function SessionDetailWorkspace({
     setDeletingBriefingId(null);
   }
 
-  async function deleteBriefing() {
-    if (!briefing) return;
-    if (!confirm("Delete this briefing? This cannot be undone.")) return;
-    await deleteAiSummaryAction(briefing.id, clientId);
-    setBriefing(null);
-  }
-
-  async function saveBriefing(nextContent: Record<string, unknown>) {
-    if (!briefing) return;
-    await updateAiSummaryAction(briefing.id, clientId, nextContent);
-    setBriefing({ ...briefing, content: nextContent });
-  }
-
   async function savePastBriefing(summaryId: string, nextContent: Record<string, unknown>) {
     await updateAiSummaryAction(summaryId, clientId, nextContent);
     setLocalPastBriefings((prev) => prev.map((b) => (b.id === summaryId ? { ...b, content: nextContent } : b)));
@@ -473,26 +460,6 @@ export default function SessionDetailWorkspace({
       t.active &&
       !isGeneralPaperwork(t.document_type)
   );
-
-  async function prepareMe() {
-    setPrepareBusy(true);
-    try {
-      const res = await fetch("/api/ai/generate", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          clientId,
-          summaryType: "prepare_me_briefing",
-          sessionId: session.id,
-          sessionTypeLabel: label,
-        }),
-      });
-      const json = await res.json();
-      if (json.summary) setBriefing(json.summary as AiSummary);
-    } finally {
-      setPrepareBusy(false);
-    }
-  }
 
   async function generateCallSummary() {
     const combined = [manualNotes, transcript].filter(Boolean).join("\n\n---\n\n");
@@ -534,7 +501,7 @@ export default function SessionDetailWorkspace({
   }
 
   return (
-    <div className="session-detail-workspace max-w-5xl space-y-5">
+    <div className="session-detail-workspace w-full space-y-5">
       {milestoneKey && (
         <MilestoneToggleBanner
           clientId={clientId}
@@ -542,10 +509,14 @@ export default function SessionDetailWorkspace({
           label={label}
           meta={`${session.scheduled_at ? formatDateTime(session.scheduled_at) : "Date not scheduled"}${session.duration_minutes ? ` · ${session.duration_minutes} min` : ""}`}
           initialCompleted={milestoneCompleted}
+          prepareMeSessionId={session.id}
+          initialBriefing={pastBriefings[0]}
+          autoPrepare={autoPrepare}
         />
       )}
 
-      {/* Session header card */}
+      {/* Session header card — phase pages already have the stage workspace banner. */}
+      {!milestoneKey && (
       <div className="client-surface p-5">
         {!milestoneKey && <div className="flex items-start justify-between gap-4 mb-4">
           <div>
@@ -582,12 +553,19 @@ export default function SessionDetailWorkspace({
           )}
         </div>}
 
-        <div className={cx("session-brief-intro", !milestoneKey && "session-brief-intro--separated")}>
-          <div className="session-brief-intro-row">
-            <div className="session-brief-intro-copy">
-              <h3><Sparkles aria-hidden="true" /> AI Session Brief</h3>
-              <p className="mt-1 text-xs leading-5 text-ink-500">Key focus, context, and risks for this session.</p>
-            </div>
+        {(session.session_type === "harm_reduction_support" && practitionerName || isScheduled || pastCallSummaries.length > 0) && (
+          <div className="session-detail-actions">
+            {session.session_type === "harm_reduction_support" && practitionerName && (
+              <JourneyPrepEmailButton
+                clientId={clientId}
+                clientName={clientName}
+                clientEmail={clientEmail}
+                practitionerName={practitionerName}
+                practiceName={practiceName}
+                sessionScheduledAt={isScheduled ? session.scheduled_at : undefined}
+                followUpScheduledAt={followUpScheduledAt}
+              />
+            )}
             {(isScheduled || pastCallSummaries.length > 0) && (
               <details className="session-actions-menu">
                   <summary aria-label="More session actions" title="More session actions">
@@ -640,33 +618,9 @@ export default function SessionDetailWorkspace({
               </details>
             )}
           </div>
-        </div>
-        <div className="session-brief-footer-actions">
-          {session.session_type === "harm_reduction_support" && practitionerName && (
-            <JourneyPrepEmailButton
-              clientId={clientId}
-              clientName={clientName}
-              clientEmail={clientEmail}
-              practitionerName={practitionerName}
-              practiceName={practiceName}
-              sessionScheduledAt={isScheduled ? session.scheduled_at : undefined}
-              followUpScheduledAt={followUpScheduledAt}
-            />
-          )}
-          <button
-            disabled={prepareBusy}
-            onClick={prepareMe}
-            className="btn-primary text-sm px-4 py-2 flex items-center gap-2"
-          >
-            {prepareBusy ? (
-              <Loader2 className="h-4 w-4 animate-spin" />
-            ) : (
-              <FileText className="h-4 w-4" />
-            )}
-            {briefing ? "Regenerate" : "Generate Brief"}
-          </button>
-        </div>
+        )}
       </div>
+      )}
 
       {/* Journey Timing + Manual Notes (Journey Day only) */}
       {session.session_type === "harm_reduction_support" && (
@@ -968,19 +922,6 @@ export default function SessionDetailWorkspace({
         </div>
       )}
 
-      {/* Live briefing result */}
-      {briefing && (
-        <div>
-          <SummaryCard
-            title="AI Session Brief"
-            content={briefing.content}
-            model={briefing.model}
-            onDelete={deleteBriefing}
-            onSave={saveBriefing}
-          />
-        </div>
-      )}
-
       {/* Past briefings */}
       {localPastBriefings.length > 0 && (
         <div className="card p-4">
@@ -995,10 +936,18 @@ export default function SessionDetailWorkspace({
                   <button
                     onClick={() => setExpandedPast(expandedPast === pb.id ? null : pb.id)}
                     className="flex items-center gap-2 text-sm text-ink-500 hover:text-ink-800 py-1 text-left"
+                    aria-expanded={expandedPast === pb.id}
+                    aria-controls={`past-briefing-${pb.id}`}
                   >
                     <Clock className="h-3.5 w-3.5 shrink-0" />
                     <span>Briefing from {formatDateTime(pb.created_at)}</span>
-                    <span className="ml-2 text-xs">{expandedPast === pb.id ? "▲" : "▼"}</span>
+                    <ChevronDown
+                      className={cx(
+                        "ml-2 h-3.5 w-3.5 shrink-0 transition-transform",
+                        expandedPast === pb.id && "rotate-180"
+                      )}
+                      aria-hidden="true"
+                    />
                   </button>
                   <button
                     disabled={deletingBriefingId === pb.id}
@@ -1014,7 +963,7 @@ export default function SessionDetailWorkspace({
                   </button>
                 </div>
                 {expandedPast === pb.id && (
-                  <div className="mt-2">
+                  <div id={`past-briefing-${pb.id}`} className="mt-2">
                     <SummaryCard
                       title="AI Session Brief"
                       content={pb.content}

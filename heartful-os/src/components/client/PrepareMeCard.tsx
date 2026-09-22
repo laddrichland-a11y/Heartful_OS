@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import AiGenerateButton from "@/components/ai/AiGenerateButton";
 import { SessionBriefContent } from "@/components/ai/SummaryCard";
 import { AiSummary } from "@/lib/types";
@@ -22,17 +22,41 @@ export default function PrepareMeCard({
   clientName,
   sessionId,
   existing,
+  autoGenerate = false,
 }: {
   clientId: string;
   sessionTypeLabel: string;
   clientName?: string;
   sessionId?: string;
   existing?: AiSummary;
+  autoGenerate?: boolean;
 }) {
   const [briefing, setBriefing] = useState<AiSummary | undefined>(existing);
+  const [activated, setActivated] = useState(Boolean(existing));
+  const autoStarted = useRef(false);
+  const buttonId = `prepare-me-generate-${clientId}`;
+
+  useEffect(() => {
+    function generateBrief() {
+      setActivated(true);
+      window.requestAnimationFrame(() => {
+        document.getElementById(buttonId)?.click();
+        document.getElementById("prepare-me")?.scrollIntoView({ behavior: "smooth", block: "start" });
+      });
+    }
+
+    window.addEventListener(`heartful:prepare-me:${clientId}`, generateBrief);
+    if (autoGenerate && !autoStarted.current) {
+      autoStarted.current = true;
+      generateBrief();
+    }
+    return () => window.removeEventListener(`heartful:prepare-me:${clientId}`, generateBrief);
+  }, [autoGenerate, buttonId, clientId]);
+
+  if (!activated && !briefing) return <div id="prepare-me" aria-hidden="true" />;
 
   return (
-    <section className="client-surface ai-session-brief-shell mb-6" aria-label="AI Session Brief">
+    <section id="prepare-me" className="client-surface ai-session-brief-shell mb-6 scroll-mt-5" aria-label="AI Session Brief">
       <div className="ai-session-brief-shell-header">
         <div className="min-w-0">
           <h2>
@@ -46,6 +70,7 @@ export default function PrepareMeCard({
             summaryType="prepare_me_briefing"
             label={briefing ? "Regenerate" : "Generate Brief"}
             icon="document"
+            buttonId={buttonId}
             className="ai-session-brief-generate"
             extra={{ sessionTypeLabel, ...(sessionId ? { sessionId } : {}) }}
             onDone={(s) => setBriefing(s as unknown as AiSummary)}

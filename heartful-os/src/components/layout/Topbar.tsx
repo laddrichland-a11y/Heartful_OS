@@ -91,10 +91,10 @@ export default function Topbar({
     };
   }, [accountMenuOpen, viewMenuOpen]);
 
-  function goToClient(clientId: string) {
+  function goToClient(workspaceHref: string) {
     setClientMenuOpen(false);
     setClientSearch("");
-    router.push(`/clients/${clientId}`);
+    router.push(workspaceHref);
   }
 
   return (
@@ -143,7 +143,7 @@ export default function Topbar({
                               key={client.id}
                               role="option"
                               aria-selected={selected}
-                              onClick={() => goToClient(client.id)}
+                              onClick={() => goToClient(client.workspaceHref)}
                             >
                               <span className="topbar-client-avatar" aria-hidden="true">
                                 {initials(client.fullName)}

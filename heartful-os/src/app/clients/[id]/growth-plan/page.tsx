@@ -4,8 +4,8 @@ import { notFound } from "next/navigation";
 import GrowthActionPlanWorkspace from "@/components/client/GrowthActionPlanWorkspace";
 import MilestoneToggleBanner from "@/components/client/MilestoneToggleBanner";
 import ClientPhaseNav from "@/components/client/ClientPhaseNav";
-import PhasePrepareMe from "@/components/client/PhasePrepareMe";
 import ClientPhaseWorkspace from "@/components/client/ClientPhaseWorkspace";
+import PhasePrepareMe from "@/components/client/PhasePrepareMe";
 
 export const dynamic = "force-dynamic";
 
@@ -31,7 +31,7 @@ export default async function GrowthPlanPage({ params }: { params: Promise<{ id:
         meta="Phase 7 · Final step"
         initialCompleted={milestone?.completed ?? false}
       />
-      <PhasePrepareMe clientId={id} sessionTypeLabel="Growth Action Plan" />
+      <PhasePrepareMe clientId={id} sessionTypeLabel="Growth Plan" />
       <GrowthActionPlanWorkspace
         clientId={id}
         clientName={client.full_name}

@@ -6,27 +6,33 @@ import {
   getFormSubmissionsForClient,
   getAiSummaries,
   getMilestones,
+  getSessions,
+  pickPhaseSession,
 } from "@/lib/data";
-import { notFound } from "next/navigation";
+import { notFound, redirect } from "next/navigation";
 import IntegrationWorkspace from "@/components/client/IntegrationWorkspace";
 import MilestoneToggleBanner from "@/components/client/MilestoneToggleBanner";
 import ClientPhaseNav from "@/components/client/ClientPhaseNav";
-import PhasePrepareMe from "@/components/client/PhasePrepareMe";
 import ClientPhaseWorkspace from "@/components/client/ClientPhaseWorkspace";
+import PhasePrepareMe from "@/components/client/PhasePrepareMe";
 
 export const dynamic = "force-dynamic";
 
 export default async function Integration2Page({ params }: { params: Promise<{ id: string }> }) {
   const { id } = await params;
-  const [client, documents, formTemplates, formSubmissions, summaries, milestones] = await Promise.all([
+  const [client, documents, formTemplates, formSubmissions, summaries, milestones, sessions] = await Promise.all([
     getClient(id),
     getDocuments(id),
     getFormTemplates(),
     getFormSubmissionsForClient(id),
     getAiSummaries(id, "integration_summary"),
     getMilestones(id),
+    getSessions(id),
   ]);
   if (!client) notFound();
+
+  const session = pickPhaseSession(sessions, "integration_2");
+  if (session) redirect(`/clients/${id}/sessions/${session.id}`);
 
   const milestone = milestones.find((m) => m.milestone_key === "integration_2_complete");
 
