@@ -299,12 +299,35 @@ export async function deleteClientAction(clientId: string) {
 export async function addClientDocumentAction(
   clientId: string,
   documentType: DocumentType,
-  fileName?: string
+  fileName?: string,
+  title?: string
 ) {
-  const doc = await data.addClientDocument(clientId, documentType);
+  const filenameTitle = fileName?.split(/[\\/]/).pop()?.replace(/\.[^.]+$/, "").trim();
+  const documentTitle = title?.trim() || filenameTitle || "Other Document";
+  const doc = await data.addClientDocument(clientId, documentType, documentTitle);
   if (fileName) {
     await data.uploadDocumentVersion(doc.id, fileName);
   }
+  revalidatePath(`/clients/${clientId}`);
+  return { id: doc.id };
+}
+
+export async function renameClientDocumentAction(documentId: string, clientId: string, title: string) {
+  const document = await data.getDocument(documentId);
+  if (!document || document.client_id !== clientId) throw new Error("Document not found.");
+
+  const filenameTitle = document.versions[0]?.file_name?.split(/[\\/]/).pop()?.replace(/\.[^.]+$/, "").trim();
+  const documentTitle = title.trim() || filenameTitle || "Other Document";
+  const updated = await data.renameClientDocument(documentId, documentTitle);
+  revalidatePath(`/clients/${clientId}`);
+  return updated;
+}
+
+export async function deleteClientDocumentAction(documentId: string, clientId: string) {
+  const document = await data.getDocument(documentId);
+  if (!document || document.client_id !== clientId) throw new Error("Document not found.");
+
+  await data.deleteClientDocument(documentId);
   revalidatePath(`/clients/${clientId}`);
 }
 
@@ -396,6 +419,20 @@ export async function addClientQuickNoteAction(clientId: string, content: string
 
 export async function updateClientProfileAction(clientId: string, patch: Record<string, string>) {
   await data.updateClient(clientId, patch);
+  revalidatePath(`/clients/${clientId}`);
+}
+
+/** Stores a compact client portrait. The UI resizes images before sending them. */
+export async function updateClientAvatarAction(clientId: string, avatarUrl: string) {
+  const value = avatarUrl.trim();
+  if (!value.startsWith("data:image/") || value.length > 500_000) {
+    throw new Error("Choose a smaller JPG, PNG, or WebP image.");
+  }
+
+  await data.updateClient(clientId, { avatar_url: value });
+  revalidatePath("/dashboard");
+  revalidatePath("/clients");
+  revalidatePath("/copilot");
   revalidatePath(`/clients/${clientId}`);
 }
 
@@ -574,6 +611,7 @@ export async function toggleMilestoneAction(clientId: string, milestoneKey: stri
     // Auto-create a completed session record so the Sessions tab is never
     // empty after marking an activity complete from the activity page.
     await data.ensureSessionRecord(clientId, milestoneKey);
+    await data.syncJourneyProgressFromMilestones(clientId);
   } else {
     await data.uncompleteMilestone(clientId, milestoneKey);
   }
@@ -681,6 +719,12 @@ export async function markPortalWelcomeSeenAction(clientId: string) {
   await data.updateClient(clientId, { portal_welcome_seen_at: new Date().toISOString() });
 }
 
+export async function markPortalAgreementsOpenedAction(clientId: string) {
+  await data.markPortalAgreementsOpened(clientId);
+  revalidatePath("/dashboard");
+  revalidatePath(`/clients/${clientId}`);
+}
+
 export async function submitCheckInAction(
   clientId: string,
   fields: {
@@ -738,6 +782,24 @@ export async function completeTaskAction(taskId: string, clientId: string) {
   await data.completeTask(taskId);
   revalidatePath("/dashboard");
   revalidatePath(`/clients/${clientId}`);
+}
+
+export async function updateTaskAction(
+  taskId: string,
+  clientId: string,
+  fields: { title: string; dueAt?: string; taskType: "form" | "reminder" | "reflection" | "session_prep" | "follow_up" }
+) {
+  const title = fields.title.trim();
+  if (!title) throw new Error("Task title is required.");
+
+  await data.updateTask(taskId, {
+    title,
+    due_at: fields.dueAt,
+    task_type: fields.taskType,
+  });
+  revalidatePath("/dashboard");
+  revalidatePath(`/clients/${clientId}`);
+  revalidatePath(`/clients/${clientId}/tasks/${taskId}`);
 }
 
 export async function sendMessageAction(clientId: string, sender: "practitioner" | "client", body: string) {

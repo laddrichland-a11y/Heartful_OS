@@ -1,24 +1,26 @@
+import Image from "next/image";
+
 /** Shared product branding for practitioner and client surfaces. */
 export default function HeartfulBrand({ subtitle }: { subtitle?: string }) {
   return (
     <>
-      <span className="sidebar-brand-mark">
-        <span
+      <span
+        className="sidebar-brand-mark"
+        style={{ position: "relative", width: 42, height: 42, flex: "0 0 42px", alignSelf: "center", overflow: "visible" }}
+      >
+        <Image
           className="sidebar-brand-symbol"
           aria-hidden="true"
-          style={{
-            display: "block",
-            width: "100%",
-            height: "100%",
-            backgroundColor: "var(--color-coral-rose)",
-            backgroundImage: "linear-gradient(90deg, color-mix(in srgb, var(--color-coral-rose) 70%, white) 0 50%, var(--color-coral-rose) 50% 100%)",
-            WebkitMask: 'url("/images/heartful-logo-transparent.png") center / contain no-repeat',
-            mask: 'url("/images/heartful-logo-transparent.png") center / contain no-repeat',
-          }}
+          src="/images/heartful-os-original.png"
+          alt=""
+          width={1536}
+          height={1024}
+          sizes="64px"
+          style={{ position: "absolute", top: "50%", left: "50%", width: "132%", maxWidth: "none", height: "auto", objectFit: "contain", transform: "translate(-50%, -50%)" }}
         />
       </span>
       <div className="sidebar-brand-copy">
-        <div className="sidebar-wordmark">Heartful</div>
+        <div className="sidebar-wordmark" style={{ textTransform: "none" }}>Heartful OS</div>
         {subtitle && <div className="heartful-brand-subtitle">{subtitle}</div>}
       </div>
     </>

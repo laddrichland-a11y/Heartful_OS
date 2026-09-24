@@ -52,7 +52,7 @@ export default function PortalClientSettings({
         theme?: Theme;
       };
       if (saved.notifications) setNotifications((current) => ({ ...current, ...saved.notifications }));
-      const savedTheme = saved.theme === "golden-canopy" || saved.theme === "mushroom-grove" || saved.theme === "dark"
+      const savedTheme = saved.theme === "golden-canopy" || saved.theme === "mushroom-grove" || saved.theme === "original" || saved.theme === "dark"
         ? saved.theme
         : getSavedTheme();
       setTheme(savedTheme);

@@ -6,6 +6,7 @@ import MilestoneToggleBanner from "@/components/client/MilestoneToggleBanner";
 import ClientPhaseNav from "@/components/client/ClientPhaseNav";
 import ClientPhaseWorkspace from "@/components/client/ClientPhaseWorkspace";
 import PhasePrepareMe from "@/components/client/PhasePrepareMe";
+import { getJourneyStageWorkspaceState } from "@/lib/utils";
 
 export const dynamic = "force-dynamic";
 
@@ -19,6 +20,7 @@ export default async function GrowthPlanPage({ params }: { params: Promise<{ id:
   if (!client) notFound();
 
   const milestone = milestones.find((m) => m.milestone_key === "growth_action_plan_complete");
+  const stage = getJourneyStageWorkspaceState(client, milestones, "growth_action_plan", "growth_action_plan_complete");
 
   return (
     <AppShell title={client.full_name} variant="wellnest-client">
@@ -30,8 +32,11 @@ export default async function GrowthPlanPage({ params }: { params: Promise<{ id:
         label="Growth Action Plan"
         meta="Phase 7 · Final step"
         initialCompleted={milestone?.completed ?? false}
+        stageStatus={stage.status}
+        canMarkComplete={stage.canMarkComplete}
+        canPrepare={stage.canPrepare}
       />
-      <PhasePrepareMe clientId={id} sessionTypeLabel="Growth Plan" />
+      {stage.canPrepare && <PhasePrepareMe clientId={id} sessionTypeLabel="Growth Plan" />}
       <GrowthActionPlanWorkspace
         clientId={id}
         clientName={client.full_name}

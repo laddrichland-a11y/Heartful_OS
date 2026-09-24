@@ -5,7 +5,7 @@ import { ChevronLeft, ChevronRight } from "@/components/ui/HeartfulIcon";
 
 const months = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"];
 
-export default function MonthYearPicker({ value, onChange, triggerClassName }: { value: Date; onChange: (date: Date) => void; triggerClassName?: string }) {
+export default function MonthYearPicker({ value, onChange, triggerClassName, minDate }: { value: Date; onChange: (date: Date) => void; triggerClassName?: string; minDate?: Date }) {
   const [open, setOpen] = useState(false);
   const [year, setYear] = useState(value.getFullYear());
   const root = useRef<HTMLDivElement>(null);
@@ -34,6 +34,9 @@ export default function MonthYearPicker({ value, onChange, triggerClassName }: {
     };
   }, [open]);
 
+  const minimumMonth = minDate && new Date(minDate.getFullYear(), minDate.getMonth(), 1);
+  const previousYearDisabled = !!minimumMonth && year <= minimumMonth.getFullYear();
+
   return <div ref={root} className="calendar-month-picker" onBlur={(event) => {
     if (!event.currentTarget.contains(event.relatedTarget)) setOpen(false);
   }}>
@@ -43,14 +46,15 @@ export default function MonthYearPicker({ value, onChange, triggerClassName }: {
     }}>{value.toLocaleDateString("en-US", { month: "long", year: "numeric" })}</button>
     {open && <div id={id} className="calendar-month-popover" role="dialog" aria-label="Choose month and year">
       <div className="calendar-picker-year">
-        <button type="button" aria-label="Previous year" onClick={() => setYear(year - 1)}><ChevronLeft aria-hidden="true" /></button>
+        <button type="button" aria-label="Previous year" disabled={previousYearDisabled} onClick={() => setYear(year - 1)}><ChevronLeft aria-hidden="true" /></button>
         <strong aria-live="polite">{year}</strong>
         <button type="button" aria-label="Next year" onClick={() => setYear(year + 1)}><ChevronRight aria-hidden="true" /></button>
       </div>
       <div className="calendar-picker-months">
         {months.map((label, index) => {
           const active = value.getFullYear() === year && value.getMonth() === index;
-          return <button ref={index === value.getMonth() ? selected : undefined} key={label} type="button" aria-label={`${label} ${year}`} aria-pressed={active} onClick={() => {
+          const unavailable = !!minimumMonth && new Date(year, index, 1) < minimumMonth;
+          return <button ref={index === value.getMonth() && !unavailable ? selected : undefined} key={label} type="button" aria-label={`${label} ${year}`} aria-pressed={active} disabled={unavailable} onClick={() => {
             onChange(new Date(year, index, 1));
             setOpen(false);
             trigger.current?.focus();

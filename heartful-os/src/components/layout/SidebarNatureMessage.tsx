@@ -1,5 +1,3 @@
-import Image from "next/image";
-
 export default function SidebarNatureMessage() {
   return (
     <div className="sidebar-nature-message">
@@ -34,24 +32,7 @@ export default function SidebarNatureMessage() {
           <path d="M70 39C69 35 73 32 77 31C76 35 73 38 70 39Z" />
         </g>
       </svg>
-      <Image
-        className="sidebar-nature-mark sidebar-mushrooms"
-        src="/images/mushroom-grove-selected-clean.png"
-        alt=""
-        width={1199}
-        height={1312}
-        sizes="128px"
-      />
-      <Image
-        className="sidebar-nature-mark sidebar-twilight-mushrooms"
-        src="/images/twilight-mushrooms-detailed.png"
-        alt=""
-        width={906}
-        height={1736}
-        sizes="100px"
-      />
       <p className="sidebar-fern-caption">People heal.<br />A kinder tomorrow<br />is possible.</p>
-      <p className="sidebar-mushroom-caption">Deeper<br />conversations.<br />Brighter futures.</p>
     </div>
   );
 }

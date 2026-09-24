@@ -13,7 +13,7 @@ import AiGenerateButton from "@/components/ai/AiGenerateButton";
 import ActionCardHeader from "@/components/client/ActionCardHeader";
 import SummaryCard from "@/components/ai/SummaryCard";
 import { cx } from "@/lib/utils";
-import { FileText } from "@/components/ui/HeartfulIcon";
+import { FileText, ScrollText } from "@/components/ui/HeartfulIcon";
 import Link from "next/link";
 
 export default function PreparationWorkspace({
@@ -61,10 +61,50 @@ export default function PreparationWorkspace({
 
   return (
     <div className="space-y-6">
-      {/* Session Forms */}
+      <div className="card p-4 space-y-3">
+        <ActionCardHeader
+          title={
+            <span className="inline-flex items-center gap-2">
+              <ScrollText className="h-4 w-4" aria-hidden="true" />
+              Session Transcript
+            </span>
+          }
+          titleAs="h2"
+          description={`Generate a Journey Brief from ${clientName}'s preparation work for use on Journey Day.`}
+          action={
+            <AiGenerateButton
+              clientId={clientId}
+              summaryType="journey_brief"
+              label="Generate Journey Brief"
+              extra={{ transcript }}
+              onDone={(s) => {
+                setBrief(s as unknown as AiSummary);
+                setTranscript("");
+              }}
+              disabled={!transcript.trim()}
+              className="btn-primary inline-flex items-center gap-2 whitespace-nowrap text-sm disabled:opacity-60"
+            />
+          }
+        />
+        <TranscriptInput value={transcript} onChange={setTranscript} hideLabel inlineUploadActions />
+      </div>
+
+      {brief && (
+        <SummaryCard
+          title="Journey Brief"
+          titleAs="h2"
+          titleClassName="font-semibold text-ink-900"
+          content={brief.content}
+          model={brief.model}
+        />
+      )}
+
       {prepForms.length > 0 && (
-        <div className="card p-5">
-          <h2 className="font-semibold text-ink-900 mb-4">Session Forms</h2>
+        <div className="card p-4">
+          <h3 className="session-panel-heading mb-3 flex items-center gap-3">
+            <FileText className="h-4 w-4" aria-hidden="true" />
+            Forms for This Session
+          </h3>
           <div className="space-y-2">
             {prepForms.map(({ doc, template, submission }) => (
               <FormRow
@@ -78,38 +118,6 @@ export default function PreparationWorkspace({
           </div>
         </div>
       )}
-
-      {/* Transcript + Journey Brief */}
-      <div className="grid md:grid-cols-2 gap-6">
-        <div className="card p-4 space-y-4">
-          <ActionCardHeader
-            title="Preparation Session Transcript"
-            titleAs="h2"
-            description={`Create a Journey Brief from ${clientName}'s preparation work for use on Journey Day.`}
-            action={
-              <AiGenerateButton
-                clientId={clientId}
-                summaryType="journey_brief"
-                label="Generate Journey Brief"
-                extra={{ transcript }}
-                onDone={(s) => setBrief(s as unknown as AiSummary)}
-                className="btn-primary inline-flex items-center gap-2 whitespace-nowrap text-sm disabled:opacity-60"
-              />
-            }
-          />
-          <TranscriptInput value={transcript} onChange={setTranscript} />
-        </div>
-        <div className="space-y-4">
-          <h2 className="font-semibold text-ink-900">Journey Brief</h2>
-          {brief ? (
-            <SummaryCard title="Journey Brief" content={brief.content} model={brief.model} />
-          ) : (
-            <div className="card p-6 text-sm text-ink-400 text-center">
-              No Journey Brief generated yet.
-            </div>
-          )}
-        </div>
-      </div>
     </div>
   );
 }

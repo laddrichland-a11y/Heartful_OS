@@ -1,10 +1,10 @@
 "use client";
 
 import { useState } from "react";
-import ClientAvatarImage from "@/components/client/ClientAvatarImage";
+import ClientAvatarEditor from "@/components/client/ClientAvatarEditor";
 import { CalendarDays, CheckCircle2, ChevronDown, ChevronUp, CircleDollarSign, KeyRound, Mail, PauseCircle, Phone, UserRound } from "@/components/ui/HeartfulIcon";
 import { Client, JourneyMilestone, Profile, ReferralSource, Session } from "@/lib/types";
-import { clientAvatarSrc, cx, formatCurrency, formatDate, formatDateTime, getNextScheduledSession, initials, phaseForStatus } from "@/lib/utils";
+import { clientAvatarSrc, cx, formatCurrency, formatDate, formatDateTime, getNextScheduledSession, phaseForStatus } from "@/lib/utils";
 import ClientStatusControl from "@/components/client/ClientStatusControl";
 import ClientHeaderActions from "@/components/client/ClientHeaderActions";
 import QuickNoteButton from "@/components/client/QuickNoteButton";
@@ -29,7 +29,7 @@ export default function ClientHeader({ client, sessions = [], referralSources, p
     return window.sessionStorage.getItem(headerStateKey) !== "false";
   });
   const referral = referralSources.find((source) => source.id === client.referral_source_id);
-  const avatarSrc = clientAvatarSrc(client.full_name);
+  const avatarSrc = clientAvatarSrc(client);
   const balance = Math.max(0, (client.package_value ?? 0) - (client.amount_paid ?? 0));
   const now = new Date().toISOString();
   const nextSession = getNextScheduledSession(
@@ -75,9 +75,12 @@ export default function ClientHeader({ client, sessions = [], referralSources, p
 
       <div className="wn-overview-summary">
         <div className="wn-overview-identity">
-          <div className="wn-avatar">
-            {avatarSrc ? <ClientAvatarImage clientName={client.full_name} src={avatarSrc} width={58} height={58} priority /> : initials(client.full_name)}
-          </div>
+          <ClientAvatarEditor
+            clientId={client.id}
+            clientName={client.full_name}
+            avatarUrl={client.avatar_url}
+            fallbackAvatarSrc={avatarSrc}
+          />
           <div className="wn-overview-name">
             <span className="wn-section-eyebrow">Client overview</span>
             <div className="wn-overview-title-row">

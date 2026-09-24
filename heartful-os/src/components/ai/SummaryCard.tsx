@@ -1,7 +1,7 @@
 "use client";
 
 import { useState } from "react";
-import { Trash2, Pencil, Check, X, Loader2, MoreHorizontal } from "@/components/ui/HeartfulIcon";
+import { Trash2, Pencil, Check, X, Loader2 } from "@/components/ui/HeartfulIcon";
 
 const ASSESSMENT_GROUPS = [
   { title: "Goals & background", keys: ["client_goals", "personal_history"] },
@@ -28,6 +28,8 @@ export default function SummaryCard({
   onDelete,
   onSave,
   variant,
+  titleAs: Title = "span",
+  titleClassName,
 }: {
   title: string;
   content: Record<string, unknown>;
@@ -37,6 +39,9 @@ export default function SummaryCard({
   /** If provided, shows an edit button that lets the practitioner hand-correct any field before saving. */
   onSave?: (content: Record<string, unknown>) => void | Promise<void>;
   variant?: "assessment" | "journey" | "analysis";
+  /** Lets a containing workspace keep a summary's title at its own hierarchy level. */
+  titleAs?: "span" | "h2" | "h3";
+  titleClassName?: string;
 }) {
   const [editing, setEditing] = useState(false);
   const [draft, setDraft] = useState<Record<string, string>>(() => toEditableStrings(content));
@@ -76,18 +81,13 @@ export default function SummaryCard({
         <div className="session-assessment-actions" aria-label={`${title} actions`}>
           {editing ? (
             <>
-              <button type="button" onClick={handleSave} disabled={saving}><Check aria-hidden="true" />{saving ? "Saving…" : "Save"}</button>
-              <button type="button" onClick={() => setEditing(false)} disabled={saving}><X aria-hidden="true" />Cancel</button>
+              <button type="button" onClick={handleSave} disabled={saving} title={saving ? "Saving changes" : "Save changes"} aria-label={saving ? "Saving changes" : "Save changes"}><Check aria-hidden="true" /></button>
+              <button type="button" onClick={() => setEditing(false)} disabled={saving} title="Cancel editing" aria-label="Cancel editing"><X aria-hidden="true" /></button>
             </>
           ) : (
             <>
-              {onSave && <button type="button" onClick={startEditing}><Pencil aria-hidden="true" />Edit</button>}
-              {onDelete && (
-                <details className="session-assessment-menu">
-                  <summary aria-label={`More ${title} actions`} title="More actions"><MoreHorizontal aria-hidden="true" /></summary>
-                  <div><button type="button" onClick={onDelete}><Trash2 aria-hidden="true" />Delete summary</button></div>
-                </details>
-              )}
+              {onSave && <button type="button" onClick={startEditing} title="Edit summary" aria-label="Edit summary"><Pencil aria-hidden="true" /></button>}
+              {onDelete && <button type="button" onClick={onDelete} className="session-assessment-delete" title="Delete summary" aria-label="Delete summary"><Trash2 aria-hidden="true" /></button>}
             </>
           )}
         </div>
@@ -136,7 +136,7 @@ export default function SummaryCard({
     <div className={isSessionBrief ? "ai-session-brief" : "card p-4 border-plum-200 bg-plum-50/40"}>
       <div className={isSessionBrief ? "ai-session-brief-header" : "flex items-center justify-between mb-2 gap-2"}>
         <div>
-          <span className={isSessionBrief ? "ai-session-brief-title" : "font-medium text-sm text-plum-800"}>{title}</span>
+          <Title className={isSessionBrief ? "ai-session-brief-title" : titleClassName ?? "font-medium text-sm text-plum-800"}>{title}</Title>
           {isSessionBrief && <span className="ai-session-brief-kicker">A quick scan before the session</span>}
         </div>
         <div className="flex items-center gap-2 shrink-0">

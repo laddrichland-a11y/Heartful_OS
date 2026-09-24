@@ -30,7 +30,7 @@ const themeBootstrapScript = `(() => {
   let theme = "golden-canopy";
   try {
     const saved = window.localStorage.getItem("heartful-theme");
-    if (saved === "golden-canopy" || saved === "mushroom-grove" || saved === "dark") {
+    if (saved === "golden-canopy" || saved === "mushroom-grove" || saved === "original" || saved === "dark") {
       theme = saved;
     } else if (saved === "light") {
       window.localStorage.setItem("heartful-theme", "golden-canopy");

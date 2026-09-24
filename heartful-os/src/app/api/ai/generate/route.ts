@@ -29,6 +29,8 @@ interface GenerateRequest {
   sessionTypeLabel?: string;
   checkInId?: string;
   integrationSession?: 1 | 2;
+  /** Requests a fresh alternative rather than reusing an existing briefing. */
+  regenerate?: boolean;
 }
 
 export async function POST(req: NextRequest) {
@@ -200,9 +202,21 @@ export async function POST(req: NextRequest) {
         documents,
         postIntegrationForms,
       });
-      const prompt = prompts.buildPrepareMeBriefingPrompt(dump, client.full_name, body.sessionTypeLabel ?? "session");
-      const { data, model } = await runAiJson(prompt, () => mocks.mockPrepareMeBriefing(client.full_name, body.sessionTypeLabel ?? "session"));
+      const basePrompt = prompts.buildPrepareMeBriefingPrompt(dump, client.full_name, body.sessionTypeLabel ?? "session");
+      const prompt = body.regenerate
+        ? {
+            ...basePrompt,
+            system: `${basePrompt.system}\n\nThis is a regeneration request. Previous Prepare Me briefings are included in the client record. Produce a genuinely different, equally evidence-grounded briefing: take a distinct focus, change the phrasing and emphasis across the focus, intentions, insights, and commitments fields, and do not repeat a prior briefing's wording.`,
+          }
+        : basePrompt;
       const stageLabel = body.sessionTypeLabel ?? "session";
+      const priorBriefings = summaries.filter(
+        (summary) => summary.summary_type === "prepare_me_briefing" && summary.stage_label === stageLabel
+      ).length;
+      const { data, model } = await runAiJson(
+        prompt,
+        () => mocks.mockPrepareMeBriefing(client.full_name, stageLabel, priorBriefings + 1),
+      );
       const summary = await addAiSummary(
         clientId,
         summaryType,

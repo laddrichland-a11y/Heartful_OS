@@ -6,11 +6,12 @@ import {
   ChevronRight,
   ClipboardCheck,
   FileText,
-  ListTodo,
   MessageSquare,
+  Plus,
   Sparkles,
   Upload,
 } from "@/components/ui/HeartfulIcon";
+import TaskReminderCard from "@/components/client/TaskReminderCard";
 import {
   AiSummary,
   CheckIn,
@@ -26,7 +27,7 @@ import {
   Task,
   Transcript,
 } from "@/lib/types";
-import { clientJourneyWorkspaceHref, formatDate, formatDateTime, getClientJourneyProgress, getNextScheduledSession, phaseForStatus, relativeDueLabel, SESSION_TYPE_LABELS } from "@/lib/utils";
+import { clientJourneyWorkspaceHref, formatDate, formatDateTime, getClientJourneyProgress, getNextScheduledSession, phaseForStatus, SESSION_TYPE_LABELS } from "@/lib/utils";
 
 interface Props {
   client: Client;
@@ -153,7 +154,18 @@ export default function ClientContextRail({
             </Link>
           </>
         ) : (
-          <p className="wn-rail-empty">Add a session to unlock a client briefing.</p>
+          <>
+            <p className="wn-rail-empty">Add a session to unlock a client briefing.</p>
+            <div className="wn-rail-empty-action">
+              <Link
+                className="wn-rail-add-session-action"
+                href={`/calendar?createSession=1&clientId=${encodeURIComponent(client.id)}`}
+              >
+                <Plus aria-hidden="true" />
+                Add session
+              </Link>
+            </div>
+          </>
         )}
       </section>
 
@@ -182,30 +194,7 @@ export default function ClientContextRail({
         </a>
       </section>
 
-      <section className="wn-rail-card">
-        <RailHeading icon={ListTodo} title="Tasks & Reminders" />
-        {tasks.length > 0 ? (
-          <div className="wn-task-list">
-            {tasks.map((task) => (
-              <div key={task.id} className="wn-task-item">
-                <Link className="wn-task-copy" href={`/clients/${client.id}/tasks/${task.id}`}>
-                  <strong>{task.title}</strong>
-                  {task.due_at && <small>{task.status === "completed" ? "Completed" : relativeDueLabel(task.due_at)}</small>}
-                </Link>
-                {task.status === "completed" ? (
-                  <span className="wn-task-status is-complete">Done</span>
-                ) : (
-                  <Link className="wn-task-open-button" href={`/clients/${client.id}/tasks/${task.id}`} aria-label={`Open task: ${task.title}`}>
-                    Open task <ChevronRight aria-hidden="true" />
-                  </Link>
-                )}
-              </div>
-            ))}
-          </div>
-        ) : (
-          <p className="wn-rail-empty">No tasks yet.</p>
-        )}
-      </section>
+      <TaskReminderCard clientId={client.id} practitionerId={client.practitioner_id} tasks={tasks} />
 
       {hasAttentionItems && (
         <section className="wn-rail-card">

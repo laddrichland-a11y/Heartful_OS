@@ -1,10 +1,8 @@
 "use client";
 
-import { useEffect, useRef, useState, useTransition } from "react";
-import { AiSummary, Recording, SessionNote, SessionNoteField } from "@/lib/types";
+import { useEffect, useRef, useState } from "react";
+import { AiSummary, Recording } from "@/lib/types";
 import {
-  addSessionNoteAction,
-  createPostJourneyTimelineAction,
   updateSessionManualNotesAction,
   updateSessionTranscriptAction,
   createRecordingUploadUrlAction,
@@ -18,16 +16,13 @@ import {
   deleteAiSummaryAction,
   updateAiSummaryAction,
 } from "@/lib/actions";
-import AiGenerateButton from "@/components/ai/AiGenerateButton";
 import SummaryCard from "@/components/ai/SummaryCard";
 import ActionCardHeader from "@/components/client/ActionCardHeader";
 import JourneyTimingTimeline from "@/components/client/JourneyTimingTimeline";
 import ElapsedTimer from "@/components/client/ElapsedTimer";
 import { useNowTick } from "@/lib/useNowTick";
-import { cx, formatDateTime, withManualNoteAutoTimestamp, insertManualNoteTimestamp, MANUAL_NOTE_MARKER } from "@/lib/utils";
+import { formatDateTime, withManualNoteAutoTimestamp, insertManualNoteTimestamp, MANUAL_NOTE_MARKER } from "@/lib/utils";
 import {
-  Plus,
-  CalendarClock,
   Save,
   Loader2,
   AlertTriangle,
@@ -51,20 +46,10 @@ function formatBytes(bytes?: number): string {
 
 type JourneyMarker = "started" | "ended" | "booster";
 
-const FIELD_TYPES: { key: SessionNoteField; label: string; color: string }[] = [
-  { key: "observation", label: "Observation", color: "bg-ink-100 text-ink-600" },
-  { key: "significant_moment", label: "Significant Moment", color: "bg-plum-100 text-plum-700" },
-  { key: "client_request", label: "Client Request", color: "bg-clay-100 text-clay-700" },
-  { key: "safety_note", label: "Safety Note", color: "bg-red-100 text-red-700" },
-  { key: "integration_theme", label: "Integration Theme", color: "bg-sage-100 text-sage-700" },
-];
-
 export default function JourneyDayWorkspace({
   clientId,
   clientName,
   sessionId,
-  initialNotes,
-  existingSummary,
   initialManualNotes = "",
   existingManualNotesSummary,
   initialJourneyStartedAt,
@@ -79,8 +64,6 @@ export default function JourneyDayWorkspace({
   clientId: string;
   clientName: string;
   sessionId: string;
-  initialNotes: SessionNote[];
-  existingSummary?: AiSummary;
   initialManualNotes?: string;
   existingManualNotesSummary?: AiSummary;
   initialJourneyStartedAt?: string | null;
@@ -92,25 +75,6 @@ export default function JourneyDayWorkspace({
   initialTranscript?: string;
   initialRecordings?: Recording[];
 }) {
-  const [notes, setNotes] = useState(initialNotes);
-  const [fieldType, setFieldType] = useState<SessionNoteField>("observation");
-  const [content, setContent] = useState("");
-  const [pending, startTransition] = useTransition();
-  const [summary, setSummary] = useState(existingSummary);
-  const [timelineCreated, setTimelineCreated] = useState(false);
-
-  async function deleteJourneySummary() {
-    if (!summary) return;
-    await deleteAiSummaryAction(summary.id, clientId);
-    setSummary(undefined);
-  }
-
-  async function saveJourneySummary(nextContent: Record<string, unknown>) {
-    if (!summary) return;
-    await updateAiSummaryAction(summary.id, clientId, nextContent);
-    setSummary({ ...summary, content: nextContent });
-  }
-
   // Transcripts & Recordings — the single, persisted place to paste the
   // transcript from a recording device (Plaud, iPhone Voice Memos, etc.)
   // and/or upload the actual audio file. This replaces pasting transcripts
@@ -239,10 +203,7 @@ export default function JourneyDayWorkspace({
     setNewCallSummary((prev) => (prev?.id === summaryId ? { ...prev, content: nextContent } : prev));
   }
 
-  // Manual Notes — a free-form running journal, separate from the
-  // timestamped/tagged Structured Session Notes above, with its own AI
-  // summary generation (same pattern as the Journey Summary generated from
-  // the structured notes + transcript below).
+  // Manual Notes — a free-form running journal for the Journey Day session.
   const [manualNotes, setManualNotes] = useState(initialManualNotes);
   const [manualNotesSaving, setManualNotesSaving] = useState(false);
   const [manualNotesSaved, setManualNotesSaved] = useState(false);
@@ -356,6 +317,21 @@ export default function JourneyDayWorkspace({
   async function toggleJourneyMarker(marker: JourneyMarker) {
     if (!hasSession) return;
     const isOn = !!markerTimestamp(marker);
+    const previousMarkers = {
+      started: journeyStartedAt,
+      ended: journeyEndedAt,
+      booster: boosterDoseAt,
+    };
+
+    // Reflect the action at once. Recording the precise timestamp and the
+    // accompanying manual-note entry still happens on the server; if that
+    // write fails, restore the prior state rather than leaving a false record.
+    const optimisticTimestamp = new Date().toISOString();
+    const nextTimestamp = isOn ? undefined : optimisticTimestamp;
+    if (marker === "started") setJourneyStartedAt(nextTimestamp);
+    else if (marker === "ended") setJourneyEndedAt(nextTimestamp);
+    else setBoosterDoseAt(nextTimestamp);
+
     setMarkerPending(marker);
     setMarkerError(null);
     try {
@@ -366,8 +342,16 @@ export default function JourneyDayWorkspace({
       const timeZone = Intl.DateTimeFormat().resolvedOptions().timeZone;
       const updated = await setJourneyMarkerAction(sessionId, clientId, marker, !isOn, manualNotes, timeZone);
       if (updated) applyMarkerResult(updated);
-      else setMarkerError("Couldn't save that time — the Journey Day session record wasn't found.");
+      else {
+        setJourneyStartedAt(previousMarkers.started);
+        setJourneyEndedAt(previousMarkers.ended);
+        setBoosterDoseAt(previousMarkers.booster);
+        setMarkerError("Couldn't save that time — the Journey Day session record wasn't found.");
+      }
     } catch {
+      setJourneyStartedAt(previousMarkers.started);
+      setJourneyEndedAt(previousMarkers.ended);
+      setBoosterDoseAt(previousMarkers.booster);
       setMarkerError("Couldn't save that time. Check your connection and try again.");
     } finally {
       setMarkerPending(null);
@@ -462,22 +446,16 @@ export default function JourneyDayWorkspace({
   const showBoosterReminder =
     journeyInProgress && minutesSinceStart >= BOOSTER_REMINDER_MINUTES && !boosterDoseAt && !boosterReminderDismissed;
 
-  const notesAsText = notes
-    .map((n) => `[${formatDateTime(n.note_timestamp)}] (${n.field_type.replace(/_/g, " ")}) ${n.content}`)
-    .join("\n");
-
-  // Combine structured notes + the persisted transcript for AI generation
-  const transcriptForAi = [notesAsText, transcript].filter(Boolean).join("\n\n---\n\n");
-
   return (
+    <fieldset disabled={!hasSession} className="contents">
     <div className="grid lg:grid-cols-3 gap-6">
       <div className="lg:col-span-3 card journey-timing-panel p-4">
         <h2 className="font-semibold text-ink-900 mb-3">Journey Timing</h2>
 
         {!hasSession && (
           <p className="journey-timing-notice">
-            No Journey Day session is on the calendar for {clientName} yet. Schedule one to start
-            recording Journey Begin, Booster Dose, and Journey End times.
+            No Journey Day session is on the calendar for {clientName} yet. Schedule one before recording Journey
+            Begin, Booster Dose, Journey End, notes, or a transcript.
           </p>
         )}
 
@@ -487,8 +465,6 @@ export default function JourneyDayWorkspace({
           </p>
         )}
 
-        {hasSession && (
-          <>
         {(journeyStartedAt || boosterDoseAt) && (
           <div className="flex flex-wrap gap-8 mb-4">
             <ElapsedTimer
@@ -552,73 +528,9 @@ export default function JourneyDayWorkspace({
           boosterDoseSaving={boosterDoseSaving}
           boosterDoseSaved={boosterDoseSaved}
         />
-          </>
-        )}
       </div>
 
-      <div className="lg:col-span-2 flex flex-col gap-6">
-      <div className="card p-4">
-        <h2 className="font-semibold text-ink-900 mb-3">Structured Session Notes</h2>
-        <div className="flex flex-wrap gap-2 mb-3">
-          {FIELD_TYPES.map((f) => (
-            <button
-              key={f.key}
-              onClick={() => setFieldType(f.key)}
-              className={cx(
-                "text-xs px-3 py-1.5 rounded-full border transition-colors",
-                fieldType === f.key ? "border-clay-500 bg-clay-50 text-clay-700" : "border-ink-200 text-ink-500 hover:bg-ink-50"
-              )}
-            >
-              {f.label}
-            </button>
-          ))}
-        </div>
-        <div className="flex items-start gap-2">
-          <textarea
-            value={content}
-            onChange={(e) => setContent(e.target.value)}
-            rows={2}
-            placeholder="Add a timestamped note..."
-            className="flex-1 border border-ink-200 rounded-xl px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-clay-200"
-          />
-          <button
-            disabled={!content.trim() || pending}
-            onClick={() =>
-              startTransition(async () => {
-                const note: SessionNote = {
-                  id: `local_${Date.now()}`,
-                  session_id: sessionId,
-                  client_id: clientId,
-                  field_type: fieldType,
-                  note_timestamp: new Date().toISOString(),
-                  content,
-                };
-                setNotes((n) => [...n, note]);
-                setContent("");
-                await addSessionNoteAction(sessionId, clientId, fieldType, content);
-              })
-            }
-            className="btn-primary p-2.5 shrink-0"
-          >
-            <Plus className="h-4 w-4" />
-          </button>
-        </div>
-
-        <div className="mt-4 space-y-2 max-h-[420px] overflow-y-auto">
-          {notes.map((n) => {
-            const meta = FIELD_TYPES.find((f) => f.key === n.field_type)!;
-            return (
-              <div key={n.id} className="flex items-start gap-2 text-sm">
-                <span className="text-xs text-ink-400 w-16 shrink-0 pt-0.5">{formatDateTime(n.note_timestamp).split(",")[1]?.trim()}</span>
-                <span className={cx("badge shrink-0", meta.color)}>{meta.label}</span>
-                <span className="text-ink-800">{n.content}</span>
-              </div>
-            );
-          })}
-          {notes.length === 0 && <p className="text-sm text-ink-400">No notes yet — start logging the session above.</p>}
-        </div>
-      </div>
-
+      <div className="lg:col-span-3 flex flex-col gap-6">
       <div className="card p-4 space-y-3">
         <h2 className="font-semibold text-ink-900">Manual Notes</h2>
         <p className="text-xs text-ink-400">
@@ -841,55 +753,7 @@ export default function JourneyDayWorkspace({
         </div>
       </div>
       </div>
-
-      <div className="space-y-4">
-        <div className="card p-4 space-y-4">
-          <ActionCardHeader
-            title="At Session Completion"
-            titleAs="h2"
-            description="Turn the session transcript and notes into a Journey Summary."
-            action={
-              <AiGenerateButton
-                clientId={clientId}
-                summaryType="journey_summary"
-                label="Generate Journey Summary"
-                extra={{ transcript: transcriptForAi }}
-                onDone={(s) => setSummary(s as unknown as AiSummary)}
-                className="btn-primary inline-flex items-center gap-2 whitespace-nowrap text-sm disabled:opacity-60"
-              />
-            }
-          />
-          <div className="border-t border-ink-100 pt-4">
-            <ActionCardHeader
-              title="Post-Journey Timeline"
-              description={`Create check-in, reflection, and Integration Session reminders for ${clientName}.`}
-              action={
-                <button
-                  disabled={timelineCreated}
-                  onClick={() =>
-                    startTransition(async () => {
-                      await createPostJourneyTimelineAction(clientId, "prac_001");
-                      setTimelineCreated(true);
-                    })
-                  }
-                  className="btn-secondary inline-flex items-center gap-2 whitespace-nowrap text-sm disabled:opacity-60"
-                >
-                  <CalendarClock className="h-4 w-4" /> {timelineCreated ? "Post-Journey Timeline Created" : "Create Post-Journey Timeline"}
-                </button>
-              }
-            />
-          </div>
-        </div>
-        {summary && (
-          <SummaryCard
-            title="Journey Summary"
-            content={summary.content}
-            model={summary.model}
-            onDelete={deleteJourneySummary}
-            onSave={saveJourneySummary}
-          />
-        )}
-      </div>
     </div>
+    </fieldset>
   );
 }

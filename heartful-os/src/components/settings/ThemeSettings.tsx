@@ -4,11 +4,12 @@ import { useEffect, useState } from "react";
 import { Check, Sparkles } from "@/components/ui/HeartfulIcon";
 
 const THEME_KEY = "heartful-theme";
-export type Theme = "golden-canopy" | "mushroom-grove" | "dark";
+export type Theme = "golden-canopy" | "mushroom-grove" | "original" | "dark";
 
 export const THEMES: { value: Theme; label: string }[] = [
   { value: "golden-canopy", label: "Golden Canopy" },
   { value: "mushroom-grove", label: "Mushroom Grove" },
+  { value: "original", label: "Original" },
   { value: "dark", label: "Dark" },
 ];
 
@@ -20,7 +21,7 @@ export function applyTheme(theme: Theme) {
 export function getSavedTheme(): Theme {
   try {
     const savedTheme = window.localStorage.getItem(THEME_KEY);
-    if (savedTheme === "golden-canopy" || savedTheme === "mushroom-grove" || savedTheme === "dark") return savedTheme;
+    if (savedTheme === "golden-canopy" || savedTheme === "mushroom-grove" || savedTheme === "original" || savedTheme === "dark") return savedTheme;
     if (savedTheme === "light") {
       window.localStorage.setItem(THEME_KEY, "golden-canopy");
       return "golden-canopy";

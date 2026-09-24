@@ -19,7 +19,7 @@ export default function ActionCardHeader({
     <div className="flex flex-wrap items-center justify-between gap-4">
       <div className="min-w-48 flex-1 space-y-2">
         <div className="flex items-center gap-2">
-          <Title className="flex items-center gap-2 font-semibold text-ink-900">{title}</Title>
+          <Title className="action-card-heading flex items-center gap-3 font-semibold text-ink-900">{title}</Title>
           {titleAction}
         </div>
         <p className="text-sm text-ink-400">{description}</p>

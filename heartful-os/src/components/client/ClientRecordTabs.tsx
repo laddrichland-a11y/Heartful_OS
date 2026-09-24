@@ -1,7 +1,8 @@
 "use client";
 
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useId, useRef, useState } from "react";
 import Link from "next/link";
+import { useRouter } from "next/navigation";
 import {
   AiConversationMessage,
   AiSummary,
@@ -22,7 +23,7 @@ import {
   Session,
   Task,
 } from "@/lib/types";
-import { cx, formatDate, formatDateTime, getClientJourneyProgress, isGeneralPaperwork, phaseForStatus, SESSION_TYPE_LABELS, Tab } from "@/lib/utils";
+import { cx, formatDate, formatDateTime, getClientJourneyProgress, getJourneyStageWorkspaceState, isGeneralPaperwork, phaseForStatus, SESSION_TYPE_LABELS, Tab, type JourneyWorkspaceStage } from "@/lib/utils";
 import {
   FileText,
   Upload,
@@ -58,6 +59,7 @@ import {
   X,
   ListChecks,
   BookOpen,
+  MoreHorizontal,
 } from "@/components/ui/HeartfulIcon";
 import {
   uploadDocumentAction,
@@ -72,12 +74,15 @@ import {
   sendAiConversationMessageAction,
   markMessagesReadAction,
   deleteAiSummaryAction,
+  deleteClientDocumentAction,
+  renameClientDocumentAction,
 } from "@/lib/actions";
 import { SessionType } from "@/lib/types";
 import SummaryCard from "@/components/ai/SummaryCard";
 import { buildClientActivity, ActivityKind } from "@/lib/activity";
 import { JourneyStageNav, PHASE_LINKS, PhaseNavKey } from "@/components/client/JourneyStageNav";
 import CheckInWorkspace from "@/components/client/CheckInWorkspace";
+import IntakeWorkspace from "@/components/client/IntakeWorkspace";
 import MilestoneToggleBanner from "@/components/client/MilestoneToggleBanner";
 import JourneyAiSummaries from "@/components/client/JourneyAiSummaries";
 import ConfirmDialog from "@/components/ui/ConfirmDialog";
@@ -151,6 +156,9 @@ export default function ClientRecordTabs({
   const viewingStage = PHASE_LINKS.some((stage) => stage.phase === defaultStage)
     ? defaultStage as PhaseNavKey
     : undefined;
+  const currentPhase = phaseForStatus(client.status, client.current_phase);
+  const selectedWorkspaceStage = viewingStage && viewingStage !== "overview" ? viewingStage : undefined;
+  const workspaceStage: JourneyWorkspaceStage = selectedWorkspaceStage ?? (currentPhase === "closed" ? "growth_action_plan" : currentPhase);
 
   // Whenever the practitioner is looking at (or lands directly on, via the
   // dashboard's unread-messages link) this client's Messages tab, clear the
@@ -196,14 +204,19 @@ export default function ClientRecordTabs({
             <JourneyStageNav clientId={client.id} sessions={sessions} milestones={milestones} activePhase={phaseForStatus(client.status, client.current_phase)} current={viewingStage} />
           </section>
           <JourneyTab
+            client={client}
             clientId={client.id}
             clientName={client.full_name}
+            workspaceStage={workspaceStage}
             sessions={sessions}
             milestones={milestones}
             checkIns={checkIns}
             aiSummaries={aiSummaries}
             memory={memory}
             preparationPlan={preparationPlan}
+            documents={documents}
+            formTemplates={formTemplates}
+            formSubmissions={formSubmissions}
           />
         </>
       )}
@@ -393,17 +406,29 @@ function DocumentsTab({
   formTemplates: FormTemplate[];
   formSubmissions: FormSubmission[];
 }) {
+  const [removedUploadDocumentIds, setRemovedUploadDocumentIds] = useState<Set<string>>(() => new Set());
+  const [recentlyAddedDocumentId, setRecentlyAddedDocumentId] = useState<string | null>(null);
+  const [documentActionError, setDocumentActionError] = useState<string | null>(null);
+
+  useEffect(() => {
+    if (!recentlyAddedDocumentId) return;
+    const timeout = window.setTimeout(() => setRecentlyAddedDocumentId(null), 5_000);
+    return () => window.clearTimeout(timeout);
+  }, [recentlyAddedDocumentId]);
   // Forms that have a matching digital template
   const formBacked = documents.filter((d) => formTemplates.some((t) => t.document_type === d.document_type));
   // Documents that are file-upload only (no matching template) AND have
   // actually been uploaded — empty placeholder slots are hidden to keep the
   // UI clean. They were seeded during early development and aren't needed
   // until a practitioner deliberately uploads something via Add Document.
-  const uploadOnly = documents.filter(
-    (d) =>
-      !formTemplates.some((t) => t.document_type === d.document_type) &&
-      d.versions.length > 0
-  );
+  const uploadOnly = documents
+    .filter(
+      (d) =>
+        !formTemplates.some((t) => t.document_type === d.document_type) &&
+        d.versions.length > 0 &&
+        !removedUploadDocumentIds.has(d.id)
+    )
+    .sort((a, b) => (b.versions[0]?.created_at ?? "").localeCompare(a.versions[0]?.created_at ?? ""));
 
   // The signed-once agreements get their own bucket at the top rather than
   // being filed under Intake — they're practice-wide paperwork, not intake
@@ -450,7 +475,7 @@ function DocumentsTab({
     <div className="space-y-4">
       {/* One shared document surface; the dividers belong to the internal groups, not to individual rows. */}
       {formGroups.length > 0 && (
-        <section className="client-surface overflow-hidden" aria-label="Agreements and consents">
+        <section id="agreements-and-consents" className="client-surface overflow-hidden" aria-label="Agreements and consents">
           <div className="divide-y divide-ink-100">
             {formGroups.map((group, index) => (
               <section key={group.label} className="px-5 py-5">
@@ -491,51 +516,182 @@ function DocumentsTab({
             <p className="text-xs text-ink-400 mt-0.5">PDF or file uploads — session notes, additional consents, etc.</p>
           </div>
         )}
+        {documentActionError && <p className="mb-3 text-xs font-medium text-[var(--danger-text)]" role="alert">{documentActionError}</p>}
         <div className="grid items-stretch gap-3 md:grid-cols-2 md:gap-4">
-          <AddDocumentCard clientId={clientId} documents={documents} />
+          <AddDocumentCard
+            clientId={clientId}
+            documents={documents.filter((document) => !removedUploadDocumentIds.has(document.id))}
+            onUploaded={setRecentlyAddedDocumentId}
+          />
           {uploadOnly.map((doc) => (
-            <div key={doc.id} className="card flex h-full min-h-[156px] flex-col gap-3 p-4">
-              <div className="flex min-w-0 items-start gap-3">
-                <span className="summary-icon flex h-8 w-8 shrink-0 items-center justify-center rounded-lg bg-clay-100 text-clay-600" aria-hidden="true">
-                  <FileText className="h-4 w-4" />
-                </span>
-                <div className="min-w-0 flex-1">
-                  <div className="flex items-start justify-between gap-3">
-                    <h4 className="min-w-0 text-sm font-semibold leading-5 text-ink-900">
-                      {DOCUMENT_LABELS[doc.document_type]}
-                    </h4>
-                    <DocumentStatusChip status={doc.status} />
-                  </div>
-                  {doc.versions.length > 0 ? (
-                    <p className="mt-1 truncate text-xs leading-4 text-ink-400" title={doc.versions[0].file_name}>
-                      {doc.versions[0].file_name} · v{doc.versions[0].version_number} · {formatDate(doc.versions[0].created_at)}
-                    </p>
-                  ) : (
-                    <p className="mt-1 text-xs leading-4 text-ink-400">
-                      {doc.required ? "Required — not yet uploaded" : "Optional — not yet uploaded"}
-                    </p>
-                  )}
-                </div>
-              </div>
-              <div className="mt-auto flex min-h-8 items-center justify-end gap-1.5 border-t border-ink-100 pt-3 text-xs">
-                <UploadButton documentId={doc.id} clientId={clientId} />
-                {doc.versions.length > 0 && (
-                  <>
-                    <button className="flex items-center gap-1 rounded-[var(--radius-control)] px-2 py-1.5 font-medium text-ink-500 transition-colors hover:bg-ink-50 hover:text-ink-800">
-                      <Download className="h-3.5 w-3.5" /> Download
-                    </button>
-                    {doc.versions.length > 1 && (
-                      <button className="flex items-center gap-1 rounded-[var(--radius-control)] px-2 py-1.5 text-ink-400 transition-colors hover:bg-ink-50 hover:text-ink-700">
-                        <History className="h-3.5 w-3.5" /> {doc.versions.length} versions
-                      </button>
-                    )}
-                  </>
-                )}
-              </div>
-            </div>
+            <UploadedDocumentCard
+              key={doc.id}
+              document={doc}
+              clientId={clientId}
+              isRecentlyAdded={doc.id === recentlyAddedDocumentId}
+              onDeleted={(documentId) => {
+                setDocumentActionError(null);
+                setRemovedUploadDocumentIds((previous) => new Set(previous).add(documentId));
+              }}
+              onDeleteFailed={(documentId) => {
+                setRemovedUploadDocumentIds((previous) => {
+                  const next = new Set(previous);
+                  next.delete(documentId);
+                  return next;
+                });
+                setDocumentActionError("The document could not be deleted. Please try again.");
+              }}
+            />
           ))}
         </div>
       </div>
+    </div>
+  );
+}
+
+function documentNameFromFileName(fileName?: string) {
+  return fileName?.split(/[\\/]/).pop()?.replace(/\.[^.]+$/, "").trim() ?? "";
+}
+
+function documentDisplayName(document: ClientDocument) {
+  const title = document.title?.trim();
+  const isGenericCategoryName = !title || title === document.document_type || title === DOCUMENT_LABELS[document.document_type];
+  return isGenericCategoryName
+    ? documentNameFromFileName(document.versions[0]?.file_name) || DOCUMENT_LABELS[document.document_type] || "Other Document"
+    : title;
+}
+
+function UploadedDocumentCard({
+  document,
+  clientId,
+  isRecentlyAdded = false,
+  onDeleted,
+  onDeleteFailed,
+}: {
+  document: ClientDocument;
+  clientId: string;
+  isRecentlyAdded?: boolean;
+  onDeleted: (documentId: string) => void;
+  onDeleteFailed: (documentId: string) => void;
+}) {
+  const [displayName, setDisplayName] = useState(() => documentDisplayName(document));
+  const [renameOpen, setRenameOpen] = useState(false);
+  const [nameInput, setNameInput] = useState(() => documentDisplayName(document));
+  const [renameError, setRenameError] = useState<string | null>(null);
+  const [savingName, setSavingName] = useState(false);
+  const [confirmDelete, setConfirmDelete] = useState(false);
+  const [deleting, setDeleting] = useState(false);
+  const version = document.versions[0];
+
+  async function saveName() {
+    setSavingName(true);
+    setRenameError(null);
+    try {
+      const updated = await renameClientDocumentAction(document.id, clientId, nameInput);
+      const nextName = updated?.title || documentNameFromFileName(version?.file_name) || "Other Document";
+      setDisplayName(nextName);
+      setNameInput(nextName);
+      setRenameOpen(false);
+    } catch {
+      setRenameError("The document name could not be updated. Please try again.");
+    } finally {
+      setSavingName(false);
+    }
+  }
+
+  async function deleteDocument() {
+    setDeleting(true);
+    setConfirmDelete(false);
+    onDeleted(document.id);
+    try {
+      await deleteClientDocumentAction(document.id, clientId);
+    } catch {
+      onDeleteFailed(document.id);
+    }
+  }
+
+  return (
+    <div className={cx("card uploaded-document-card flex h-full min-h-[156px] flex-col gap-3 p-4", isRecentlyAdded && "uploaded-document-card--new")}>
+      <div className="flex min-w-0 items-start gap-3">
+        <span className="summary-icon flex h-8 w-8 shrink-0 items-center justify-center rounded-lg bg-clay-100 text-clay-600" aria-hidden="true">
+          <FileText className="h-4 w-4" />
+        </span>
+        <div className="min-w-0 flex-1">
+          <div className="flex items-start justify-between gap-3">
+            <h4 className="min-w-0 text-sm font-semibold leading-5 text-ink-900">{displayName}</h4>
+            <DocumentStatusChip status={document.status} />
+          </div>
+          {version && (
+            <p className="mt-1 truncate text-xs leading-4 text-ink-400" title={version.file_name}>
+              {version.file_name} · v{version.version_number} · {formatDate(version.created_at)}
+            </p>
+          )}
+        </div>
+      </div>
+
+      {renameOpen && (
+        <form
+          className="space-y-1.5"
+          onSubmit={async (event) => {
+            event.preventDefault();
+            await saveName();
+          }}
+        >
+          <label className="block text-xs font-semibold text-ink-700">
+            Document name
+            <input
+              value={nameInput}
+              onChange={(event) => setNameInput(event.target.value)}
+              className="mt-1 w-full rounded-[var(--radius-control)] border border-ink-200 bg-[var(--workspace-background)] px-2.5 py-2 text-sm text-ink-800 focus:outline-none focus:ring-2 focus:ring-clay-200"
+              disabled={savingName}
+              autoFocus
+            />
+          </label>
+          {renameError && <p className="text-xs font-medium text-[var(--danger-text)]" role="alert">{renameError}</p>}
+          <div className="flex justify-end gap-2">
+            <button type="button" className="btn-ghost px-2 py-1 text-xs" disabled={savingName} onClick={() => { setNameInput(displayName); setRenameError(null); setRenameOpen(false); }}>Cancel</button>
+            <button type="submit" className="btn-primary px-2 py-1 text-xs" disabled={savingName}>{savingName ? "Saving..." : "Save name"}</button>
+          </div>
+        </form>
+      )}
+
+      <div className="mt-auto flex min-h-8 items-center justify-end gap-1.5 border-t border-ink-100 pt-3 text-xs">
+        <UploadButton documentId={document.id} clientId={clientId} />
+        {version && (
+          <>
+            <button className="flex items-center gap-1 rounded-[var(--radius-control)] px-2 py-1.5 font-medium text-ink-500 transition-colors hover:bg-ink-50 hover:text-ink-800">
+              <Download className="h-3.5 w-3.5" /> Download
+            </button>
+            {document.versions.length > 1 && (
+              <button className="flex items-center gap-1 rounded-[var(--radius-control)] px-2 py-1.5 text-ink-400 transition-colors hover:bg-ink-50 hover:text-ink-700">
+                <History className="h-3.5 w-3.5" /> {document.versions.length} versions
+              </button>
+            )}
+          </>
+        )}
+        <details className="relative">
+          <summary className="flex h-7 w-7 cursor-pointer list-none items-center justify-center rounded-[var(--radius-control)] text-ink-400 transition-colors hover:bg-ink-50 hover:text-ink-700 [&::-webkit-details-marker]:hidden" aria-label={`More actions for ${displayName}`} title="More actions">
+            <MoreHorizontal className="h-4 w-4" aria-hidden="true" />
+          </summary>
+          <div className="absolute right-0 top-full z-10 mt-1 w-40 rounded-[var(--radius-control)] border border-ink-200 bg-[var(--workspace-background)] p-1 shadow-lg" role="menu" aria-label={`Actions for ${displayName}`}>
+            <button type="button" role="menuitem" className="flex w-full items-center gap-2 rounded px-2 py-1.5 text-left text-xs font-medium text-ink-700 hover:bg-ink-50" onClick={(event) => { event.currentTarget.closest("details")?.removeAttribute("open"); setNameInput(displayName); setRenameOpen(true); }}>
+              <Pencil className="h-3.5 w-3.5" aria-hidden="true" /> Rename
+            </button>
+            <button type="button" role="menuitem" className="flex w-full items-center gap-2 rounded px-2 py-1.5 text-left text-xs font-medium text-[var(--danger-text)] hover:bg-[var(--danger-surface)]" onClick={(event) => { event.currentTarget.closest("details")?.removeAttribute("open"); setConfirmDelete(true); }}>
+              <Trash2 className="h-3.5 w-3.5" aria-hidden="true" /> Delete document
+            </button>
+          </div>
+        </details>
+      </div>
+      <ConfirmDialog
+        open={confirmDelete}
+        title="Delete document?"
+        description={`This will permanently remove “${displayName}” from this client, including all of its versions.`}
+        confirmLabel="Delete document"
+        busy={deleting}
+        onConfirm={deleteDocument}
+        onCancel={() => setConfirmDelete(false)}
+      />
     </div>
   );
 }
@@ -609,7 +765,120 @@ function SessionFormPlaceholderRow({ template }: { template: FormTemplate }) {
   );
 }
 
-function AddDocumentCard({ clientId, documents }: { clientId: string; documents: ClientDocument[] }) {
+const DOCUMENT_FILE_ACCEPT = ".pdf,.doc,.docx,.png,.jpg";
+const DOCUMENT_FILE_FORMATS = "PDF, DOC, DOCX, PNG or JPG";
+const MIN_UPLOAD_FEEDBACK_MS = 1_200;
+
+async function keepUploadFeedbackVisible(startedAt: number) {
+  const remaining = MIN_UPLOAD_FEEDBACK_MS - (Date.now() - startedAt);
+  if (remaining > 0) {
+    await new Promise<void>((resolve) => window.setTimeout(resolve, remaining));
+  }
+}
+
+function formatDocumentFileSize(bytes: number) {
+  if (bytes < 1024 * 1024) return `${Math.max(1, Math.round(bytes / 1024))} KB`;
+  return `${(bytes / (1024 * 1024)).toFixed(1)} MB`;
+}
+
+function documentFileError(file: File) {
+  const extension = `.${file.name.split(".").pop()?.toLowerCase() ?? ""}`;
+  return DOCUMENT_FILE_ACCEPT.split(",").includes(extension)
+    ? null
+    : `Choose a ${DOCUMENT_FILE_FORMATS} file.`;
+}
+
+function DocumentFilePicker({
+  file,
+  onSelect,
+  onClear,
+  disabled = false,
+}: {
+  file: File | null;
+  onSelect: (file: File) => void;
+  onClear: () => void;
+  disabled?: boolean;
+}) {
+  const inputRef = useRef<HTMLInputElement>(null);
+  const inputId = useId();
+
+  function selectFile(nextFile?: File) {
+    if (nextFile) onSelect(nextFile);
+  }
+
+  if (file) {
+    return (
+      <div className="flex min-w-0 items-center gap-2 rounded-[var(--radius-control)] border border-ink-200 bg-ink-50/60 px-2.5 py-2">
+        <FileText className="h-4 w-4 shrink-0 text-ink-500" aria-hidden="true" />
+        <span className="min-w-0 flex-1">
+          <span className="block truncate text-xs font-semibold text-ink-800" title={file.name}>{file.name}</span>
+          <span className="block text-xs text-ink-400">{formatDocumentFileSize(file.size)}</span>
+        </span>
+        <label className="cursor-pointer text-xs font-semibold text-clay-600 hover:text-clay-700 hover:underline">
+          Replace
+          <input
+            ref={inputRef}
+            id={inputId}
+            type="file"
+            accept={DOCUMENT_FILE_ACCEPT}
+            className="sr-only"
+            disabled={disabled}
+            onChange={(event) => {
+              selectFile(event.target.files?.[0]);
+              event.currentTarget.value = "";
+            }}
+          />
+        </label>
+        <button
+          type="button"
+          className="rounded p-1 text-ink-400 hover:bg-ink-100 hover:text-ink-700 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-clay-200"
+          onClick={() => {
+            onClear();
+            if (inputRef.current) inputRef.current.value = "";
+          }}
+          disabled={disabled}
+          aria-label="Remove selected file"
+          title="Remove selected file"
+        >
+          <X className="h-3.5 w-3.5" aria-hidden="true" />
+        </button>
+      </div>
+    );
+  }
+
+  return (
+    <div className="rounded-[var(--radius-control)] border border-dashed border-ink-200 bg-ink-50/45 px-3 py-3">
+      <label className="inline-flex cursor-pointer items-center gap-1.5 rounded-[var(--radius-control)] border border-ink-200 bg-[var(--workspace-background)] px-2.5 py-1.5 text-xs font-semibold text-ink-700 transition-colors hover:bg-ink-50 focus-within:outline-none focus-within:ring-2 focus-within:ring-clay-200">
+        <Upload className="h-3.5 w-3.5 text-clay-600" aria-hidden="true" />
+        Choose file
+        <input
+          ref={inputRef}
+          id={inputId}
+          type="file"
+          accept={DOCUMENT_FILE_ACCEPT}
+          className="sr-only"
+          disabled={disabled}
+          onChange={(event) => {
+            selectFile(event.target.files?.[0]);
+            event.currentTarget.value = "";
+          }}
+        />
+      </label>
+      <p className="mt-1.5 text-xs text-ink-400">{DOCUMENT_FILE_FORMATS}</p>
+    </div>
+  );
+}
+
+function AddDocumentCard({
+  clientId,
+  documents,
+  onUploaded,
+}: {
+  clientId: string;
+  documents: ClientDocument[];
+  onUploaded: (documentId: string) => void;
+}) {
+  const router = useRouter();
   const existingTypes = new Set(documents.map((d) => d.document_type));
   // "other" stays available indefinitely so practitioners can always attach
   // an ad-hoc consent/form beyond the 12 standard types.
@@ -619,7 +888,31 @@ function AddDocumentCard({ clientId, documents }: { clientId: string; documents:
   const [open, setOpen] = useState(false);
   const [type, setType] = useState<DocumentType>(availableTypes[0]);
   const [file, setFile] = useState<File | null>(null);
-  const [busy, setBusy] = useState(false);
+  const [documentName, setDocumentName] = useState("");
+  const [uploadState, setUploadState] = useState<"idle" | "selected" | "uploading" | "error">("idle");
+  const [error, setError] = useState<string | null>(null);
+
+  function resetForm() {
+    setFile(null);
+    setDocumentName("");
+    setError(null);
+    setUploadState("idle");
+    setOpen(false);
+  }
+
+  function selectFile(nextFile: File) {
+    const validationError = documentFileError(nextFile);
+    if (validationError) {
+      setFile(null);
+      setError(validationError);
+      setUploadState("error");
+      return;
+    }
+    setFile(nextFile);
+    setDocumentName(documentNameFromFileName(nextFile.name));
+    setError(null);
+    setUploadState("selected");
+  }
 
   if (availableTypes.length === 0) return null;
 
@@ -630,43 +923,72 @@ function AddDocumentCard({ clientId, documents }: { clientId: string; documents:
           <span className="summary-icon flex h-8 w-8 items-center justify-center rounded-lg bg-ink-100 text-ink-600 transition-colors group-hover:border-clay-200 group-hover:bg-clay-100 group-hover:text-clay-700" aria-hidden="true">
             <Plus className="h-4 w-4" />
           </span>
-          <span className="text-sm font-semibold text-ink-800 transition-colors group-hover:text-clay-700">Add document / consent</span>
+          <span className="text-sm font-semibold text-ink-800 transition-colors group-hover:text-clay-700">Upload document</span>
         </button>
       ) : (
         <form
           className="w-full space-y-2"
           onSubmit={async (e) => {
             e.preventDefault();
-            setBusy(true);
-            await addClientDocumentAction(clientId, type, file?.name);
-            setBusy(false);
-            setOpen(false);
-            setFile(null);
+            if (!file) return;
+            setUploadState("uploading");
+            setError(null);
+            const uploadStartedAt = Date.now();
+            try {
+              const document = await addClientDocumentAction(clientId, type, file.name, documentName);
+              await keepUploadFeedbackVisible(uploadStartedAt);
+              onUploaded(document.id);
+              resetForm();
+              router.refresh();
+            } catch {
+              setError("The document could not be uploaded. Please try again.");
+              setUploadState("error");
+            }
           }}
         >
-          <select
-            value={type}
-            onChange={(e) => setType(e.target.value as DocumentType)}
-            className="w-full border border-ink-200 rounded-lg px-2 py-1.5 text-sm focus:outline-none focus:ring-2 focus:ring-clay-200"
-          >
-            {availableTypes.map((t) => (
-              <option key={t} value={t}>
-                {DOCUMENT_LABELS[t]}
-              </option>
-            ))}
-          </select>
-          <input
-            type="file"
-            accept=".pdf,.doc,.docx,.png,.jpg"
-            onChange={(e) => setFile(e.target.files?.[0] ?? null)}
-            className="text-xs w-full"
+          {availableTypes.length > 1 && (
+            <label className="block text-xs font-semibold text-ink-700">
+              Document type
+              <select
+                value={type}
+                onChange={(e) => setType(e.target.value as DocumentType)}
+                disabled={uploadState === "uploading"}
+                className="mt-1 w-full rounded-[var(--radius-control)] border border-ink-200 bg-[var(--workspace-background)] px-2.5 py-2 text-sm text-ink-800 focus:outline-none focus:ring-2 focus:ring-clay-200"
+              >
+                {availableTypes.map((t) => (
+                  <option key={t} value={t}>
+                    {DOCUMENT_LABELS[t]}
+                  </option>
+                ))}
+              </select>
+            </label>
+          )}
+          <label className="block text-xs font-semibold text-ink-700">
+            Document name
+            <input
+              value={documentName}
+              onChange={(event) => setDocumentName(event.target.value)}
+              placeholder="Select a file first"
+              disabled={!file || uploadState === "uploading"}
+              className="mt-1 w-full rounded-[var(--radius-control)] border border-ink-200 bg-[var(--workspace-background)] px-2.5 py-2 text-sm text-ink-800 placeholder:text-ink-400 focus:outline-none focus:ring-2 focus:ring-clay-200 disabled:cursor-not-allowed disabled:bg-ink-50 disabled:text-ink-400"
+            />
+          </label>
+          <DocumentFilePicker
+            file={file}
+            onSelect={selectFile}
+            onClear={() => {
+              setFile(null);
+              setDocumentName("");
+              setError(null);
+              setUploadState("idle");
+            }}
+            disabled={uploadState === "uploading"}
           />
-          <div className="flex justify-end gap-2">
-            <button type="button" className="btn-ghost text-xs px-3 py-1.5" onClick={() => setOpen(false)}>
-              Cancel
-            </button>
-            <button type="submit" disabled={busy} className="btn-primary text-xs px-3 py-1.5">
-              {busy ? "Adding..." : "Add"}
+          {error && <p className="text-xs font-medium text-[var(--danger-text)]" role="alert">{error}</p>}
+          <div className="flex items-center justify-end gap-2 pt-1">
+            <button type="button" className="btn-ghost px-3 py-1.5 text-xs" onClick={resetForm} disabled={uploadState === "uploading"}>Cancel</button>
+            <button type="submit" disabled={!file || uploadState === "uploading"} className="btn-primary px-3 py-1.5 text-xs">
+              {uploadState === "uploading" ? "Uploading..." : "Upload document"}
             </button>
           </div>
         </form>
@@ -676,23 +998,66 @@ function AddDocumentCard({ clientId, documents }: { clientId: string; documents:
 }
 
 function UploadButton({ documentId, clientId }: { documentId: string; clientId: string }) {
-  const [busy, setBusy] = useState(false);
+  const [open, setOpen] = useState(false);
+  const [file, setFile] = useState<File | null>(null);
+  const [state, setState] = useState<"idle" | "selected" | "uploading" | "complete" | "error">("idle");
+  const [error, setError] = useState<string | null>(null);
+
+  function selectFile(nextFile: File) {
+    const validationError = documentFileError(nextFile);
+    if (validationError) {
+      setFile(null);
+      setError(validationError);
+      setState("error");
+      return;
+    }
+    setFile(nextFile);
+    setError(null);
+    setState("selected");
+  }
+
+  if (open) {
+    return (
+      <div className="w-full space-y-2">
+        <DocumentFilePicker file={file} onSelect={selectFile} onClear={() => { setFile(null); setError(null); setState("idle"); }} disabled={state === "uploading" || state === "complete"} />
+        {error && <p className="text-xs font-medium text-[var(--danger-text)]" role="alert">{error}</p>}
+        {state === "complete" && <p className="text-xs font-medium text-[var(--status-success-text)]" role="status">Upload complete</p>}
+        <div className="flex justify-end gap-2">
+          <button type="button" className="btn-ghost px-2 py-1 text-xs" disabled={state === "uploading"} onClick={() => { setOpen(false); setFile(null); setError(null); setState("idle"); }}>
+            {state === "complete" ? "Done" : "Cancel"}
+          </button>
+          {state !== "complete" && (
+            <button
+              type="button"
+              className="btn-primary px-2 py-1 text-xs"
+              disabled={!file || state === "uploading"}
+              onClick={async () => {
+                if (!file) return;
+                setState("uploading");
+                setError(null);
+                const uploadStartedAt = Date.now();
+                try {
+                  await uploadDocumentAction(documentId, clientId, file.name);
+                  await keepUploadFeedbackVisible(uploadStartedAt);
+                  setState("complete");
+                } catch {
+                  setError("The document could not be uploaded. Please try again.");
+                  setState("error");
+                }
+              }}
+            >
+              {state === "uploading" ? "Uploading..." : "Upload document"}
+            </button>
+          )}
+        </div>
+      </div>
+    );
+  }
+
   return (
-    <label className="btn-ghost inline-flex items-center gap-1.5 px-2 py-1.5 text-xs cursor-pointer">
-      <Upload className="h-3.5 w-3.5" /> {busy ? "Uploading..." : "Upload / Replace"}
-      <input
-        type="file"
-        className="hidden"
-        accept=".pdf,.doc,.docx,.png,.jpg"
-        onChange={async (e) => {
-          const file = e.target.files?.[0];
-          if (!file) return;
-          setBusy(true);
-          await uploadDocumentAction(documentId, clientId, file.name);
-          setBusy(false);
-        }}
-      />
-    </label>
+    <button type="button" className="btn-ghost inline-flex items-center gap-1.5 px-2 py-1.5 text-xs" onClick={() => setOpen(true)}>
+      <Upload className="h-3.5 w-3.5" /> Upload / Replace
+    </button>
   );
 }
 
@@ -983,23 +1348,33 @@ function ScheduleSessionForm({ clientId, onClose }: { clientId: string; onClose:
 }
 
 function JourneyTab({
+  client,
   clientId,
   clientName,
+  workspaceStage,
   sessions,
   milestones,
   checkIns,
   aiSummaries,
   memory,
   preparationPlan,
+  documents,
+  formTemplates,
+  formSubmissions,
 }: {
+  client: Client;
   clientId: string;
   clientName: string;
+  workspaceStage: JourneyWorkspaceStage;
   sessions: Session[];
   milestones: JourneyMilestone[];
   checkIns: CheckIn[];
   aiSummaries: AiSummary[];
   memory: ClientMemoryItem[];
   preparationPlan?: PreparationPlan;
+  documents: ClientDocument[];
+  formTemplates: FormTemplate[];
+  formSubmissions: FormSubmission[];
 }) {
   const [checkInSubmitted, setCheckInSubmitted] = useState(
     checkIns.some((checkIn) => checkIn.check_in_type === "12_hour" && Boolean(checkIn.submitted_at))
@@ -1013,25 +1388,58 @@ function JourneyTab({
     sessions
       .filter((session) => session.session_type === "check_in_12hr")
       .sort((a, b) => (b.scheduled_at ?? "").localeCompare(a.scheduled_at ?? ""))[0];
-  const checkInMilestone = milestones.find((milestone) => milestone.milestone_key === "check_in_12hr_complete");
+  const stageLink = PHASE_LINKS.find((stage) => stage.phase === workspaceStage)!;
+  const stageMilestone = milestones.find((milestone) => milestone.milestone_key === stageLink.milestoneKey);
+  const stageState = getJourneyStageWorkspaceState(client, milestones, workspaceStage, stageLink.milestoneKey);
+  const stageSession = stageLink.sessionType
+    ? sessions.find((session) => session.session_type === stageLink.sessionType && session.status === "scheduled") ?? sessions.find((session) => session.session_type === stageLink.sessionType)
+    : undefined;
+  const stageHref = workspaceStage === "post_journey_check_in"
+    ? `/clients/${clientId}?tab=${encodeURIComponent("Journey & AI")}&stage=${workspaceStage}`
+    : stageSession
+      ? `/clients/${clientId}/sessions/${stageSession.id}`
+      : `/clients/${clientId}/${stageLink.href}`;
+  const stageTitle = workspaceStage === "intake" ? "Intake & Assessment" : stageLink.label;
+  const intakeSummaries = aiSummaries.filter((summary) => summary.summary_type === "client_assessment_summary");
 
   return (
     <>
-      <section id="check-in" className="scroll-mt-5 mb-8">
+      <section id="stage-workspace" className="scroll-mt-5 mb-8">
         <MilestoneToggleBanner
           clientId={clientId}
-          milestoneKey="check_in_12hr_complete"
-          label="12-Hour Check-In"
-          meta="Phase 4 · 12-hour check-in"
-          initialCompleted={checkInMilestone?.completed ?? false}
-          prepareMeSessionId={checkInSession?.id}
+          milestoneKey={stageLink.milestoneKey}
+          label={stageTitle}
+          meta={`Phase ${PHASE_LINKS.findIndex((stage) => stage.phase === workspaceStage) + 1} · ${stageLink.label}`}
+          initialCompleted={stageMilestone?.completed ?? false}
+          prepareMeSessionId={stageSession?.id}
+          stageStatus={stageState.status}
+          canMarkComplete={stageState.canMarkComplete}
+          canPrepare={stageState.canPrepare}
         />
-        <CheckInWorkspace
-          clientId={clientId}
-          clientName={clientName}
-          existingCheckIn={twelveHourCheckIn}
-          onSubmitted={() => setCheckInSubmitted(true)}
-        />
+        {workspaceStage === "intake" ? (
+          <IntakeWorkspace
+            clientId={clientId}
+            clientName={clientName}
+            documents={documents}
+            formTemplates={formTemplates}
+            formSubmissions={formSubmissions}
+            existingSummaries={intakeSummaries}
+          />
+        ) : workspaceStage === "post_journey_check_in" ? (
+          <CheckInWorkspace
+            clientId={clientId}
+            clientName={clientName}
+            existingCheckIn={twelveHourCheckIn}
+            onSubmitted={() => setCheckInSubmitted(true)}
+          />
+        ) : (
+          <div className="card p-5 text-sm text-ink-600">
+            <p>Open the {stageTitle} workspace to continue this stage.</p>
+            <Link href={stageHref} className="mt-3 inline-flex font-semibold text-clay-600 hover:text-clay-700 hover:underline">
+              Open {stageTitle} workspace <span aria-hidden="true" className="ml-1">→</span>
+            </Link>
+          </div>
+        )}
       </section>
 
       <div className="journey-practitioner-grid">

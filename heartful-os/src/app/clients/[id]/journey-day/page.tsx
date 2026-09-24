@@ -1,18 +1,14 @@
 import AppShell from "@/components/layout/AppShell";
 import {
   getClient,
-  getDocuments,
-  getPreparationPlan,
   getAiSummaries,
   getSessions,
-  getSessionNotes,
   getMilestones,
   getPractitioner,
   getRecordings,
   pickPhaseSession,
 } from "@/lib/data";
 import { notFound, redirect } from "next/navigation";
-import { DOCUMENT_LABELS } from "@/lib/types";
 import JourneyDayWorkspace from "@/components/client/JourneyDayWorkspace";
 import MilestoneToggleBanner from "@/components/client/MilestoneToggleBanner";
 import ClientPhaseNav from "@/components/client/ClientPhaseNav";
@@ -21,6 +17,7 @@ import JourneySummaryTextButton from "@/components/client/JourneySummaryTextButt
 import ClientPhaseWorkspace from "@/components/client/ClientPhaseWorkspace";
 import PhasePrepareMe from "@/components/client/PhasePrepareMe";
 import { headers } from "next/headers";
+import { getJourneyStageWorkspaceState } from "@/lib/utils";
 
 export const dynamic = "force-dynamic";
 
@@ -33,13 +30,9 @@ export default async function JourneyDayPage({ params }: { params: Promise<{ id:
   const host = h.get("host") ?? "localhost:3000";
   const protocol = h.get("x-forwarded-proto") ?? "http";
   const portalUrl = `${protocol}://${host}/portal?client=${id}`;
-  const [documents, plan, briefs, sessions, summaries, milestones, practitioner, manualNotesSummaries, callSummaries] =
+  const [sessions, milestones, practitioner, manualNotesSummaries, callSummaries] =
     await Promise.all([
-      getDocuments(id),
-      getPreparationPlan(id),
-      getAiSummaries(id, "journey_brief"),
       getSessions(id),
-      getAiSummaries(id, "journey_summary"),
       getMilestones(id),
       getPractitioner(),
       getAiSummaries(id, "journey_manual_notes_summary"),
@@ -51,9 +44,9 @@ export default async function JourneyDayPage({ params }: { params: Promise<{ id:
   const session = pickPhaseSession(sessions, "harm_reduction_support");
   const canonicalSessionHref = session ? `/clients/${id}/sessions/${session.id}` : undefined;
   if (canonicalSessionHref) redirect(canonicalSessionHref);
-  const notes = session ? await getSessionNotes(session.id) : [];
   const recordings = session ? await getRecordings(id, session.id) : [];
   const milestone = milestones.find((m) => m.milestone_key === "journey_complete");
+  const stage = getJourneyStageWorkspaceState(client, milestones, "harm_reduction_session", "journey_complete");
   const pastCallSummaries = session ? callSummaries.filter((s) => s.session_id === session.id) : [];
 
   // Earliest still-scheduled session after Journey Day (e.g. the 12hr
@@ -99,69 +92,16 @@ export default async function JourneyDayPage({ params }: { params: Promise<{ id:
         label="Journey Day"
         meta="Phase 3 · Harm Reduction Support · 8 hours"
         initialCompleted={milestone?.completed ?? false}
+        stageStatus={stage.status}
+        canMarkComplete={stage.canMarkComplete}
+        canPrepare={stage.canPrepare}
       />
-      <PhasePrepareMe clientId={id} sessionTypeLabel="Journey Day" sessionId={session?.id} />
-
-      <div className="grid lg:grid-cols-3 gap-4 mb-6">
-        <div className="card p-4">
-          <h3 className="text-sm font-semibold text-ink-900 mb-2">Health &amp; Emergency Info</h3>
-          <p className="text-sm text-ink-700">
-            {client.emergency_contact_name
-              ? `${client.emergency_contact_name}${client.emergency_contact_relationship ? ` (${client.emergency_contact_relationship})` : ""}${client.emergency_contact_phone ? ` — ${client.emergency_contact_phone}` : ""}`
-              : <span className="text-ink-400 text-xs">No emergency contact on file</span>}
-          </p>
-          <div className="mt-2 space-y-1">
-            {documents
-              .filter((d) => d.document_type === "participant_screening_form")
-              .map((d) => (
-                <div key={d.id} className="text-xs text-ink-500 capitalize">
-                  {DOCUMENT_LABELS[d.document_type]}: {d.status}
-                </div>
-              ))}
-          </div>
-        </div>
-        <div className="card p-4">
-          <h3 className="text-sm font-semibold text-ink-900 mb-2">Signed Agreements</h3>
-          {documents
-            .filter((d) => d.document_type.includes("agreement") || d.document_type === "informed_consent")
-            .map((d) => (
-              <div key={d.id} className="text-xs text-ink-500 capitalize">
-                {DOCUMENT_LABELS[d.document_type]}: {d.status}
-              </div>
-            ))}
-        </div>
-        <div className="card p-4">
-          <h3 className="text-sm font-semibold text-ink-900 mb-2">Journey Brief</h3>
-          {briefs[0] ? (
-            <p className="text-xs text-ink-600 whitespace-pre-line">{String(briefs[0].content.client_summary ?? "")}</p>
-          ) : (
-            <p className="text-xs text-ink-400">No Journey Brief on file.</p>
-          )}
-        </div>
-      </div>
-
-      {plan && (
-        <details className="card p-4 mb-6">
-          <summary className="text-sm font-semibold text-ink-900 cursor-pointer">Preparation &amp; Navigation Plan (expand)</summary>
-          <dl className="grid md:grid-cols-2 gap-3 mt-3">
-            {Object.entries(plan)
-              .filter(([k]) => !["id", "client_id", "updated_at"].includes(k))
-              .map(([k, v]) => (
-                <div key={k}>
-                  <dt className="text-xs uppercase tracking-wide text-ink-400">{k.replace(/_/g, " ")}</dt>
-                  <dd className="text-sm text-ink-700">{String(v ?? "—")}</dd>
-                </div>
-              ))}
-          </dl>
-        </details>
-      )}
+      {stage.canPrepare && <PhasePrepareMe clientId={id} sessionTypeLabel="Journey Day" sessionId={session?.id} />}
 
       <JourneyDayWorkspace
         clientId={id}
         clientName={client.full_name}
         sessionId={session?.id ?? ""}
-        initialNotes={notes}
-        existingSummary={summaries[0]}
         initialManualNotes={session?.manual_notes ?? ""}
         existingManualNotesSummary={manualNotesSummaries[0]}
         initialJourneyStartedAt={session?.journey_started_at}

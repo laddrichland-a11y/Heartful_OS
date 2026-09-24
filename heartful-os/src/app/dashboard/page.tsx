@@ -15,6 +15,12 @@ import {
 } from "@/lib/utils";
 import { STATUS_LABELS } from "@/lib/types";
 
+const AGREEMENT_ENGAGEMENT_LABELS = {
+  not_opened: "Not opened",
+  opened: "Opened",
+  completed: "Completed",
+} as const;
+
 export const dynamic = "force-dynamic";
 
 export default async function DashboardPage() {
@@ -75,27 +81,37 @@ export default async function DashboardPage() {
             <div className="dashboard-compact-list dashboard-client-list">
               {clientsWithMilestones.map(({ client, milestones }) => {
                 const agreement = agreementByClient.get(client.id);
-                const avatarSrc = clientAvatarSrc(client.full_name);
+                const avatarSrc = clientAvatarSrc(client);
+                const engagement = agreement?.engagement ?? "not_opened";
                 return (
-                  <Link key={client.id} href={clientJourneyWorkspaceHref(client)} className="dashboard-active-client">
-                    <div className="dashboard-active-client-top">
-                      <span className="dashboard-active-client-identity">
-                        <span className="dashboard-active-client-avatar" aria-hidden="true">
-                          {avatarSrc ? (
-                            <ClientAvatarImage clientName={client.full_name} src={avatarSrc} width={30} height={30} sizes="30px" />
-                          ) : (
-                            initials(client.full_name)
-                          )}
+                  <article key={client.id} className="dashboard-active-client">
+                    <Link href={clientJourneyWorkspaceHref(client)} className="dashboard-active-client-main">
+                      <div className="dashboard-active-client-top">
+                        <span className="dashboard-active-client-identity">
+                          <span className="dashboard-active-client-avatar" aria-hidden="true">
+                            {avatarSrc ? (
+                              <ClientAvatarImage clientName={client.full_name} src={avatarSrc} width={30} height={30} sizes="30px" />
+                            ) : (
+                              initials(client.full_name)
+                            )}
+                          </span>
+                          <strong>{client.full_name}</strong>
                         </span>
-                        <strong>{client.full_name}</strong>
-                      </span>
-                      <span className={cx("badge", clientStatusBadgeClasses(client.status))}>{STATUS_LABELS[client.status]}</span>
-                    </div>
-                    <JourneyProgressBar client={client} milestones={milestones} compact />
-                    <div className="dashboard-agreement-status">
-                      {agreement?.complete ? <><CheckCircle2 /> Agreements signed</> : <><FileText /> Agreements {agreement?.signed_count ?? 0}/{agreement?.total_count ?? 3}</>}
-                    </div>
-                  </Link>
+                        <span className={cx("badge", clientStatusBadgeClasses(client.status))}>{STATUS_LABELS[client.status]}</span>
+                      </div>
+                      <JourneyProgressBar client={client} milestones={milestones} compact />
+                    </Link>
+                    <Link
+                      href={`/clients/${client.id}?tab=Documents#agreements-and-consents`}
+                      className={cx("dashboard-agreement-status", `dashboard-agreement-status--${engagement}`)}
+                      aria-label={`Open ${client.full_name}'s Agreements & Consents`}
+                    >
+                      {engagement === "completed" ? <CheckCircle2 aria-hidden="true" /> : <FileText aria-hidden="true" />}
+                      <span>Agreements {agreement?.signed_count ?? 0}/{agreement?.total_count ?? 3}</span>
+                      <span aria-hidden="true">·</span>
+                      <span>{AGREEMENT_ENGAGEMENT_LABELS[engagement]}</span>
+                    </Link>
+                  </article>
                 );
               })}
               {clientsWithMilestones.length === 0 && <p className="dashboard-empty-copy">No active clients.</p>}

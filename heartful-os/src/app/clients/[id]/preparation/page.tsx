@@ -15,6 +15,7 @@ import MilestoneToggleBanner from "@/components/client/MilestoneToggleBanner";
 import ClientPhaseNav from "@/components/client/ClientPhaseNav";
 import ClientPhaseWorkspace from "@/components/client/ClientPhaseWorkspace";
 import PhasePrepareMe from "@/components/client/PhasePrepareMe";
+import { getJourneyStageWorkspaceState } from "@/lib/utils";
 
 export const dynamic = "force-dynamic";
 
@@ -36,6 +37,7 @@ export default async function PreparationPage({ params }: { params: Promise<{ id
   if (session) redirect(`/clients/${id}/sessions/${session.id}`);
 
   const milestone = milestones.find((m) => m.milestone_key === "preparation_complete");
+  const stage = getJourneyStageWorkspaceState(client, milestones, "preparation", "preparation_complete");
 
   return (
     <AppShell title={client.full_name} variant="wellnest-client">
@@ -47,8 +49,11 @@ export default async function PreparationPage({ params }: { params: Promise<{ id
         label="Preparation Session"
         meta="Phase 2 · 90 minutes"
         initialCompleted={milestone?.completed ?? false}
+        stageStatus={stage.status}
+        canMarkComplete={stage.canMarkComplete}
+        canPrepare={stage.canPrepare}
       />
-      <PhasePrepareMe clientId={id} sessionTypeLabel="Preparation" sessionType="preparation" />
+      {stage.canPrepare && <PhasePrepareMe clientId={id} sessionTypeLabel="Preparation" sessionType="preparation" />}
       <PreparationWorkspace
         clientId={id}
         clientName={client.full_name}

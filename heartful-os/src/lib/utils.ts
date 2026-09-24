@@ -1,10 +1,4 @@
 import { Client, ClientStatus, DocumentType, JourneyMilestone, JourneyPhase, Session } from "@/lib/types";
-import type { StaticImageData } from "next/image";
-import mayaChenAvatar from "../../public/images/clients/maya-chen.webp";
-import danielOrtizAvatar from "../../public/images/clients/daniel-ortiz.webp";
-import priyaPatelAvatar from "../../public/images/clients/priya-patel.webp";
-import marcusWebbAvatar from "../../public/images/clients/marcus-webb.webp";
-import sarahKleinAvatar from "../../public/images/clients/sarah-klein.webp";
 
 export function cx(...args: (string | false | null | undefined)[]) {
   return args.filter(Boolean).join(" ");
@@ -195,16 +189,19 @@ export function initials(name: string) {
     .toUpperCase();
 }
 
-export function clientAvatarSrc(clientName: string): StaticImageData | undefined {
-  const avatarByName: Record<string, StaticImageData> = {
-    "Maya Chen": mayaChenAvatar,
-    "Daniel Ortiz": danielOrtizAvatar,
-    "Priya Patel": priyaPatelAvatar,
-    "Marcus Webb": marcusWebbAvatar,
-    "Sarah Klein": sarahKleinAvatar,
+export function clientAvatarSrc(
+  client: string | Pick<Client, "full_name" | "avatar_url">,
+): string | undefined {
+  const avatarByName: Record<string, string> = {
+    "Maya Chen": "/images/clients/maya-chen.webp",
+    "Daniel Ortiz": "/images/clients/daniel-ortiz.webp",
+    "Priya Patel": "/images/clients/priya-patel.webp",
+    "Marcus Webb": "/images/clients/marcus-webb.webp",
+    "Sarah Klein": "/images/clients/sarah-klein.webp",
   };
 
-  return avatarByName[clientName];
+  if (typeof client !== "string" && client.avatar_url) return client.avatar_url;
+  return avatarByName[typeof client === "string" ? client : client.full_name];
 }
 
 export function statusBadgeClasses(status: ClientStatus): string {
@@ -279,6 +276,58 @@ export const STATUS_PHASE_MAP: Partial<Record<ClientStatus, JourneyPhase>> = {
 
 export function phaseForStatus(status: ClientStatus, fallback: JourneyPhase): JourneyPhase {
   return STATUS_PHASE_MAP[status] ?? fallback;
+}
+
+export type JourneyWorkspaceStage = Exclude<JourneyPhase, "closed"> | "growth_action_plan";
+export type JourneyStageStatus = "completed" | "in_progress" | "upcoming";
+
+const JOURNEY_WORKSPACE_STAGE_ORDER: Record<JourneyWorkspaceStage, number> = {
+  intake: 0,
+  preparation: 1,
+  harm_reduction_session: 2,
+  post_journey_check_in: 3,
+  integration_1: 4,
+  integration_2: 5,
+  growth_action_plan: 6,
+};
+
+/**
+ * Computes the displayed stage state from the client's real journey position,
+ * never from the stage the practitioner happens to be viewing.
+ */
+export function getJourneyStageWorkspaceState(
+  client: Pick<Client, "status" | "current_phase">,
+  milestones: JourneyMilestone[],
+  stage: JourneyWorkspaceStage,
+  milestoneKey: string,
+) {
+  const stageOrder = JOURNEY_WORKSPACE_STAGE_ORDER[stage];
+  const milestoneCompleted = milestones.some(
+    (milestone) => milestone.milestone_key === milestoneKey && milestone.completed,
+  );
+  const journeyClosed = client.status === "journey_closed" || milestones.some(
+    (milestone) => milestone.milestone_key === "journey_closed" && milestone.completed,
+  );
+  const phase = phaseForStatus(client.status, client.current_phase);
+  // "closed" means the final visible workspace is the Growth Action Plan
+  // until the client journey itself is explicitly closed.
+  const currentOrder = phase === "closed" ? 6 : JOURNEY_WORKSPACE_STAGE_ORDER[phase];
+  const completed = journeyClosed || milestoneCompleted || stageOrder < currentOrder;
+  const status: JourneyStageStatus = completed
+    ? "completed"
+    : stageOrder === currentOrder
+      ? "in_progress"
+      : "upcoming";
+
+  return {
+    status,
+    // A prior stage inferred as complete from the client position should not
+    // expose an "undo" control unless its milestone was explicitly recorded.
+    canMarkComplete: status === "in_progress" || milestoneCompleted,
+    // Briefings are useful for the active stage and the immediately next one,
+    // but should not be generated for distant future workspaces.
+    canPrepare: status === "in_progress" || (status === "upcoming" && stageOrder === currentOrder + 1),
+  };
 }
 
 /** The full client workspace route whose content matches the displayed phase. */
@@ -360,9 +409,9 @@ export function clientJourneyStageForStatus(status: ClientStatus, phase: Journey
 }
 
 /**
- * Manual status is the source of truth for a client's displayed journey
- * position. Journey Closed includes its hidden closing marker, while the
- * client rail presents the first seven visible stages.
+ * Client status is the persisted source of truth for a client's displayed
+ * journey position. Completed milestones also act as a safe forward-only
+ * fallback while older client records are being synchronized.
  */
 export const JOURNEY_PROGRESS_COMPLETED_MILESTONES: Partial<Record<ClientStatus, number>> = {
   inquiry: 0,
@@ -383,9 +432,9 @@ export const JOURNEY_PROGRESS_COMPLETED_MILESTONES: Partial<Record<ClientStatus,
 export const JOURNEY_PROGRESS_STAGE_COUNT = 7;
 
 /**
- * The shared journey-progress model for every practitioner surface. A manual
- * status normally determines progress; "inactive" is deliberately different:
- * it pauses a client without erasing their retained phase or completed work.
+ * The shared journey-progress model for every practitioner surface. A
+ * completed milestone can only move the display forward, never backward;
+ * "inactive" deliberately preserves its retained stage and completed work.
  */
 export function getClientJourneyProgress(
   client: Pick<Client, "status" | "current_phase">,
@@ -399,7 +448,9 @@ export function getClientJourneyProgress(
   ).length;
   const statusCompleted = JOURNEY_PROGRESS_COMPLETED_MILESTONES[client.status];
   const completed = Math.min(
-    client.status === "inactive" || statusCompleted === undefined ? milestoneCompleted : statusCompleted,
+    client.status === "inactive" || statusCompleted === undefined
+      ? milestoneCompleted
+      : Math.max(statusCompleted, milestoneCompleted),
     JOURNEY_PROGRESS_STAGE_COUNT,
   );
   const phase = phaseForStatus(client.status, client.current_phase);

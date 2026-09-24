@@ -15,6 +15,7 @@ import MilestoneToggleBanner from "@/components/client/MilestoneToggleBanner";
 import ClientPhaseNav from "@/components/client/ClientPhaseNav";
 import ClientPhaseWorkspace from "@/components/client/ClientPhaseWorkspace";
 import PhasePrepareMe from "@/components/client/PhasePrepareMe";
+import { getJourneyStageWorkspaceState } from "@/lib/utils";
 
 export const dynamic = "force-dynamic";
 
@@ -35,6 +36,7 @@ export default async function Integration2Page({ params }: { params: Promise<{ i
   if (session) redirect(`/clients/${id}/sessions/${session.id}`);
 
   const milestone = milestones.find((m) => m.milestone_key === "integration_2_complete");
+  const stage = getJourneyStageWorkspaceState(client, milestones, "integration_2", "integration_2_complete");
 
   return (
     <AppShell title={client.full_name} variant="wellnest-client">
@@ -46,8 +48,11 @@ export default async function Integration2Page({ params }: { params: Promise<{ i
         label="Integration Session Two"
         meta="Phase 6 · Within 10 days"
         initialCompleted={milestone?.completed ?? false}
+        stageStatus={stage.status}
+        canMarkComplete={stage.canMarkComplete}
+        canPrepare={stage.canPrepare}
       />
-      <PhasePrepareMe clientId={id} sessionTypeLabel="Integration Session 2" sessionType="integration_2" />
+      {stage.canPrepare && <PhasePrepareMe clientId={id} sessionTypeLabel="Integration Session 2" sessionType="integration_2" />}
       <IntegrationWorkspace
         clientId={id}
         clientName={client.full_name}

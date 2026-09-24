@@ -39,7 +39,6 @@ export default function JourneyProgressBar({
           return (
           <div key={m.id} className="group/step relative flex flex-1 items-center last:flex-none">
             <div
-              title={label}
               aria-label={`${i + 1}. ${label}${completed ? ", completed" : isCurrent ? ", current stage" : ""}`}
               aria-current={isCurrent ? "step" : undefined}
               className={cx(
@@ -64,7 +63,16 @@ export default function JourneyProgressBar({
                 )}
               />
             )}
-            <div className="pointer-events-none absolute bottom-full left-1/2 z-10 mb-2 -translate-x-1/2 whitespace-nowrap rounded bg-ink-900 px-2 py-1 text-xs text-white opacity-0 transition-opacity group-hover/step:opacity-100">
+            <div
+              className={cx(
+                "pointer-events-none absolute bottom-full z-10 mb-2 whitespace-nowrap rounded bg-ink-900 px-2 py-1 text-xs text-white opacity-0 transition-opacity group-hover/step:opacity-100",
+                i === 0
+                  ? "left-0"
+                  : i >= sorted.length - 2
+                    ? "right-0"
+                    : "left-1/2 -translate-x-1/2"
+              )}
+            >
               {i + 1}. {label}
             </div>
           </div>

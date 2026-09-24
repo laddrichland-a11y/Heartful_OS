@@ -39,6 +39,7 @@ export default function JourneyMarkerSwitch({
           <div className="journey-timing-recorded" title={formatDateTime(isoTimestamp)}>
             <Check aria-hidden="true" />
             <span>{recordedLabel} · <time dateTime={isoTimestamp} suppressHydrationWarning>{new Date(isoTimestamp).toLocaleTimeString("en-US", { hour: "numeric", minute: "2-digit" })}</time></span>
+            {pending && <Loader2 className="animate-spin" aria-label="Saving record" />}
           </div>
           {editingTime ? (
             <div className="journey-timing-time-editor">

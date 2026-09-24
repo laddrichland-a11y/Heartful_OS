@@ -3,7 +3,7 @@
 import { useMemo, useState, useTransition, useEffect, useRef } from "react";
 import Link from "next/link";
 import MonthYearPicker from "./MonthYearPicker";
-import { useRouter } from "next/navigation";
+import { useRouter, useSearchParams } from "next/navigation";
 import {
   addSessionAction,
   cancelSessionAction,
@@ -111,6 +111,10 @@ export default function CalendarView({
   externalEvents?: ExternalCalendarEvent[];
 }) {
   const router = useRouter();
+  const searchParams = useSearchParams();
+  const requestedClientId = searchParams.get("clientId");
+  const shouldOpenCreateForm = searchParams.get("createSession") === "1";
+  const hasOpenedRequestedForm = useRef(false);
   const [month, setMonth] = useState(() => {
     const d = new Date();
     return new Date(d.getFullYear(), d.getMonth(), 1);
@@ -182,14 +186,12 @@ export default function CalendarView({
   const today = new Date();
   const todayKey = localDateKey(today);
 
+  const now = Date.now();
   const upcoming = localSessions
-    // A scheduled appointment stays actionable until it is explicitly
-    // completed or cancelled. Using only the clock here incorrectly buried
-    // still-scheduled sessions in Past Sessions after their date passed.
-    .filter((s) => s.status === "scheduled" && s.scheduled_at)
+    .filter((s) => s.status === "scheduled" && s.scheduled_at && new Date(s.scheduled_at).getTime() >= now)
     .sort((a, b) => (a.scheduled_at! < b.scheduled_at! ? -1 : 1));
   const past = localSessions
-    .filter((s) => s.status !== "scheduled" || !s.scheduled_at)
+    .filter((s) => s.status !== "scheduled" || !s.scheduled_at || new Date(s.scheduled_at).getTime() < now)
     .sort((a, b) => ((a.scheduled_at ?? "") > (b.scheduled_at ?? "") ? -1 : 1));
 
   function openDetail(s: SessionWithClient) {
@@ -204,6 +206,24 @@ export default function CalendarView({
     setPrefillDate(dateForDay);
     setFormOpen(true);
   }
+
+  useEffect(() => {
+    if (
+      hasOpenedRequestedForm.current ||
+      !shouldOpenCreateForm ||
+      !requestedClientId ||
+      !clients.some((client) => client.id === requestedClientId)
+    ) {
+      return;
+    }
+
+    hasOpenedRequestedForm.current = true;
+    setSelected(null);
+    setEditing(null);
+    setDuplicateOf(null);
+    setPrefillDate(undefined);
+    setFormOpen(true);
+  }, [clients, requestedClientId, shouldOpenCreateForm]);
 
   function openEdit(s: SessionWithClient) {
     setSelected(null);
@@ -387,6 +407,7 @@ export default function CalendarView({
             editing={editing}
             duplicateOf={duplicateOf}
             prefillDate={prefillDate}
+            initialClientId={requestedClientId ?? undefined}
             onSessionCreated={(created) => {
               const client = clients.find((item) => item.id === created.client_id);
               setLocalSessions((current) => [...current, { ...created, client_name: client?.full_name ?? "Client" }]);
@@ -631,7 +652,7 @@ function SessionDetailPanel({
           <div className="space-y-1 text-sm text-ink-600">
             {/* Client name — clickable link to their chart */}
             <div className="flex items-center gap-2">
-              <ClientAvatar clientName={session.client_name} compact />
+              <ClientAvatar clientName={session.client_name} compact detail />
               <Link
                 href={`/clients/${session.client_id}?tab=Sessions`}
                 className="font-medium text-ink-800 hover:text-clay-600 hover:underline"
@@ -786,9 +807,10 @@ function SessionRow({
   );
 }
 
-function ClientAvatar({ clientName, compact = false }: { clientName: string; compact?: boolean }) {
+function ClientAvatar({ clientName, compact = false, detail = false }: { clientName: string; compact?: boolean; detail?: boolean }) {
   const src = clientAvatarSrc(clientName);
-  const size = compact ? 16 : 28;
+  const size = compact ? (detail ? 20 : 16) : 28;
+  const avatarSizeClass = compact ? (detail ? "h-5 w-5 text-[10px]" : "h-4 w-4 text-xs") : "h-7 w-7 text-xs";
 
   return src ? (
     <ClientAvatarImage
@@ -796,14 +818,14 @@ function ClientAvatar({ clientName, compact = false }: { clientName: string; com
       src={src}
       width={size}
       height={size}
-      className={cx("shrink-0 rounded-full object-cover", compact ? "h-4 w-4" : "h-7 w-7")}
-      fallbackClassName={cx("inline-flex shrink-0 items-center justify-center rounded-full bg-ink-100 text-ink-500 font-semibold", compact ? "h-4 w-4 text-xs" : "h-7 w-7 text-xs")}
+      className={cx("shrink-0 rounded-full object-cover", avatarSizeClass)}
+      fallbackClassName={cx("inline-flex shrink-0 items-center justify-center rounded-full bg-ink-100 text-ink-500 font-semibold", avatarSizeClass)}
     />
   ) : (
     <span
       className={cx(
         "inline-flex shrink-0 items-center justify-center rounded-full bg-ink-100 text-ink-500 font-semibold",
-        compact ? "h-4 w-4 text-xs" : "h-7 w-7 text-xs"
+        avatarSizeClass
       )}
       aria-hidden="true"
     >
@@ -820,6 +842,7 @@ function SessionForm({
   editing,
   duplicateOf,
   prefillDate,
+  initialClientId,
   onSessionCreated,
   onClose,
 }: {
@@ -827,13 +850,14 @@ function SessionForm({
   editing: SessionWithClient | null;
   duplicateOf: SessionWithClient | null;
   prefillDate?: string;
+  initialClientId?: string;
   onSessionCreated?: (session: Session) => void;
   onClose: () => void;
 }) {
   const sourceSession = editing ?? duplicateOf;
   const isDuplicate = Boolean(duplicateOf);
   const existingDate = sourceSession?.scheduled_at ? new Date(sourceSession.scheduled_at) : undefined;
-  const [clientId, setClientId] = useState(sourceSession?.client_id ?? clients[0]?.id ?? "");
+  const [clientId, setClientId] = useState(sourceSession?.client_id ?? initialClientId ?? clients[0]?.id ?? "");
   const [sessionType, setSessionType] = useState<SessionType>(sourceSession?.session_type ?? "preparation");
   const [date, setDate] = useState(
     existingDate
@@ -924,8 +948,9 @@ function SessionForm({
       >
         {!editing && !isDuplicate && (
           <div className="sm:col-span-2">
-            <label className="text-xs font-medium text-ink-600">Client</label>
+            <label htmlFor="calendar-session-client" className="text-xs font-medium text-ink-600">Client</label>
             <select
+              id="calendar-session-client"
               value={clientId}
               onChange={(e) => setClientId(e.target.value)}
               className="mt-1 w-full border border-ink-200 rounded-lg px-2.5 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-clay-200"

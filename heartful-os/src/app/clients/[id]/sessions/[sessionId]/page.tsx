@@ -15,18 +15,18 @@ import {
 import { notFound } from "next/navigation";
 import SessionDetailWorkspace from "@/components/client/SessionDetailWorkspace";
 import ClientPhaseNav from "@/components/client/ClientPhaseNav";
-import { PhaseNavKey } from "@/components/client/JourneyStageNav";
 import { AiSummaryType, SessionType } from "@/lib/types";
 import { headers } from "next/headers";
 import ClientHeader from "@/components/client/ClientHeader";
 import ClientPhaseWorkspace from "@/components/client/ClientPhaseWorkspace";
+import { getJourneyStageWorkspaceState, type JourneyWorkspaceStage } from "@/lib/utils";
 
 export const dynamic = "force-dynamic";
 
 // The phase pills deep-link to a session record when one exists, so this page
 // is where most pill clicks actually land — it needs the same nav row, with
 // the pill for this session's own stage highlighted.
-const SESSION_NAV_PHASE: Partial<Record<SessionType, PhaseNavKey>> = {
+const SESSION_NAV_PHASE: Partial<Record<SessionType, JourneyWorkspaceStage>> = {
   intake_assessment: "intake",
   preparation: "preparation",
   harm_reduction_support: "harm_reduction_session",
@@ -116,6 +116,10 @@ export default async function SessionDetailPage({
   const milestone = milestoneKey
     ? milestones.find((m) => m.milestone_key === milestoneKey)
     : undefined;
+  const stagePhase = SESSION_NAV_PHASE[session.session_type];
+  const stage = milestoneKey && stagePhase
+    ? getJourneyStageWorkspaceState(client, milestones, stagePhase, milestoneKey)
+    : undefined;
 
   return (
     <AppShell title={client.full_name} variant="wellnest-client">
@@ -144,6 +148,9 @@ export default async function SessionDetailPage({
         primarySummaries={primarySummaries}
         milestoneKey={milestoneKey}
         milestoneCompleted={milestone?.completed ?? false}
+        stageStatus={stage?.status}
+        canMarkComplete={stage?.canMarkComplete}
+        canPrepare={stage?.canPrepare}
         formTemplates={formTemplates}
         formSubmissions={formSubmissions}
         documents={documents}

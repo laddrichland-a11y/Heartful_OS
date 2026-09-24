@@ -7,10 +7,11 @@ import { CalendarDays, ChevronLeft, ChevronRight, Plus, Clock3, ArrowRight } fro
 import type { Session } from "@/lib/types";
 import { clientAvatarSrc, formatDateTime, initials, SESSION_TYPE_LABELS } from "@/lib/utils";
 const keyOf = (d: Date) => `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,"0")}-${String(d.getDate()).padStart(2,"0")}`;
+const isSameMonth = (first: Date, second: Date) => first.getFullYear() === second.getFullYear() && first.getMonth() === second.getMonth();
 export default function DashboardDateStrip({ sessions }: { sessions: (Session & {client_name: string})[] }) {
   const [today, setToday] = useState<Date | null>(null);
   const [month, setMonth] = useState<Date | null>(null);
-  const [start, setStart] = useState(1);
+  const [start, setStart] = useState<Date | null>(null);
   const [day, setDay] = useState<string | null>(null);
   useEffect(() => {
     const now = new Date();
@@ -18,51 +19,51 @@ export default function DashboardDateStrip({ sessions }: { sessions: (Session & 
     // eslint-disable-next-line react-hooks/set-state-in-effect
     setToday(now);
     setMonth(new Date(now.getFullYear(), now.getMonth(), 1));
+    setStart(new Date(now.getFullYear(), now.getMonth(), now.getDate()));
     setDay(keyOf(now));
-    const end = new Date(now.getFullYear(), now.getMonth()+1, 0).getDate();
-    setStart(Math.max(1, Math.min(now.getDate()-3, end-8)));
   }, []);
-  if (!month || !today) return <div className="dashboard-empty" aria-busy="true">Loading sessions…</div>;
-  const name = month.toLocaleDateString("en-US", {month:"long"});
-  const monthKey = keyOf(month).slice(0,7);
-  const todayKey = keyOf(today);
-  const end = new Date(month.getFullYear(),month.getMonth()+1,0).getDate();
-  const dates = Array.from({length:9}, (_,i)=>new Date(month.getFullYear(),month.getMonth(),start+i));
+  if (!month || !today || !start) return <div className="dashboard-empty" aria-busy="true">Loading sessions…</div>;
+  const activeMonth = month;
+  const calendarToday = today;
+  const rangeStart = start;
+  const name = activeMonth.toLocaleDateString("en-US", {month:"long"});
+  const monthKey = keyOf(activeMonth).slice(0,7);
+  const todayKey = keyOf(calendarToday);
+  const dates = Array.from({length:9}, (_,i)=>new Date(rangeStart.getFullYear(), rangeStart.getMonth(), rangeStart.getDate() + i));
   const filtered = sessions.filter(s=>{
     if (!s.scheduled_at || s.status !== "scheduled") return false;
-    const key = keyOf(new Date(s.scheduled_at));
-    return key.startsWith(monthKey) && (!day || key === day);
+    const scheduled = new Date(s.scheduled_at);
+    const key = keyOf(scheduled);
+    return scheduled.getTime() >= calendarToday.getTime() && key.startsWith(monthKey) && (!day || key === day);
   }).sort((a,b)=>new Date(a.scheduled_at!).getTime()-new Date(b.scheduled_at!).getTime());
-  function moveMonth(offset: number, tail = false) {
-    const next = new Date(month!.getFullYear(),month!.getMonth()+offset,1);
+  const isCurrentMonth = activeMonth.getFullYear() === calendarToday.getFullYear() && activeMonth.getMonth() === calendarToday.getMonth();
+  const atEarliestDate = rangeStart.getTime() <= new Date(calendarToday.getFullYear(), calendarToday.getMonth(), calendarToday.getDate()).getTime();
+  function moveMonth(offset: number) {
+    const next = new Date(activeMonth.getFullYear(),activeMonth.getMonth()+offset,1);
+    if (next < new Date(calendarToday.getFullYear(), calendarToday.getMonth(), 1)) return;
     setMonth(next); setDay(null);
-    setStart(tail ? new Date(next.getFullYear(),next.getMonth()+1,0).getDate()-8 : 1);
+    setStart(isSameMonth(next, calendarToday) ? new Date(calendarToday.getFullYear(), calendarToday.getMonth(), calendarToday.getDate()) : next);
   }
   function selectMonth(next: Date) {
+    if (next < new Date(calendarToday.getFullYear(), calendarToday.getMonth(), 1)) return;
     setMonth(next);
     setDay(null);
-    setStart(1);
+    setStart(isSameMonth(next, calendarToday) ? new Date(calendarToday.getFullYear(), calendarToday.getMonth(), calendarToday.getDate()) : next);
   }
   function moveDays(offset: number) {
-    if (day) {
-      const selectedDate = new Date(`${day}T12:00:00`);
-      selectedDate.setDate(selectedDate.getDate() + offset);
-      const selectedEnd = new Date(selectedDate.getFullYear(), selectedDate.getMonth()+1, 0).getDate();
-      setMonth(new Date(selectedDate.getFullYear(), selectedDate.getMonth(), 1));
-      setStart(Math.max(1, Math.min(selectedDate.getDate()-3, selectedEnd-8)));
-      setDay(keyOf(selectedDate));
-      return;
-    }
-    if (offset < 0 && start === 1) moveMonth(-1,true);
-    else if (offset > 0 && start+8 >= end) moveMonth(1);
-    else setStart(Math.max(1,Math.min(start+offset,end-8)));
+    const next = new Date(rangeStart);
+    next.setDate(next.getDate() + offset);
+    const earliest = new Date(calendarToday.getFullYear(), calendarToday.getMonth(), calendarToday.getDate());
+    if (next < earliest) return;
+    setStart(next);
+    setMonth(new Date(next.getFullYear(), next.getMonth(), 1));
+    setDay(null);
   }
   function goToToday() {
     const now = new Date();
-    const monthEnd = new Date(now.getFullYear(), now.getMonth()+1, 0).getDate();
     setToday(now);
     setMonth(new Date(now.getFullYear(), now.getMonth(), 1));
-    setStart(Math.max(1, Math.min(now.getDate()-3, monthEnd-8)));
+    setStart(new Date(now.getFullYear(), now.getMonth(), now.getDate()));
     setDay(keyOf(now));
   }
   return <>
@@ -70,8 +71,8 @@ export default function DashboardDateStrip({ sessions }: { sessions: (Session & 
       <h2 className="dashboard-accent-title dashboard-section-title" style={{whiteSpace:"nowrap"}}><span className="dashboard-section-icon"><CalendarDays aria-hidden="true" width={20} height={20} strokeWidth={1.75} /></span>Upcoming Sessions</h2>
       <div className="dashboard-header-actions" style={{flexWrap:"wrap", justifyContent:"flex-end", marginLeft:"auto"}}>
         <div className="dashboard-month-navigation" aria-label="Session month navigation">
-          <button type="button" aria-label="Previous month" onClick={()=>moveMonth(-1)}><ChevronLeft aria-hidden="true" /></button>
-          <MonthYearPicker value={month} onChange={selectMonth} triggerClassName="calendar-month-trigger dashboard-month-label" />
+          <button type="button" aria-label="Previous month" disabled={isCurrentMonth} onClick={()=>moveMonth(-1)}><ChevronLeft aria-hidden="true" /></button>
+          <MonthYearPicker value={activeMonth} onChange={selectMonth} minDate={calendarToday} triggerClassName="calendar-month-trigger dashboard-month-label" />
           <button type="button" aria-label="Next month" onClick={()=>moveMonth(1)}><ChevronRight aria-hidden="true" /></button>
         </div>
         <button type="button" className="dashboard-today-action" onClick={goToToday}>Today</button>
@@ -79,7 +80,7 @@ export default function DashboardDateStrip({ sessions }: { sessions: (Session & 
       </div>
     </div>
     <div className="dashboard-date-strip" aria-label="Session date navigation">
-      <button type="button" className="dashboard-date-arrow" aria-label="Earlier dates" onClick={()=>moveDays(-7)}><ChevronLeft aria-hidden="true" /></button>
+      <button type="button" className="dashboard-date-arrow" aria-label="Earlier dates" disabled={atEarliestDate} onClick={()=>moveDays(-7)}><ChevronLeft aria-hidden="true" /></button>
       {dates.map(date=>{
         const key=keyOf(date);
         return <button type="button" key={key} className="dashboard-date" data-selected={key===day ? "true":"false"} aria-pressed={key===day} aria-current={key===todayKey ? "date":undefined} aria-label={date.toLocaleDateString("en-US",{month:"long",day:"numeric",year:"numeric"})} onClick={()=>setDay(key)}><strong>{date.getDate()}</strong><span>{date.toLocaleDateString("en-US",{weekday:"short"})}</span></button>;

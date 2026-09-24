@@ -16,6 +16,7 @@ export default function AiGenerateButton({
   disabled = false,
   buttonId,
   onError,
+  refreshOnDone = true,
 }: {
   clientId: string;
   summaryType: AiSummaryType;
@@ -27,6 +28,8 @@ export default function AiGenerateButton({
   disabled?: boolean;
   buttonId?: string;
   onError?: () => void;
+  /** Keep transient preview UI open when its result is already rendered locally. */
+  refreshOnDone?: boolean;
 }) {
   const router = useRouter();
   const [busy, setBusy] = useState(false);
@@ -46,7 +49,7 @@ export default function AiGenerateButton({
           const json = await res.json();
           if (!res.ok || !json.summary) throw new Error("AI generation failed");
           if (onDone) onDone(json.summary);
-          router.refresh();
+          if (refreshOnDone) router.refresh();
         } catch {
           onError?.();
         } finally {

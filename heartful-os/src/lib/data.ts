@@ -307,6 +307,31 @@ async function applyJourneyProgress(clientId: string, rule?: SessionProgressRule
   if (rule.milestoneKey) await completeMilestone(clientId, rule.milestoneKey);
 }
 
+// Marking a journey stage complete from its workspace has the same business
+// meaning as completing its session. Keep the client record in sync with
+// those milestones as well. We only advance: a manually scheduled or later
+// status must never be rolled back by an older milestone being read.
+const MILESTONE_COMPLETED_PROGRESS: SessionProgressRule[] = Object.values(SESSION_COMPLETED_PROGRESS)
+  .filter((rule): rule is SessionProgressRule => Boolean(rule?.milestoneKey));
+
+export async function syncJourneyProgressFromMilestones(
+  clientId: string,
+  suppliedMilestones?: JourneyMilestone[],
+) {
+  const milestones = suppliedMilestones ?? await ensureMilestones(clientId);
+  const completedKeys = new Set(
+    milestones.filter((milestone) => milestone.completed).map((milestone) => milestone.milestone_key),
+  );
+
+  // A later stage cannot establish progress until all earlier stages are
+  // complete. This keeps an accidentally checked future stage from moving a
+  // client ahead in their journey.
+  for (const rule of MILESTONE_COMPLETED_PROGRESS) {
+    if (!rule.milestoneKey || !completedKeys.has(rule.milestoneKey)) break;
+    await applyJourneyProgress(clientId, rule);
+  }
+}
+
 async function revertJourneyProgressForSession(session: Session) {
   const completedRule = SESSION_COMPLETED_PROGRESS[session.session_type];
   const reopenRule = SESSION_REOPEN_PROGRESS[session.session_type];
@@ -511,6 +536,12 @@ export async function updateClient(id: string, patch: Partial<Client>): Promise<
   return patchById(store.clients, "clients", id, { ...patch, updated_at: new Date().toISOString() });
 }
 
+export async function markPortalAgreementsOpened(clientId: string): Promise<Client | undefined> {
+  const client = await getClient(clientId);
+  if (!client || client.portal_agreements_opened_at) return client;
+  return updateClient(clientId, { portal_agreements_opened_at: new Date().toISOString() });
+}
+
 export async function createClient(input: {
   full_name: string;
   email?: string;
@@ -667,6 +698,10 @@ export async function getMilestones(clientId: string): Promise<JourneyMilestone[
     });
     closedMilestone.completed = shouldBeClosed;
   }
+  // Self-heal records created before stage-completion and client-status
+  // synchronization was added. This also means every current client gets the
+  // corrected status the next time their record is opened.
+  await syncJourneyProgressFromMilestones(clientId, milestones);
   return milestones.sort((a, b) => a.sort_order - b.sort_order);
 }
 
@@ -718,6 +753,19 @@ export async function addClientDocument(
     versions: [],
   };
   return create(store.documents, "documents", doc);
+}
+
+// A document title is display metadata only. It never changes a stored file
+// name or creates a new version.
+export async function renameClientDocument(documentId: string, title: string) {
+  return patchById(store.documents, "documents", documentId, { title });
+}
+
+// Versions are embedded in the document record in both supported backends.
+// Removing the record therefore removes the document and its complete version
+// history together, without touching any other client's documents.
+export async function deleteClientDocument(documentId: string): Promise<void> {
+  await removeById(store.documents, "documents", documentId);
 }
 
 // ---------------------------------------------------------------------------
@@ -1543,6 +1591,7 @@ export interface ClientAgreementStatus {
   signed_count: number;
   total_count: number;
   complete: boolean;
+  engagement: "not_opened" | "opened" | "completed";
   outstanding_titles: string[];
   /** When the last of the agreements was signed — only set once complete. */
   completed_at?: string;
@@ -1566,6 +1615,7 @@ export async function getAgreementStatusByClient(clientRecords?: Client[]): Prom
       ]);
 
       let signed = 0;
+      let opened = false;
       const outstanding: string[] = [];
       const timestamps: string[] = [];
 
@@ -1579,6 +1629,7 @@ export async function getAgreementStatusByClient(clientRecords?: Client[]): Prom
           continue;
         }
         const submission = submissions.find((sub) => sub.document_id === doc.id);
+        if (submission) opened = true;
         const status = submission?.status ?? "missing";
         if (status === "signed" || status === "submitted") {
           signed += 1;
@@ -1591,6 +1642,7 @@ export async function getAgreementStatusByClient(clientRecords?: Client[]): Prom
 
       const total = agreementTemplates.length;
       const complete = signed === total;
+      const engagement = complete ? "completed" : (client.portal_agreements_opened_at || opened) ? "opened" : "not_opened";
       return {
         client_id: client.id,
         client_name: client.full_name,
@@ -1598,6 +1650,7 @@ export async function getAgreementStatusByClient(clientRecords?: Client[]): Prom
         signed_count: signed,
         total_count: total,
         complete,
+        engagement,
         outstanding_titles: outstanding,
         completed_at: complete && timestamps.length > 0 ? timestamps.sort().at(-1) : undefined,
       };
@@ -1619,6 +1672,10 @@ export async function getTask(taskId: string): Promise<Task | undefined> {
 export async function addTask(task: Omit<Task, "id">) {
   const t: Task = { id: nextId("task"), ...task };
   return create(store.tasks, "tasks", t);
+}
+
+export async function updateTask(taskId: string, patch: Pick<Task, "title" | "due_at" | "task_type">) {
+  return patchById(store.tasks, "tasks", taskId, patch);
 }
 
 export async function completeTask(taskId: string) {

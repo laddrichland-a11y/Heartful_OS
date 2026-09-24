@@ -20,6 +20,7 @@ import {
   getFormSubmissionAction,
   getPortalRecordingUrlAction,
   markPortalWelcomeSeenAction,
+  markPortalAgreementsOpenedAction,
   reportDeadPortalLinkAction,
 } from "@/lib/actions";
 import {
@@ -41,7 +42,7 @@ import {
   Session,
   Recording,
 } from "@/lib/types";
-import { AlertCircle, Check, CheckCircle2, Circle, Send, Sparkles, FileText, ChevronDown, ChevronUp, CalendarDays, MapPin, Clock, Pencil, Trash2, MessageSquareText, Mail, Music, ScrollText, UserRound, LayoutDashboard, ListChecks, Sprout, PanelLeftClose, PanelLeftOpen, Settings, ArrowRight } from "@/components/ui/HeartfulIcon";
+import { AlertCircle, Check, CheckCircle2, Send, Sparkles, FileText, ChevronDown, ChevronUp, CalendarDays, MapPin, Clock, Pencil, Trash2, MessageSquareText, Mail, Music, ScrollText, UserRound, LayoutDashboard, ListChecks, Sprout, PanelLeftClose, PanelLeftOpen, Settings, ArrowRight } from "@/components/ui/HeartfulIcon";
 import { formatDate, formatDateTime, getClientJourneyProgress, relativeDueLabel, cx, isGeneralPaperwork } from "@/lib/utils";
 import JourneyProgressBar from "@/components/JourneyProgressBar";
 import FormRenderer from "@/components/forms/FormRenderer";
@@ -163,6 +164,7 @@ function PortalPageInner() {
   const [clients, setClients] = useState<{ id: string; full_name: string }[]>([]);
   const [bundle, setBundle] = useState<Bundle | null>(null);
   const [authGate, setAuthGate] = useState<{ accountExists: boolean; clientEmail?: string } | null>(null);
+  const [portalNow, setPortalNow] = useState(Date.now);
   // Set once ?client=<id> is confirmed dead. Holds who to contact, and
   // whether the viewer is the practitioner (who needs a way out, not a
   // "contact your practitioner" message).
@@ -179,6 +181,7 @@ function PortalPageInner() {
   const [showAllAssignments, setShowAllAssignments] = useState(false);
   const portalAccountMenuRef = useRef<HTMLDivElement>(null);
   const portalViewMenuRef = useRef<HTMLDivElement>(null);
+  const returningToPractitionerRef = useRef(false);
 
   /* Browser storage is an external preference source, synchronized after the
      initial server render to avoid a hydration mismatch. */
@@ -189,6 +192,11 @@ function PortalPageInner() {
     } catch {
       // Keep the sidebar expanded when browser storage is unavailable.
     }
+  }, []);
+
+  useEffect(() => {
+    const interval = window.setInterval(() => setPortalNow(Date.now()), 60_000);
+    return () => window.clearInterval(interval);
   }, []);
 
   useEffect(() => {
@@ -249,6 +257,19 @@ function PortalPageInner() {
       return next;
     });
   }
+
+  function returnToPractitionerView() {
+    // A portal URL can carry ?client=<id>, whose initialization effect would
+    // otherwise immediately restore client mode before navigation completes.
+    returningToPractitionerRef.current = true;
+    setPortalViewMenuOpen(false);
+    setPortalClientSwitcherOpen(false);
+    setPortalClientListOpen(false);
+    setRole("practitioner");
+    setIsPreview(false);
+    setPortalClientId("");
+    router.replace("/dashboard");
+  }
   // Practitioner-preview escape hatch for the agreements gate below. Real
   // clients never get this — for them the gate is the whole portal until
   // the paperwork is signed.
@@ -269,6 +290,7 @@ function PortalPageInner() {
   // "practitioner") bounces straight back to /dashboard before this effect
   // ever gets a chance to flip into client mode.
   useEffect(() => {
+    if (returningToPractitionerRef.current) return;
     const fromQuery = clientFromQuery;
     if (fromQuery) {
       if (role !== "client") setRole("client");
@@ -326,6 +348,21 @@ function PortalPageInner() {
     }
   }, [portalClientId, setPortalClientId, clientFromQuery]);
 
+  // This hook must stay above the loading, invalid-link and authentication
+  // returns below. The portal can move between those states after hydration,
+  // and conditionally calling it later would change PortalPageInner's hook
+  // order and crash the entire page.
+  useEffect(() => {
+    if (!bundle?.client || isPreview || process.env.NODE_ENV === "development") return;
+    const agreementDocuments = bundle.documents.filter((doc) => isGeneralPaperwork(doc.document_type));
+    if (agreementDocuments.length === 0) return;
+    const agreementsOutstanding = agreementDocuments.some((doc) => {
+      const submission = bundle.formSubmissions.find((sub) => sub.document_id === doc.id);
+      return submission?.status !== "signed" && submission?.status !== "submitted";
+    });
+    if (agreementsOutstanding) void markPortalAgreementsOpenedAction(portalClientId);
+  }, [bundle, isPreview, portalClientId]);
+
   // Nothing role-dependent can be rendered before hydration either — the
   // demo picker below keys off portalClientId, which is "" until then, so a
   // returning client would flash the practitioner-only client list.
@@ -363,11 +400,7 @@ function PortalPageInner() {
                   Pick a client
                 </button>
                 <button
-                  onClick={() => {
-                    setLinkInvalid(null);
-                    setRole("practitioner");
-                    router.replace("/dashboard");
-                  }}
+                  onClick={returnToPractitionerView}
                   className="btn-primary text-sm px-4 py-2"
                 >
                   Back to dashboard
@@ -415,6 +448,11 @@ function PortalPageInner() {
               </button>
             ))}
           </div>
+          {canUsePortalPreviewControls && (
+            <div className="flex justify-center pt-2">
+              <PractitionerViewReturn onReturn={returnToPractitionerView} />
+            </div>
+          )}
         </div>
       </div>
     );
@@ -426,6 +464,7 @@ function PortalPageInner() {
         clientId={portalClientId}
         accountExists={authGate.accountExists}
         clientEmail={authGate.clientEmail}
+        onReturnToPractitioner={canUsePortalPreviewControls ? returnToPractitionerView : undefined}
         onUnlocked={() => {
           getPortalBundleAction(portalClientId).then((b) => {
             if (!("locked" in b && b.locked)) {
@@ -477,7 +516,7 @@ function PortalPageInner() {
   const currentMilestone = currentMilestoneIndex >= 0 ? sortedMilestones[currentMilestoneIndex] : sortedMilestones.at(-1);
   const nextMilestone = currentMilestoneIndex >= 0 ? sortedMilestones[currentMilestoneIndex + 1] : undefined;
   const nextSession = bundle.sessions
-    .filter((session) => session.status === "scheduled" && session.scheduled_at && new Date(session.scheduled_at).getTime() >= Date.now())
+    .filter((session) => session.status === "scheduled" && session.scheduled_at && new Date(session.scheduled_at).getTime() >= portalNow)
     .sort((a, b) => a.scheduled_at!.localeCompare(b.scheduled_at!))[0];
   const homeActions = [
     ...incompleteForms.map(({ doc, template, status }) => ({
@@ -526,11 +565,12 @@ function PortalPageInner() {
     .filter((x) => x !== null);
   const agreementsDone = agreementItems.filter((a) => a.done).length;
   const agreementsOutstanding = agreementItems.length - agreementsDone;
-  // Keep the production gate client-safe, while making the review escape hatch
-  // consistently available in local Codex development sessions.
-  const canSkipAgreementReview = isPreview || process.env.NODE_ENV === "development";
 
-  if (agreementItems.length > 0 && agreementsOutstanding > 0 && !previewSkipGate) {
+  // This bypass is deliberately limited to an explicit practitioner preview.
+  // A real client must always complete the required agreements.
+  const canSkipAgreementReview = isPreview;
+
+  if (agreementItems.length > 0 && agreementsOutstanding > 0 && (!isPreview || !previewSkipGate)) {
     const practitionerName = bundle.practitioner?.full_name ?? "your practitioner";
     const practitionerEmail = bundle.practitioner?.email;
     return (
@@ -544,16 +584,20 @@ function PortalPageInner() {
         />
         <div className="portal-workspace-frame flex-1 min-w-0">
         <header className="portal-onboarding-header portal-mobile-header">
-          <div className="portal-onboarding-header__inner">
+          <div className="portal-onboarding-header__inner justify-between gap-4">
             <div className="portal-onboarding-brand">
               <HeartfulBrand subtitle="Your Journey Portal" />
             </div>
+            {canUsePortalPreviewControls && <PractitionerViewReturn onReturn={returnToPractitionerView} />}
           </div>
         </header>
 
         <main className="portal-onboarding-main">
           <div className="portal-onboarding-intro">
-            <p className="portal-onboarding-step">Step 1 of {agreementItems.length} · Agreements</p>
+            <div className="portal-onboarding-step-row">
+              <p className="portal-onboarding-step">Step 1 of {agreementItems.length} · Agreements</p>
+              {canUsePortalPreviewControls && <PractitionerViewReturn onReturn={returnToPractitionerView} className="portal-onboarding-return" label="Practitioner View" />}
+            </div>
             <h1>Welcome, {client.full_name.split(" ")[0]}</h1>
             <p>Review and sign these agreements before continuing to your journey portal. They explain how we&apos;ll work together and what to expect.</p>
           </div>
@@ -597,7 +641,7 @@ function PortalPageInner() {
               </div>
               {canSkipAgreementReview && (
                 <button onClick={() => setPreviewSkipGate(true)} className="portal-preview-skip">
-                  Skip review <span aria-hidden="true">→</span>
+                  Skip (preview only) <span aria-hidden="true">→</span>
                 </button>
               )}
             </div>
@@ -624,8 +668,11 @@ function PortalPageInner() {
     return (
       <div className="portal-shell min-h-screen bg-[var(--background)]">
         <header className="bg-white border-b border-ink-100">
-          <div className="portal-onboarding-header__inner portal-onboarding-brand">
-            <HeartfulBrand subtitle="Your Journey Portal" />
+          <div className="portal-onboarding-header__inner justify-between gap-4">
+            <div className="portal-onboarding-brand">
+              <HeartfulBrand subtitle="Your Journey Portal" />
+            </div>
+            {canUsePortalPreviewControls && <PractitionerViewReturn onReturn={returnToPractitionerView} />}
           </div>
         </header>
         <main className="px-4 md:px-6 py-8">
@@ -680,12 +727,7 @@ function PortalPageInner() {
                       type="button"
                       role="menuitem"
                       data-selected={role === "practitioner"}
-                      onClick={() => {
-                        setRole("practitioner");
-                        setIsPreview(false);
-                        setPortalViewMenuOpen(false);
-                        router.push("/dashboard");
-                      }}
+                      onClick={returnToPractitionerView}
                     >
                       <span><strong>Practitioner View</strong><small>Manage your practice</small></span>
                       {role === "practitioner" && <Check aria-hidden="true" />}
@@ -1032,6 +1074,20 @@ function PortalSidebar({
       </div>
 
     </aside>
+  );
+}
+
+function PractitionerViewReturn({ onReturn, className, label }: { onReturn: () => void; className?: string; label?: string }) {
+  return (
+    <button
+      type="button"
+      onClick={onReturn}
+      className={className ?? "btn-secondary inline-flex items-center gap-2 whitespace-nowrap px-3 py-2 text-sm"}
+      aria-label={label ?? "Back to Practitioner View"}
+    >
+      <LayoutDashboard aria-hidden="true" />
+      <span>{label ?? "Back to Practitioner View"}</span>
+    </button>
   );
 }
 
@@ -1659,11 +1715,13 @@ function PortalAuthGate({
   accountExists,
   clientEmail,
   onUnlocked,
+  onReturnToPractitioner,
 }: {
   clientId: string;
   accountExists: boolean;
   clientEmail?: string;
   onUnlocked: () => void;
+  onReturnToPractitioner?: () => void;
 }) {
   return (
     <div className="auth-shell min-h-screen flex items-center justify-center bg-[var(--background)] px-4">
@@ -1673,6 +1731,11 @@ function PortalAuthGate({
           <PortalLoginForm clientId={clientId} clientEmail={clientEmail} onUnlocked={onUnlocked} />
         ) : (
           <PortalCreateAccountForm clientId={clientId} clientEmail={clientEmail} onUnlocked={onUnlocked} />
+        )}
+        {onReturnToPractitioner && (
+          <div className="flex justify-center pt-1">
+            <PractitionerViewReturn onReturn={onReturnToPractitioner} />
+          </div>
         )}
       </div>
     </div>

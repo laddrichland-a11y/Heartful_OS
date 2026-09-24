@@ -1,12 +1,12 @@
 "use client";
 
 import { useEffect, useRef, useState, useTransition } from "react";
-import { CalendarClock, Check, CheckCircle2, ChevronDown, CircleDot, Loader2, Sparkles } from "@/components/ui/HeartfulIcon";
+import { CalendarClock, Check, CheckCircle2, CircleDot, Loader2, Sparkles, X } from "@/components/ui/HeartfulIcon";
 import AiGenerateButton from "@/components/ai/AiGenerateButton";
 import { SessionBriefContent } from "@/components/ai/SummaryCard";
 import { AiSummary } from "@/lib/types";
 import { toggleMilestoneAction } from "@/lib/actions";
-import { cx } from "@/lib/utils";
+import { cx, JourneyStageStatus } from "@/lib/utils";
 
 export default function MilestoneToggleBanner({
   clientId,
@@ -17,6 +17,9 @@ export default function MilestoneToggleBanner({
   prepareMeSessionId,
   initialBriefing,
   autoPrepare = false,
+  stageStatus = initialCompleted ? "completed" : "in_progress",
+  canMarkComplete = true,
+  canPrepare = true,
 }: {
   clientId: string;
   milestoneKey: string;
@@ -26,6 +29,9 @@ export default function MilestoneToggleBanner({
   prepareMeSessionId?: string;
   initialBriefing?: AiSummary;
   autoPrepare?: boolean;
+  stageStatus?: JourneyStageStatus;
+  canMarkComplete?: boolean;
+  canPrepare?: boolean;
 }) {
   const [completed, setCompleted] = useState(initialCompleted);
   const [pending, startTransition] = useTransition();
@@ -34,9 +40,11 @@ export default function MilestoneToggleBanner({
   const [prepareError, setPrepareError] = useState<string | null>(null);
   const autoStarted = useRef(false);
   const prepareButtonId = `stage-prepare-${clientId}-${milestoneKey}`;
+  const displayStatus: JourneyStageStatus = completed ? "completed" : stageStatus;
+  const showPrepare = canPrepare && !completed;
 
   useEffect(() => {
-    if (!autoPrepare || autoStarted.current || completed) return;
+    if (!autoPrepare || !showPrepare || autoStarted.current) return;
     autoStarted.current = true;
     if (briefing) {
       setBriefingOpen(true);
@@ -44,7 +52,7 @@ export default function MilestoneToggleBanner({
     }
     const frame = window.requestAnimationFrame(() => document.getElementById(prepareButtonId)?.click());
     return () => window.cancelAnimationFrame(frame);
-  }, [autoPrepare, briefing, completed, prepareButtonId]);
+  }, [autoPrepare, briefing, prepareButtonId, showPrepare]);
 
   function toggle() {
     const next = !completed;
@@ -60,23 +68,23 @@ export default function MilestoneToggleBanner({
         <p className="client-eyebrow">Stage workspace</p>
         <div className="mt-1 flex flex-wrap items-center gap-2.5">
           <h2 className="journey-icon-heading text-lg font-semibold text-ink-900"><CalendarClock aria-hidden="true" />{label}</h2>
-          <span className={cx("badge inline-flex items-center gap-1.5", completed ? "bg-sage-100 text-sage-700" : "bg-clay-50 text-clay-700")}>
-            {completed ? <CheckCircle2 className="h-3.5 w-3.5" /> : <CircleDot className="h-3.5 w-3.5" />}
-            {completed ? "Completed" : "In progress"}
+          <span className={cx("badge inline-flex items-center gap-1.5", displayStatus === "completed" ? "bg-sage-100 text-sage-700" : displayStatus === "upcoming" ? "bg-ink-100 text-ink-500" : "bg-clay-50 text-clay-700")}>
+            {displayStatus === "completed" ? <CheckCircle2 className="h-3.5 w-3.5" /> : displayStatus === "upcoming" ? <CalendarClock className="h-3.5 w-3.5" /> : <CircleDot className="h-3.5 w-3.5" />}
+            {displayStatus === "completed" ? "Completed" : displayStatus === "upcoming" ? "Upcoming" : "In progress"}
           </span>
         </div>
         {meta && <p className="mt-1.5 text-xs text-ink-400">{meta}</p>}
       </div>
       <div className="stage-workspace-actions">
-        <button onClick={toggle} disabled={pending} className={cx("btn-secondary flex items-center gap-2 text-xs", completed && "border-sage-200 text-sage-700")}>
+        {canMarkComplete && <button onClick={toggle} disabled={pending} className={cx("btn-secondary flex items-center gap-2 text-xs", completed && "border-sage-200 text-sage-700")}>
           {pending ? <Loader2 className="h-4 w-4 animate-spin" /> : <Check className="h-4 w-4" />}
           {completed ? "Mark incomplete" : "Mark complete"}
-        </button>
-        {briefing ? (
+        </button>}
+        {showPrepare && briefing ? (
           <button type="button" onClick={() => setBriefingOpen(true)} disabled={completed || pending} className="btn-primary stage-workspace-prepare flex items-center gap-2 text-xs">
             <Sparkles className="h-4 w-4" aria-hidden="true" /> View briefing
           </button>
-        ) : (
+        ) : showPrepare ? (
           <AiGenerateButton
             buttonId={prepareButtonId}
             clientId={clientId}
@@ -89,7 +97,7 @@ export default function MilestoneToggleBanner({
             onError={() => setPrepareError("Couldn’t generate the briefing. Please try again.")}
             className="btn-primary stage-workspace-prepare flex items-center gap-2 text-xs"
           />
-        )}
+        ) : null}
       </div>
       {prepareError && <p className="stage-workspace-prepare-error" role="alert">{prepareError}</p>}
       {briefingOpen && briefing && (
@@ -100,7 +108,7 @@ export default function MilestoneToggleBanner({
                 <p className="client-eyebrow">Prepared for this stage</p>
                 <h2 id="prepare-brief-title">{label}</h2>
               </div>
-              <button type="button" onClick={() => setBriefingOpen(false)} aria-label="Collapse briefing" title="Collapse briefing"><ChevronDown aria-hidden="true" /></button>
+              <button type="button" onClick={() => setBriefingOpen(false)} aria-label="Close briefing" title="Close briefing"><X aria-hidden="true" /></button>
             </header>
             <SessionBriefContent content={briefing.content} />
             <footer className="prepare-brief-dialog-footer">
@@ -109,9 +117,10 @@ export default function MilestoneToggleBanner({
                 summaryType="prepare_me_briefing"
                 label="Regenerate Brief"
                 icon="sparkles"
-                extra={{ sessionTypeLabel: label, ...(prepareMeSessionId ? { sessionId: prepareMeSessionId } : {}) }}
+                extra={{ sessionTypeLabel: label, regenerate: true, ...(prepareMeSessionId ? { sessionId: prepareMeSessionId } : {}) }}
                 onDone={(summary) => { setBriefing(summary); setPrepareError(null); }}
                 onError={() => setPrepareError("Couldn’t generate the briefing. Please try again.")}
+                refreshOnDone={false}
                 className="btn-secondary flex items-center gap-2 text-xs"
               />
             </footer>

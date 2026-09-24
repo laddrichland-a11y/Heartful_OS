@@ -95,15 +95,46 @@ export function mockGrowthActionPlan(clientName: string) {
   };
 }
 
-export function mockPrepareMeBriefing(clientName: string, sessionTypeLabel: string) {
+export function mockPrepareMeBriefing(clientName: string, sessionTypeLabel: string, revision = 1) {
+  // The prototype runs without an AI key in many environments. Keep each
+  // regenerated briefing meaningfully different so the interaction behaves
+  // like a real alternate read, rather than returning the same mock forever.
+  const alternatives = [
+    {
+      whyAreTheyHere: "Their stated goals and motivations for this work.",
+      intentions: "Primary intentions carried from preparation through to today.",
+      insights: "Key insights and themes that have emerged across the journey to date.",
+      focus: `For this ${sessionTypeLabel}, focus on continuity — connect today's work back to ${clientName}'s stated intentions.`,
+    },
+    {
+      whyAreTheyHere: "Revisit their stated goals and notice what now feels most relevant.",
+      intentions: "Prioritize the intention that feels most alive in the client's current context.",
+      insights: "Look for the newest themes alongside the established patterns in the record.",
+      focus: `For this ${sessionTypeLabel}, take a fresh read of ${clientName}'s current needs before deciding what to carry forward.`,
+    },
+    {
+      whyAreTheyHere: "Identify what may need care, clarity, or a slower pace at this point in the journey.",
+      intentions: "Use the client's own language to choose one grounded intention for the conversation.",
+      insights: "Notice any shifts since the last touchpoint, including what remains unresolved.",
+      focus: `For this ${sessionTypeLabel}, begin by checking what feels unfinished or newly present for ${clientName}.`,
+    },
+    {
+      whyAreTheyHere: "Connect the current session to the wider arc of support without assuming progress.",
+      intentions: "Invite the client to name what would make this conversation useful today.",
+      insights: "Hold both the client's strengths and the open questions that still need attention.",
+      focus: `For this ${sessionTypeLabel}, make space for ${clientName} to set the pace and name the most useful next step.`,
+    },
+  ];
+  const alternative = alternatives[(Math.max(1, revision) - 1) % alternatives.length];
+
   return {
     who_is_this_client: `${clientName} is a client currently in their journey process. Review their full record above for specifics.`,
-    why_are_they_here: "Their stated goals and motivations for this work.",
-    their_intentions: "Primary intentions carried from preparation through to today.",
+    why_are_they_here: alternative.whyAreTheyHere,
+    their_intentions: alternative.intentions,
     risks_to_hold: "Anything flagged from intake or prior sessions to hold gently in mind today.",
-    insights_so_far: "Key insights and themes that have emerged across the journey to date.",
+    insights_so_far: alternative.insights,
     commitments_made: "Any commitments or action items the client has made in prior sessions.",
-    focus_for_today: `For this ${sessionTypeLabel}, focus on continuity — connect today's work back to ${clientName}'s stated intentions.`,
+    focus_for_today: alternative.focus,
   };
 }
 

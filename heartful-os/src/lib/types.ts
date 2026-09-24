@@ -166,6 +166,8 @@ export interface Client extends OnHoldFields {
   status: ClientStatus;
   current_phase: JourneyPhase;
   notes?: string;
+  /** Practitioner-managed portrait, stored separately from a client's name. */
+  avatar_url?: string;
   package_name?: string;
   package_value?: number;
   amount_paid?: number;
@@ -181,6 +183,9 @@ export interface Client extends OnHoldFields {
   // on the record rather than in localStorage so the welcome doesn't come
   // back when they switch from their phone to a laptop.
   portal_welcome_seen_at?: string;
+  // Set the first time a client reaches the required agreements gate. This
+  // lets the practitioner distinguish unopened paperwork from work in progress.
+  portal_agreements_opened_at?: string;
   created_at: string;
   updated_at: string;
 }

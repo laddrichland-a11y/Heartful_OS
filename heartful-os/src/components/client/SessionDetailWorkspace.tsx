@@ -39,6 +39,7 @@ import {
   ScrollText,
   MoreHorizontal,
   ChevronDown,
+  ChevronUp,
 } from "@/components/ui/HeartfulIcon";
 import SummaryCard from "@/components/ai/SummaryCard";
 import ActionCardHeader from "@/components/client/ActionCardHeader";
@@ -98,6 +99,9 @@ export default function SessionDetailWorkspace({
   initialRecordings = [],
   portalUrl,
   autoPrepare = false,
+  stageStatus,
+  canMarkComplete,
+  canPrepare,
 }: {
   clientId: string;
   clientName: string;
@@ -121,6 +125,9 @@ export default function SessionDetailWorkspace({
   initialRecordings?: Recording[];
   portalUrl: string;
   autoPrepare?: boolean;
+  stageStatus?: "completed" | "in_progress" | "upcoming";
+  canMarkComplete?: boolean;
+  canPrepare?: boolean;
 }) {
   // Auto-expand the most recent past briefing so it's immediately visible
   const [expandedPast, setExpandedPast] = useState<string | null>(pastBriefings[0]?.id ?? null);
@@ -326,6 +333,20 @@ export default function SessionDetailWorkspace({
 
   async function toggleJourneyMarker(marker: JourneyMarker) {
     const isOn = !!markerTimestamp(marker);
+    const previousMarkers = {
+      started: journeyStartedAt,
+      ended: journeyEndedAt,
+      booster: boosterDoseAt,
+    };
+
+    // Make the record feel immediate while the server persists the timestamp
+    // and matching Manual Notes line. Any failed write is rolled back below.
+    const optimisticTimestamp = new Date().toISOString();
+    const nextTimestamp = isOn ? undefined : optimisticTimestamp;
+    if (marker === "started") setJourneyStartedAt(nextTimestamp);
+    else if (marker === "ended") setJourneyEndedAt(nextTimestamp);
+    else setBoosterDoseAt(nextTimestamp);
+
     setMarkerPending(marker);
     setMarkerError(null);
     try {
@@ -333,8 +354,16 @@ export default function SessionDetailWorkspace({
       const timeZone = Intl.DateTimeFormat().resolvedOptions().timeZone;
       const updated = await setJourneyMarkerAction(session.id, clientId, marker, !isOn, manualNotes, timeZone);
       if (updated) applyMarkerResult(updated);
-      else setMarkerError("Couldn't save that time. Please try again.");
+      else {
+        setJourneyStartedAt(previousMarkers.started);
+        setJourneyEndedAt(previousMarkers.ended);
+        setBoosterDoseAt(previousMarkers.booster);
+        setMarkerError("Couldn't save that time. Please try again.");
+      }
     } catch {
+      setJourneyStartedAt(previousMarkers.started);
+      setJourneyEndedAt(previousMarkers.ended);
+      setBoosterDoseAt(previousMarkers.booster);
       setMarkerError("Couldn't save that time. Check your connection and try again.");
     } finally {
       setMarkerPending(null);
@@ -512,6 +541,9 @@ export default function SessionDetailWorkspace({
           prepareMeSessionId={session.id}
           initialBriefing={pastBriefings[0]}
           autoPrepare={autoPrepare}
+          stageStatus={stageStatus}
+          canMarkComplete={canMarkComplete}
+          canPrepare={canPrepare}
         />
       )}
 
@@ -625,7 +657,7 @@ export default function SessionDetailWorkspace({
       {/* Journey Timing + Manual Notes (Journey Day only) */}
       {session.session_type === "harm_reduction_support" && (
         <div className="card session-analysis-panel journey-timing-panel p-4">
-          <h3 className="session-panel-heading mb-3">Journey Timing</h3>
+          <h3 className="session-panel-heading mb-3 flex items-center gap-3">Journey Timing</h3>
 
           {markerError && <p className="journey-timing-error" role="alert">{markerError}</p>}
 
@@ -694,7 +726,7 @@ export default function SessionDetailWorkspace({
       )}
       {session.session_type === "harm_reduction_support" && (
         <div className="card p-4 space-y-3">
-          <h3 className="session-panel-heading">
+          <h3 className="session-panel-heading flex items-center gap-3">
             <FileText className="h-4 w-4 text-ink-400" />
             Manual Notes
           </h3>
@@ -753,7 +785,7 @@ export default function SessionDetailWorkspace({
 
           <div className="pt-3 border-t border-ink-100 space-y-3">
             <div className="session-transcript-heading-row">
-              <h3 className="session-panel-heading">Transcripts &amp; Recordings</h3>
+              <h3 className="session-panel-heading flex items-center gap-3">Transcripts &amp; Recordings</h3>
             </div>
             <p className="text-xs text-ink-400">
               Paste the transcript from your recording device (Plaud, iPhone Voice Memos, etc.) and/or upload the
@@ -838,7 +870,7 @@ export default function SessionDetailWorkspace({
 
           <div className="pt-3 border-t border-ink-100 space-y-3">
             <div className="flex items-center justify-between gap-3">
-              <h3 className="session-panel-heading">
+              <h3 className="session-panel-heading flex items-center gap-3">
                 <MessageSquareText className="h-4 w-4 text-ink-400" />
                 Journey Day Summary
               </h3>
@@ -857,15 +889,22 @@ export default function SessionDetailWorkspace({
                 {localCallSummaries.map((cs) => (
                   <div key={cs.id}>
                     <button
+                      type="button"
                       onClick={() => setExpandedCallSummary(expandedCallSummary === cs.id ? null : cs.id)}
+                      aria-expanded={expandedCallSummary === cs.id}
+                      aria-controls={`journey-day-summary-${cs.id}`}
                       className="flex items-center gap-2 text-sm text-ink-500 hover:text-ink-800 py-1 text-left w-full"
                     >
                       <Clock className="h-3.5 w-3.5 shrink-0" />
                       <span>Journey Day Summary — {formatDateTime(cs.created_at)}</span>
-                      <span className="ml-auto text-xs">{expandedCallSummary === cs.id ? "▲" : "▼"}</span>
+                      {expandedCallSummary === cs.id ? (
+                        <ChevronUp className="ml-auto h-4 w-4 shrink-0" aria-hidden="true" />
+                      ) : (
+                        <ChevronDown className="ml-auto h-4 w-4 shrink-0" aria-hidden="true" />
+                      )}
                     </button>
                     {expandedCallSummary === cs.id && (
-                      <div className="mt-2">
+                      <div id={`journey-day-summary-${cs.id}`} className="mt-2">
                         <SummaryCard
                           title={cs.title}
                           content={cs.content}
@@ -925,7 +964,7 @@ export default function SessionDetailWorkspace({
       {/* Past briefings */}
       {localPastBriefings.length > 0 && (
         <div className="card p-4">
-          <h3 className="session-panel-heading mb-3">
+          <h3 className="session-panel-heading mb-3 flex items-center gap-3">
             <History className="h-4 w-4 text-ink-400" />
             Past Briefings
           </h3>
@@ -981,7 +1020,7 @@ export default function SessionDetailWorkspace({
       {/* Primary session analysis (client_assessment_summary, journey_brief, etc.) */}
       {localPrimarySummaries.length > 0 && (
         <div className="card p-4">
-          <h3 className="session-panel-heading mb-3">
+          <h3 className="session-panel-heading mb-3 flex items-center gap-3">
             <BookOpen className="h-4 w-4 text-ink-400" />
             Session Analysis
           </h3>
@@ -1066,7 +1105,7 @@ export default function SessionDetailWorkspace({
 
           {(localCallSummaries.length > 0 || newCallSummary) && (
             <div className="card p-4 space-y-3">
-              <h3 className="session-panel-heading">
+              <h3 className="session-panel-heading flex items-center gap-3">
                 <MessageSquareText className="h-4 w-4 text-ink-400" />
                 Session Summary
               </h3>
@@ -1081,15 +1120,22 @@ export default function SessionDetailWorkspace({
                   {localCallSummaries.map((cs) => (
                     <div key={cs.id}>
                       <button
+                        type="button"
                         onClick={() => setExpandedCallSummary(expandedCallSummary === cs.id ? null : cs.id)}
+                        aria-expanded={expandedCallSummary === cs.id}
+                        aria-controls={`session-summary-${cs.id}`}
                         className="flex items-center gap-2 text-sm text-ink-500 hover:text-ink-800 py-1 text-left w-full"
                       >
                         <Clock className="h-3.5 w-3.5 shrink-0" />
                         <span>Session Summary — {formatDateTime(cs.created_at)}</span>
-                        <span className="ml-auto text-xs">{expandedCallSummary === cs.id ? "▲" : "▼"}</span>
+                        {expandedCallSummary === cs.id ? (
+                          <ChevronUp className="ml-auto h-4 w-4 shrink-0" aria-hidden="true" />
+                        ) : (
+                          <ChevronDown className="ml-auto h-4 w-4 shrink-0" aria-hidden="true" />
+                        )}
                       </button>
                       {expandedCallSummary === cs.id && (
-                        <div className="mt-2">
+                        <div id={`session-summary-${cs.id}`} className="mt-2">
                           <SummaryCard
                             title={cs.title}
                             content={cs.content}
@@ -1121,7 +1167,7 @@ export default function SessionDetailWorkspace({
       {/* Related forms */}
       {sessionForms.length > 0 && (
         <div className="card p-4">
-          <h3 className="session-panel-heading mb-3">
+          <h3 className="session-panel-heading mb-3 flex items-center gap-3">
             <FileText className="h-4 w-4 text-ink-400" />
             Forms for This Session
           </h3>

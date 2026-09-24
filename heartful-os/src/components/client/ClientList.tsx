@@ -249,7 +249,7 @@ export default function ClientList({ items, emptyMessage }: { items: ClientListI
       ) : (
         <div className="grid gap-3">
           {visibleItems.map(({ client, milestones, referralName }) => {
-            const avatarSrc = clientAvatarSrc(client.full_name);
+            const avatarSrc = clientAvatarSrc(client);
             const completed = isCompletedClient(client.status);
             const showAction = !client.on_hold_at;
             return (
