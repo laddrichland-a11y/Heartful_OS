@@ -2,6 +2,7 @@ import AppShell from "@/components/layout/AppShell";
 import { getClients, getOnHoldClients, getMilestones, getReferralSources, getSessions } from "@/lib/data";
 import Link from "next/link";
 import { cx, isActiveClient, isAwaitingIntegrationClient, isCompletedClient } from "@/lib/utils";
+import { selectCurrentOrNextSession } from "@/lib/sessionSelectors";
 import ClientList from "@/components/client/ClientList";
 import NewClientButton from "@/components/client/NewClientButton";
 import { PauseCircle } from "@/components/ui/HeartfulIcon";
@@ -50,8 +51,9 @@ export default async function ClientsPage({
       return {
         client,
         milestones,
+        sessions,
         referralName: referralSources.find((source) => source.id === client.referral_source_id)?.name,
-        hasScheduledSession: sessions.some((session) => session.status === "scheduled"),
+        hasScheduledSession: Boolean(selectCurrentOrNextSession(sessions)),
       };
     })
   );

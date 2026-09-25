@@ -1,14 +1,21 @@
 "use server";
 
 import { revalidatePath } from "next/cache";
-import { redirect } from "next/navigation";
+import { forbidden, redirect, unauthorized } from "next/navigation";
 import { cookies } from "next/headers";
 import * as data from "@/lib/data";
 import { SessionNoteField, ClientStatus, JourneyPhase, DocumentType, SessionType, type PaymentMethod } from "@/lib/types";
-import { JOURNEY_PROGRESS_COMPLETED_MILESTONES } from "@/lib/utils";
+import { canSetJourneyStatus, JOURNEY_PROGRESS_COMPLETED_MILESTONES } from "@/lib/utils";
 import { runAiJson } from "@/lib/ai/generate";
 import { buildAiConversationPrompt, buildProspectIntroSummaryPrompt } from "@/lib/ai/prompts";
 import { mockAiConversationReply } from "@/lib/ai/mocks";
+import {
+  AuthorizationError,
+  getAuthenticatedPractitioner,
+  requireClientAccess as authorizeClientAccess,
+  requirePractitioner as authorizePractitioner,
+  requireProspectAccess as authorizeProspectAccess,
+} from "@/lib/serverAuth";
 
 const AUTH_COOKIE = "heartful_auth";
 const PORTAL_UNLOCK_PREFIX = "portal_unlock_";
@@ -42,9 +49,39 @@ export async function logoutAction() {
 }
 
 async function isPractitionerAuthed(): Promise<boolean> {
-  const expected = process.env.PRACTITIONER_PASSWORD;
-  if (!expected) return true;
-  return (await cookies()).get(AUTH_COOKIE)?.value === expected;
+  return Boolean(await getAuthenticatedPractitioner());
+}
+
+function interruptUnauthorizedAction(error: unknown): never {
+  if (error instanceof AuthorizationError) {
+    if (error.status === 401) unauthorized();
+    forbidden();
+  }
+  throw error;
+}
+
+async function requirePractitioner() {
+  try {
+    return await authorizePractitioner();
+  } catch (error) {
+    interruptUnauthorizedAction(error);
+  }
+}
+
+async function requireClientAccess(clientId: string, options: { allowPortal?: boolean } = {}) {
+  try {
+    return await authorizeClientAccess(clientId, options);
+  } catch (error) {
+    interruptUnauthorizedAction(error);
+  }
+}
+
+async function requireProspectAccess(prospectId: string) {
+  try {
+    return await authorizeProspectAccess(prospectId);
+  } catch (error) {
+    interruptUnauthorizedAction(error);
+  }
 }
 
 // Sets the per-client unlock cookie. Deliberately a *session* cookie (no
@@ -76,6 +113,9 @@ export async function createPortalAccountAction(
   if (client.portal_password_hash) return { ok: false, error: "An account already exists. Please log in." };
   if (!emailLooksValid(email)) return { ok: false, error: "Enter a valid email address." };
   if (password.length < 6) return { ok: false, error: "Password must be at least 6 characters." };
+  if (!client.email || client.email.trim().toLowerCase() !== email.trim().toLowerCase()) {
+    return { ok: false, error: "Use the email address your practitioner has on file." };
+  }
 
   await data.createPortalAccount(clientId, email, password);
   const updated = await data.getClient(clientId);
@@ -125,15 +165,10 @@ export async function reportDeadPortalLinkAction(): Promise<{
 // clears the account so the client sees the "create your account" form
 // again next time they open their portal link.
 export async function resetPortalPasswordAction(clientId: string) {
+  await requireClientAccess(clientId);
   await data.resetPortalPassword(clientId);
   (await cookies()).delete(`${PORTAL_UNLOCK_PREFIX}${clientId}`);
   revalidatePath(`/clients/${clientId}`);
-}
-
-async function isPortalUnlocked(clientId: string, passwordHash?: string): Promise<boolean> {
-  if (!passwordHash) return false; // no account set up yet — must create one first
-  const cookie = (await cookies()).get(`${PORTAL_UNLOCK_PREFIX}${clientId}`)?.value;
-  return cookie === passwordHash;
 }
 
 /** Updates only the contact fields the client record already supports. */
@@ -143,9 +178,9 @@ export async function updatePortalProfileAction(
 ): Promise<{ ok: boolean; error?: string }> {
   const client = await data.getClient(clientId);
   if (!client) return { ok: false, error: "Client not found." };
-
-  const authed = await isPractitionerAuthed();
-  if (!authed && !(await isPortalUnlocked(clientId, client.portal_password_hash))) {
+  try {
+    await requireClientAccess(clientId, { allowPortal: true });
+  } catch {
     return { ok: false, error: "Your portal session has ended. Please sign in again." };
   }
 
@@ -166,10 +201,29 @@ export async function updatePortalProfileAction(
 
 /** Ends the current client portal session without affecting practitioner auth. */
 export async function portalLogoutAction(clientId: string) {
+  await requireClientAccess(clientId, { allowPortal: true });
   const cookieStore = await cookies();
   cookieStore.delete(`${PORTAL_UNLOCK_PREFIX}${clientId}`);
   cookieStore.delete(PORTAL_CLIENT_COOKIE);
   redirect("/portal");
+}
+
+async function requireDocumentForClient(clientId: string, documentId: string) {
+  const document = await data.getDocument(documentId);
+  if (!document || document.client_id !== clientId) forbidden();
+  return document;
+}
+
+async function requireSessionForClient(clientId: string, sessionId: string) {
+  const session = await data.getSession(sessionId);
+  if (!session || session.client_id !== clientId) forbidden();
+  return session;
+}
+
+async function requireTaskForClient(clientId: string, taskId: string) {
+  const task = await data.getTask(taskId);
+  if (!task || task.client_id !== clientId) forbidden();
+  return task;
 }
 
 // ---------------------------------------------------------------------------
@@ -180,6 +234,8 @@ export async function portalLogoutAction(clientId: string) {
 // ---------------------------------------------------------------------------
 
 export async function uploadDocumentAction(documentId: string, clientId: string, fileName: string, notes?: string) {
+  await requireClientAccess(clientId);
+  await requireDocumentForClient(clientId, documentId);
   await data.uploadDocumentVersion(documentId, fileName, notes);
   revalidatePath(`/clients/${clientId}`);
 }
@@ -192,6 +248,7 @@ export async function createClientAction(input: {
   package_name?: string;
   package_value?: number;
 }) {
+  await requirePractitioner();
   const client = await data.createClient(input);
   revalidatePath("/clients");
   revalidatePath("/dashboard");
@@ -201,6 +258,8 @@ export async function createClientAction(input: {
 }
 
 export async function deleteAiSummaryAction(summaryId: string, clientId: string) {
+  await requireClientAccess(clientId);
+  if (!(await data.getAiSummaries(clientId)).some((summary) => summary.id === summaryId)) forbidden();
   await data.deleteAiSummary(summaryId);
   revalidatePath(`/clients/${clientId}`);
   revalidatePath(`/clients/${clientId}/sessions`);
@@ -208,6 +267,8 @@ export async function deleteAiSummaryAction(summaryId: string, clientId: string)
 }
 
 export async function updateAiSummaryAction(summaryId: string, clientId: string, content: Record<string, unknown>) {
+  await requireClientAccess(clientId);
+  if (!(await data.getAiSummaries(clientId)).some((summary) => summary.id === summaryId)) forbidden();
   const updated = await data.updateAiSummary(summaryId, content);
   revalidatePath(`/clients/${clientId}`);
   revalidatePath(`/clients/${clientId}/sessions`);
@@ -216,6 +277,7 @@ export async function updateAiSummaryAction(summaryId: string, clientId: string,
 }
 
 export async function deleteGrowthActionPlanAction(clientId: string) {
+  await requireClientAccess(clientId);
   await data.deleteGrowthActionPlan(clientId);
   revalidatePath(`/clients/${clientId}`);
   revalidatePath(`/clients/${clientId}/integration-2`);
@@ -227,8 +289,7 @@ export async function recordPaymentAction(
   method?: string,
   notes?: string
 ) {
-  const client = await data.getClient(clientId);
-  if (!client) throw new Error("Client not found");
+  const { client } = await requireClientAccess(clientId);
   const newTotal = (client.amount_paid ?? 0) + amount;
   // Update running total on client record AND create a dated payment record
   // so MTD/YTD breakdowns on the dashboard are accurate going forward.
@@ -243,14 +304,14 @@ export async function recordPaymentAction(
 }
 
 export async function updatePaymentDueDateAction(clientId: string, dueDate?: string) {
+  await requireClientAccess(clientId);
   await data.updateClient(clientId, { payment_due_date: dueDate || "" });
   revalidatePath(`/clients/${clientId}`);
   revalidatePath("/reports/revenue");
 }
 
 export async function updateOutstandingPaymentAction(clientId: string, outstanding: number) {
-  const client = await data.getClient(clientId);
-  if (!client) throw new Error("Client not found");
+  const { client } = await requireClientAccess(clientId);
   await data.updateClient(clientId, {
     package_value: (client.amount_paid ?? 0) + Math.max(0, outstanding),
   });
@@ -264,11 +325,13 @@ export async function updatePaymentAction(
   paymentId: string,
   input: { amount: number; paidAt: string; method?: string; notes?: string }
 ) {
+  await requirePractitioner();
   const payment = (await data.getPayments()).find((item) => item.id === paymentId);
   if (!payment) throw new Error("Payment not found");
   if (!input.amount || input.amount <= 0) throw new Error("Payment amount must be greater than zero");
   const client = await data.getClient(payment.client_id);
   if (!client) throw new Error("Client not found");
+  await requireClientAccess(payment.client_id);
 
   await Promise.all([
     data.updatePayment(paymentId, {
@@ -288,6 +351,7 @@ export async function updatePaymentAction(
 }
 
 export async function deleteClientAction(clientId: string) {
+  await requireClientAccess(clientId);
   await data.deleteClient(clientId);
   revalidatePath("/clients");
   revalidatePath("/dashboard");
@@ -302,6 +366,7 @@ export async function addClientDocumentAction(
   fileName?: string,
   title?: string
 ) {
+  await requireClientAccess(clientId);
   const filenameTitle = fileName?.split(/[\\/]/).pop()?.replace(/\.[^.]+$/, "").trim();
   const documentTitle = title?.trim() || filenameTitle || "Other Document";
   const doc = await data.addClientDocument(clientId, documentType, documentTitle);
@@ -313,8 +378,8 @@ export async function addClientDocumentAction(
 }
 
 export async function renameClientDocumentAction(documentId: string, clientId: string, title: string) {
-  const document = await data.getDocument(documentId);
-  if (!document || document.client_id !== clientId) throw new Error("Document not found.");
+  await requireClientAccess(clientId);
+  const document = await requireDocumentForClient(clientId, documentId);
 
   const filenameTitle = document.versions[0]?.file_name?.split(/[\\/]/).pop()?.replace(/\.[^.]+$/, "").trim();
   const documentTitle = title.trim() || filenameTitle || "Other Document";
@@ -324,8 +389,8 @@ export async function renameClientDocumentAction(documentId: string, clientId: s
 }
 
 export async function deleteClientDocumentAction(documentId: string, clientId: string) {
-  const document = await data.getDocument(documentId);
-  if (!document || document.client_id !== clientId) throw new Error("Document not found.");
+  await requireClientAccess(clientId);
+  await requireDocumentForClient(clientId, documentId);
 
   await data.deleteClientDocument(documentId);
   revalidatePath(`/clients/${clientId}`);
@@ -343,10 +408,13 @@ const JOURNEY_PROGRESS_MILESTONES = [
 ] as const;
 
 export async function updateClientStatusAction(clientId: string, status: ClientStatus, phase: JourneyPhase) {
-  await data.updateClient(clientId, { status, current_phase: phase });
-
+  await requireClientAccess(clientId);
   const completedCount = JOURNEY_PROGRESS_COMPLETED_MILESTONES[status];
   if (completedCount !== undefined) {
+    const milestones = await data.getMilestones(clientId);
+    if (!canSetJourneyStatus(milestones, status)) {
+      throw new Error("Complete the next journey stage before advancing this status.");
+    }
     for (const [index, milestoneKey] of JOURNEY_PROGRESS_MILESTONES.entries()) {
       if (index < completedCount) {
         await data.completeMilestone(clientId, milestoneKey);
@@ -355,6 +423,7 @@ export async function updateClientStatusAction(clientId: string, status: ClientS
       }
     }
   }
+  await data.updateClient(clientId, { status, current_phase: phase });
   revalidatePath(`/clients/${clientId}`);
   revalidatePath("/dashboard");
 }
@@ -368,6 +437,7 @@ export async function updatePractitionerAction(patch: {
   venmo_handle?: string;
   payment_methods?: PaymentMethod[];
 }) {
+  await requirePractitioner();
   await data.updatePractitioner(patch);
   revalidatePath("/settings");
   revalidatePath("/dashboard");
@@ -377,6 +447,8 @@ export async function updatePractitionerAction(patch: {
 // Puts a form into "in_progress" (creating an empty submission if needed) so
 // both practitioner and client enter live co-editing mode simultaneously.
 export async function startLiveSessionAction(clientId: string, documentId: string, templateId: string) {
+  await requireClientAccess(clientId);
+  await requireDocumentForClient(clientId, documentId);
   await data.saveFormSubmission({ clientId, documentId, templateId, answers: {}, status: "in_progress" });
   revalidatePath(`/clients/${clientId}/forms/${documentId}`);
   revalidatePath("/portal");
@@ -385,12 +457,15 @@ export async function startLiveSessionAction(clientId: string, documentId: strin
 // Ends a live session by saving current answers as "draft" — work is preserved
 // but live syncing stops. Either side can restart with startLiveSessionAction.
 export async function endLiveSessionAction(clientId: string, documentId: string, templateId: string) {
+  await requireClientAccess(clientId);
+  await requireDocumentForClient(clientId, documentId);
   await data.saveFormSubmission({ clientId, documentId, templateId, answers: {}, status: "draft" });
   revalidatePath(`/clients/${clientId}/forms/${documentId}`);
   revalidatePath("/portal");
 }
 
 export async function createReferralSourceAction(name: string, category?: string) {
+  await requirePractitioner();
   const src = await data.createReferralSource(name.trim(), category?.trim());
   revalidatePath("/clients");
   revalidatePath("/settings");
@@ -398,17 +473,20 @@ export async function createReferralSourceAction(name: string, category?: string
 }
 
 export async function deleteReferralSourceAction(id: string) {
+  await requirePractitioner();
   await data.deleteReferralSource(id);
   revalidatePath("/clients");
   revalidatePath("/settings");
 }
 
 export async function updateClientNotesAction(clientId: string, notes: string) {
+  await requireClientAccess(clientId);
   await data.updateClient(clientId, { notes });
   revalidatePath(`/clients/${clientId}`);
 }
 
 export async function addClientQuickNoteAction(clientId: string, content: string) {
+  await requireClientAccess(clientId);
   const note = content.trim();
   if (!note) throw new Error("A note cannot be empty.");
 
@@ -418,12 +496,14 @@ export async function addClientQuickNoteAction(clientId: string, content: string
 }
 
 export async function updateClientProfileAction(clientId: string, patch: Record<string, string>) {
+  await requireClientAccess(clientId);
   await data.updateClient(clientId, patch);
   revalidatePath(`/clients/${clientId}`);
 }
 
 /** Stores a compact client portrait. The UI resizes images before sending them. */
 export async function updateClientAvatarAction(clientId: string, avatarUrl: string) {
+  await requireClientAccess(clientId);
   const value = avatarUrl.trim();
   if (!value.startsWith("data:image/") || value.length > 500_000) {
     throw new Error("Choose a smaller JPG, PNG, or WebP image.");
@@ -437,23 +517,30 @@ export async function updateClientAvatarAction(clientId: string, avatarUrl: stri
 }
 
 export async function savePreparationPlanAction(clientId: string, patch: Record<string, string>) {
+  await requireClientAccess(clientId);
   await data.upsertPreparationPlan(clientId, patch);
   revalidatePath(`/clients/${clientId}/preparation`);
   revalidatePath(`/clients/${clientId}`);
 }
 
 export async function addTranscriptAction(clientId: string, text: string, sessionId?: string) {
+  await requireClientAccess(clientId);
+  if (sessionId) await requireSessionForClient(clientId, sessionId);
   const t = await data.addTranscript(clientId, text, sessionId);
   return t;
 }
 
 export async function updateSessionManualNotesAction(sessionId: string, clientId: string, manualNotes: string) {
+  await requireClientAccess(clientId);
+  await requireSessionForClient(clientId, sessionId);
   await data.setSessionManualNotes(sessionId, manualNotes);
   revalidatePath(`/clients/${clientId}/journey-day`);
   revalidatePath(`/clients/${clientId}/sessions/${sessionId}`);
 }
 
 export async function updateSessionTranscriptAction(sessionId: string, clientId: string, transcript: string) {
+  await requireClientAccess(clientId);
+  await requireSessionForClient(clientId, sessionId);
   await data.setSessionTranscript(sessionId, transcript);
   revalidatePath(`/clients/${clientId}/journey-day`);
   revalidatePath(`/clients/${clientId}/sessions/${sessionId}`);
@@ -467,6 +554,8 @@ export async function createRecordingUploadUrlAction(
   fileName: string,
   contentType: string
 ) {
+  await requireClientAccess(clientId);
+  await requireSessionForClient(clientId, sessionId);
   return data.createRecordingUploadUrl(clientId, sessionId, fileName, contentType);
 }
 
@@ -477,6 +566,8 @@ export async function addRecordingAction(
   storagePath: string,
   sizeBytes?: number
 ) {
+  await requireClientAccess(clientId);
+  await requireSessionForClient(clientId, sessionId);
   const recording = await data.addRecording(clientId, sessionId, fileName, storagePath, sizeBytes);
   revalidatePath(`/clients/${clientId}/journey-day`);
   revalidatePath(`/clients/${clientId}/sessions/${sessionId}`);
@@ -484,10 +575,14 @@ export async function addRecordingAction(
 }
 
 export async function getRecordingDownloadUrlAction(storagePath: string) {
+  await requirePractitioner();
   return data.getRecordingDownloadUrl(storagePath);
 }
 
 export async function deleteRecordingAction(recordingId: string, clientId: string, sessionId: string) {
+  await requireClientAccess(clientId);
+  await requireSessionForClient(clientId, sessionId);
+  if (!(await data.getRecordings(clientId, sessionId)).some((recording) => recording.id === recordingId)) forbidden();
   await data.deleteRecording(recordingId);
   revalidatePath(`/clients/${clientId}/journey-day`);
   revalidatePath(`/clients/${clientId}/sessions/${sessionId}`);
@@ -501,6 +596,8 @@ export async function setJourneyMarkerAction(
   currentManualNotes?: string,
   timeZone?: string
 ) {
+  await requireClientAccess(clientId);
+  await requireSessionForClient(clientId, sessionId);
   const session = await data.setJourneyMarker(sessionId, marker, !on, currentManualNotes, timeZone);
   revalidatePath(`/clients/${clientId}/journey-day`);
   revalidatePath(`/clients/${clientId}/sessions/${sessionId}`);
@@ -517,6 +614,8 @@ export async function updateJourneyMarkerTimeAction(
   marker: "started" | "ended" | "booster",
   isoTimestamp: string
 ) {
+  await requireClientAccess(clientId);
+  await requireSessionForClient(clientId, sessionId);
   const session = await data.setJourneyMarkerTime(sessionId, marker, isoTimestamp);
   revalidatePath(`/clients/${clientId}/journey-day`);
   revalidatePath(`/clients/${clientId}/sessions/${sessionId}`);
@@ -525,6 +624,8 @@ export async function updateJourneyMarkerTimeAction(
 }
 
 export async function updateInitialDoseAmountAction(sessionId: string, clientId: string, amount: string) {
+  await requireClientAccess(clientId);
+  await requireSessionForClient(clientId, sessionId);
   const session = await data.setInitialDoseAmount(sessionId, amount);
   revalidatePath(`/clients/${clientId}/journey-day`);
   revalidatePath(`/clients/${clientId}/sessions/${sessionId}`);
@@ -532,6 +633,8 @@ export async function updateInitialDoseAmountAction(sessionId: string, clientId:
 }
 
 export async function updateBoosterDoseAmountAction(sessionId: string, clientId: string, amount: string) {
+  await requireClientAccess(clientId);
+  await requireSessionForClient(clientId, sessionId);
   const session = await data.setBoosterDoseAmount(sessionId, amount);
   revalidatePath(`/clients/${clientId}/journey-day`);
   revalidatePath(`/clients/${clientId}/sessions/${sessionId}`);
@@ -545,6 +648,8 @@ export async function addSessionNoteAction(
   content: string,
   elapsedMinutes?: number
 ) {
+  await requireClientAccess(clientId);
+  await requireSessionForClient(clientId, sessionId);
   await data.addSessionNote(sessionId, clientId, fieldType, content, elapsedMinutes);
   revalidatePath(`/clients/${clientId}/journey-day`);
 }
@@ -556,6 +661,7 @@ export async function addSessionAction(input: {
   durationMinutes?: number;
   location?: string;
 }) {
+  await requireClientAccess(input.clientId);
   const session = await data.addSession({
     client_id: input.clientId,
     session_type: input.sessionType,
@@ -582,6 +688,8 @@ export async function updateSessionAction(
     status?: "scheduled" | "completed" | "cancelled" | "no_show";
   }
 ) {
+  await requireClientAccess(clientId);
+  await requireSessionForClient(clientId, sessionId);
   await data.updateSession(sessionId, {
     session_type: patch.sessionType,
     scheduled_at: patch.scheduledAt,
@@ -597,6 +705,8 @@ export async function updateSessionAction(
 }
 
 export async function cancelSessionAction(sessionId: string, clientId: string) {
+  await requireClientAccess(clientId);
+  await requireSessionForClient(clientId, sessionId);
   await data.cancelSession(sessionId);
   syncSessionToGoogleInBackground(sessionId);
   revalidatePath("/calendar");
@@ -606,6 +716,7 @@ export async function cancelSessionAction(sessionId: string, clientId: string) {
 }
 
 export async function toggleMilestoneAction(clientId: string, milestoneKey: string, complete: boolean) {
+  await requireClientAccess(clientId);
   if (complete) {
     await data.completeMilestone(clientId, milestoneKey);
     // Auto-create a completed session record so the Sessions tab is never
@@ -624,6 +735,8 @@ export async function toggleMilestoneAction(clientId: string, milestoneKey: stri
 }
 
 export async function completeSessionAction(sessionId: string, clientId: string) {
+  await requireClientAccess(clientId);
+  await requireSessionForClient(clientId, sessionId);
   await data.completeSession(sessionId);
   revalidatePath("/calendar");
   revalidatePath("/dashboard");
@@ -631,6 +744,8 @@ export async function completeSessionAction(sessionId: string, clientId: string)
 }
 
 export async function reopenCompletedSessionAction(sessionId: string, clientId: string) {
+  await requireClientAccess(clientId);
+  await requireSessionForClient(clientId, sessionId);
   await data.reopenCompletedSession(sessionId);
   syncSessionToGoogleInBackground(sessionId);
   revalidatePath("/calendar");
@@ -645,6 +760,7 @@ export async function reopenCompletedSessionAction(sessionId: string, clientId: 
 }
 
 export async function sendAiConversationMessageAction(clientId: string, body: string) {
+  await requireClientAccess(clientId);
   const message = body.trim();
   if (!message) return data.getAiConversationMessages(clientId);
 
@@ -709,6 +825,8 @@ export async function setSessionCopilotStateAction(
   clientId: string,
   patch: { hidden?: boolean; finished?: boolean }
 ) {
+  await requireClientAccess(clientId);
+  await requireSessionForClient(clientId, sessionId);
   await data.setSessionCopilotState(sessionId, patch);
   revalidatePath(`/clients/${clientId}`);
 }
@@ -716,10 +834,12 @@ export async function setSessionCopilotStateAction(
 // Client dismissed the portal welcome page. One-way flag — once set, the
 // welcome never auto-shows again (it stays reachable from the header link).
 export async function markPortalWelcomeSeenAction(clientId: string) {
+  await requireClientAccess(clientId, { allowPortal: true });
   await data.updateClient(clientId, { portal_welcome_seen_at: new Date().toISOString() });
 }
 
 export async function markPortalAgreementsOpenedAction(clientId: string) {
+  await requireClientAccess(clientId, { allowPortal: true });
   await data.markPortalAgreementsOpened(clientId);
   revalidatePath("/dashboard");
   revalidatePath(`/clients/${clientId}`);
@@ -736,6 +856,8 @@ export async function submitCheckInAction(
   },
   submittedBy: "practitioner" | "client"
 ) {
+  const actor = await requireClientAccess(clientId, { allowPortal: submittedBy === "client" });
+  if (actor.kind === "portal" && submittedBy !== "client") forbidden();
   await data.addCheckIn(clientId, {
     check_in_type: "12_hour",
     ...fields,
@@ -751,6 +873,7 @@ export async function submitPostIntegrationFormAction(
   session: 1 | 2,
   responses: Record<string, string>
 ) {
+  await requireClientAccess(clientId);
   await data.addPostIntegrationForm(clientId, session, responses);
   revalidatePath(`/clients/${clientId}/integration-${session}`);
   revalidatePath(`/clients/${clientId}`);
@@ -765,6 +888,9 @@ export async function addTaskAction(
   dueAt?: string,
   assignedTo: "practitioner" | "client" = "practitioner"
 ) {
+  const practitioner = await requirePractitioner();
+  await requireClientAccess(clientId);
+  if (practitionerId !== practitioner.id) forbidden();
   await data.addTask({
     client_id: clientId,
     practitioner_id: practitionerId,
@@ -779,6 +905,9 @@ export async function addTaskAction(
 }
 
 export async function completeTaskAction(taskId: string, clientId: string) {
+  const actor = await requireClientAccess(clientId, { allowPortal: true });
+  const task = await requireTaskForClient(clientId, taskId);
+  if (actor.kind === "portal" && task.assigned_to !== "client") forbidden();
   await data.completeTask(taskId);
   revalidatePath("/dashboard");
   revalidatePath(`/clients/${clientId}`);
@@ -789,6 +918,8 @@ export async function updateTaskAction(
   clientId: string,
   fields: { title: string; dueAt?: string; taskType: "form" | "reminder" | "reflection" | "session_prep" | "follow_up" }
 ) {
+  await requireClientAccess(clientId);
+  await requireTaskForClient(clientId, taskId);
   const title = fields.title.trim();
   if (!title) throw new Error("Task title is required.");
 
@@ -803,6 +934,8 @@ export async function updateTaskAction(
 }
 
 export async function sendMessageAction(clientId: string, sender: "practitioner" | "client", body: string) {
+  const actor = await requireClientAccess(clientId, { allowPortal: sender === "client" });
+  if (actor.kind === "portal" && sender !== "client") forbidden();
   await data.addMessage(clientId, sender, body);
   revalidatePath(`/clients/${clientId}`);
   revalidatePath("/portal");
@@ -810,10 +943,8 @@ export async function sendMessageAction(clientId: string, sender: "practitioner"
 }
 
 async function canChangeSentMessage(clientId: string, sender: "practitioner" | "client"): Promise<boolean> {
-  if (await isPractitionerAuthed()) return true;
-  if (sender !== "client") return false;
-  const client = await data.getClient(clientId);
-  return Boolean(client && await isPortalUnlocked(clientId, client.portal_password_hash));
+  const actor = await requireClientAccess(clientId, { allowPortal: sender === "client" });
+  return actor.kind === "practitioner" || sender === "client";
 }
 
 export async function editSentMessageAction(clientId: string, messageId: string, sender: "practitioner" | "client", body: string) {
@@ -840,36 +971,44 @@ export async function deleteSentMessageAction(clientId: string, messageId: strin
 // Lightweight poll target for the sidebar's unread-message badge — kept
 // separate from the full dashboard summary so it stays cheap to call often.
 export async function getUnreadMessageCountAction(): Promise<number> {
+  await requirePractitioner();
   const { totalUnread } = await data.getUnreadMessagesSummary();
   return totalUnread;
 }
 
 export async function getActiveClientCountAction(): Promise<number> {
+  await requirePractitioner();
   return data.getActiveClientCount();
 }
 
 export async function markMessagesReadAction(clientId: string) {
+  await requireClientAccess(clientId);
   await data.markMessagesRead(clientId);
   revalidatePath(`/clients/${clientId}`);
   revalidatePath("/dashboard");
 }
 
 export async function logIntroEmailAction(clientId: string, channel: "mail_app" | "copied") {
+  await requireClientAccess(clientId);
   await data.addEmailLog(clientId, "intro", channel);
   revalidatePath(`/clients/${clientId}`);
 }
 
 export async function logJourneyPrepEmailAction(clientId: string, channel: "mail_app" | "copied") {
+  await requireClientAccess(clientId);
   await data.addEmailLog(clientId, "journey_prep", channel);
   revalidatePath(`/clients/${clientId}`);
 }
 
 export async function logJourneySummaryTextAction(clientId: string, channel: "sms_app" | "copied") {
+  await requireClientAccess(clientId);
   await data.addSmsLog(clientId, "journey_summary_ready", channel);
   revalidatePath(`/clients/${clientId}`);
 }
 
 export async function completePortalAssignmentAction(id: string, clientId: string) {
+  await requireClientAccess(clientId, { allowPortal: true });
+  if (!(await data.getPortalAssignments(clientId)).some((assignment) => assignment.id === id)) forbidden();
   await data.completePortalAssignment(id);
   revalidatePath(`/clients/${clientId}`);
   revalidatePath("/portal");
@@ -882,6 +1021,7 @@ export async function addPortalAssignmentAction(
   description?: string,
   dueAt?: string
 ) {
+  await requireClientAccess(clientId);
   await data.addPortalAssignment({
     client_id: clientId,
     assignment_type: assignmentType,
@@ -895,8 +1035,9 @@ export async function addPortalAssignmentAction(
 }
 
 export async function listClientsForPortalAction() {
+  const practitioner = await requirePractitioner();
   const clients = await data.getClients();
-  return clients.map((c) => ({ id: c.id, full_name: c.full_name, status: c.status }));
+  return clients.filter((client) => client.practitioner_id === practitioner.id).map((c) => ({ id: c.id, full_name: c.full_name, status: c.status }));
 }
 
 // Returned instead of a real bundle when the requester is neither an
@@ -906,23 +1047,22 @@ export async function listClientsForPortalAction() {
 export interface PortalLocked {
   locked: true;
   accountExists: boolean;
-  clientEmail?: string;
 }
 
 export async function getPortalBundleAction(clientId: string) {
   const client = await data.getClient(clientId);
   if (!client) return { client: undefined } as { client: undefined };
 
-  const authed = await isPractitionerAuthed();
-  if (!authed) {
-    const unlocked = await isPortalUnlocked(clientId, client.portal_password_hash);
-    if (!unlocked) {
+  try {
+    await authorizeClientAccess(clientId, { allowPortal: true });
+  } catch (error) {
+    if (error instanceof AuthorizationError && error.status === 401) {
       return {
         locked: true,
         accountExists: Boolean(client.portal_password_hash),
-        clientEmail: client.portal_email ?? client.email,
       } as PortalLocked;
     }
+    interruptUnauthorizedAction(error);
   }
 
   const [
@@ -985,13 +1125,7 @@ export async function getPortalBundleAction(clientId: string) {
 // and re-verifies the recording actually belongs to clientId before ever
 // generating a URL for it.
 export async function getPortalRecordingUrlAction(clientId: string, recordingId: string): Promise<string | null> {
-  const client = await data.getClient(clientId);
-  if (!client) return null;
-  const authed = await isPractitionerAuthed();
-  if (!authed) {
-    const unlocked = await isPortalUnlocked(clientId, client.portal_password_hash);
-    if (!unlocked) return null;
-  }
+  await requireClientAccess(clientId, { allowPortal: true });
   const recordings = await data.getRecordings(clientId);
   const recording = recordings.find((r) => r.id === recordingId);
   if (!recording) return null;
@@ -1003,10 +1137,14 @@ export async function getPortalRecordingUrlAction(clientId: string, recordingId:
 // ---------------------------------------------------------------------------
 
 export async function getFormTemplatesAction() {
+  await requirePractitioner();
   return data.getFormTemplates();
 }
 
 export async function getFormForDocumentAction(documentId: string, documentType: DocumentType) {
+  const document = await data.getDocument(documentId);
+  if (!document) throw new Error("Document not found.");
+  await requireClientAccess(document.client_id, { allowPortal: true });
   const [template, submission] = await Promise.all([
     data.getFormTemplateForDocumentType(documentType),
     data.getFormSubmission(documentId),
@@ -1020,6 +1158,9 @@ export async function getFormForDocumentAction(documentId: string, documentType:
 // submission and see each other's edits within a couple seconds, without a
 // full page reload.
 export async function getFormSubmissionAction(documentId: string) {
+  const document = await data.getDocument(documentId);
+  if (!document) throw new Error("Document not found.");
+  await requireClientAccess(document.client_id, { allowPortal: true });
   return data.getFormSubmission(documentId);
 }
 
@@ -1029,6 +1170,8 @@ export async function saveFormProgressAction(
   templateId: string,
   answers: Record<string, string | string[] | boolean>
 ) {
+  await requireClientAccess(clientId, { allowPortal: true });
+  await requireDocumentForClient(clientId, documentId);
   await data.saveFormSubmission({ clientId, documentId, templateId, answers, status: "in_progress" });
   revalidatePath("/portal");
 }
@@ -1040,6 +1183,8 @@ export async function submitClientFormAction(
   answers: Record<string, string | string[] | boolean>,
   signed: boolean
 ) {
+  await requireClientAccess(clientId, { allowPortal: true });
+  await requireDocumentForClient(clientId, documentId);
   await data.saveFormSubmission({
     clientId,
     documentId,
@@ -1053,16 +1198,20 @@ export async function submitClientFormAction(
 
 export async function markFormReviewedAction(clientId: string, documentId: string) {
   "use server";
+  await requireClientAccess(clientId);
+  await requireDocumentForClient(clientId, documentId);
   await data.markDocumentReviewed(documentId);
   revalidatePath(`/clients/${clientId}`);
 }
 
 export async function setFormTemplateFlagsAction(templateId: string, patch: { required?: boolean; active?: boolean }) {
+  await requirePractitioner();
   await data.setFormTemplateFlags(templateId, patch);
   revalidatePath("/settings/forms");
 }
 
 export async function resyncFormTemplatesAction() {
+  await requirePractitioner();
   await data.resyncFormTemplates();
   revalidatePath("/settings/forms");
 }
@@ -1077,6 +1226,7 @@ export async function createProspectAction(input: {
   phone?: string;
   referral_source?: string;
 }) {
+  await requirePractitioner();
   const prospect = await data.addProspect(input);
   revalidatePath("/prospects");
   revalidatePath(`/prospects/${prospect.id}`);
@@ -1088,6 +1238,7 @@ export async function updateProspectAction(
   id: string,
   patch: Parameters<typeof data.updateProspect>[1]
 ) {
+  await requireProspectAccess(id);
   const prospect = await data.updateProspect(id, patch);
   revalidatePath("/prospects");
   revalidatePath(`/prospects/${id}`);
@@ -1095,6 +1246,7 @@ export async function updateProspectAction(
 }
 
 export async function deleteProspectAction(id: string) {
+  await requireProspectAccess(id);
   await data.deleteProspect(id);
   revalidatePath("/prospects");
   redirect("/prospects");
@@ -1108,6 +1260,7 @@ export async function scheduleProspectCallAction(input: {
   duration_minutes?: number;
   notes?: string;
 }) {
+  await requireProspectAccess(input.prospect_id);
   const call = await data.addProspectCall(input);
   syncProspectCallToGoogleInBackground(call.id);
   revalidatePath(`/prospects/${input.prospect_id}`);
@@ -1127,6 +1280,7 @@ export async function putClientOnHoldAction(
   clientId: string,
   opts: { followUpAt?: string; reason?: string } = {}
 ) {
+  await requireClientAccess(clientId);
   const client = await data.putClientOnHold(clientId, opts);
   if (client?.hold_reminder_call_id) {
     syncProspectCallToGoogleInBackground(client.hold_reminder_call_id);
@@ -1139,6 +1293,7 @@ export async function putClientOnHoldAction(
 }
 
 export async function releaseClientHoldAction(clientId: string) {
+  await requireClientAccess(clientId);
   const existing = await data.getClient(clientId);
   const reminderId = existing?.hold_reminder_call_id;
   const reminder = reminderId ? await data.getProspectCall(reminderId) : undefined;
@@ -1158,6 +1313,7 @@ export async function putProspectOnHoldAction(
   prospectId: string,
   opts: { followUpAt?: string; reason?: string } = {}
 ) {
+  await requireProspectAccess(prospectId);
   const prospect = await data.putProspectOnHold(prospectId, opts);
   if (prospect?.hold_reminder_call_id) {
     syncProspectCallToGoogleInBackground(prospect.hold_reminder_call_id);
@@ -1169,6 +1325,7 @@ export async function putProspectOnHoldAction(
 }
 
 export async function releaseProspectHoldAction(prospectId: string) {
+  await requireProspectAccess(prospectId);
   const existing = await data.getProspect(prospectId);
   const reminderId = existing?.hold_reminder_call_id;
   const reminder = reminderId ? await data.getProspectCall(reminderId) : undefined;
@@ -1188,6 +1345,9 @@ export async function updateProspectCallAction(
   prospectId: string,
   patch: Parameters<typeof data.updateProspectCall>[1]
 ) {
+  await requireProspectAccess(prospectId);
+  const existingCall = await data.getProspectCall(callId);
+  if (!existingCall || existingCall.prospect_id !== prospectId) forbidden();
   const call = await data.updateProspectCall(callId, patch);
   syncProspectCallToGoogleInBackground(callId);
   revalidatePath(`/prospects/${prospectId}`);
@@ -1196,9 +1356,11 @@ export async function updateProspectCallAction(
 }
 
 export async function deleteProspectCallAction(callId: string, prospectId: string) {
+  await requireProspectAccess(prospectId);
   // Grab the Google event id (if any) before the local record is gone, so
   // we can clean up the mirrored event on Google too.
   const existing = await data.getProspectCall(callId);
+  if (!existing || existing.prospect_id !== prospectId) forbidden();
   await data.deleteProspectCall(callId);
   if (existing) {
     deleteProspectCallFromGoogleInBackground(callId, existing.google_event_id);
@@ -1249,6 +1411,7 @@ function deleteProspectCallFromGoogleInBackground(localId: string, googleEventId
 // Additional call transcripts (beyond the original intro-call transcript on
 // the prospect record itself) — e.g. a second call before conversion.
 export async function addProspectTranscriptAction(prospectId: string, label: string, rawText: string) {
+  await requireProspectAccess(prospectId);
   const t = await data.addProspectTranscript({ prospect_id: prospectId, label, raw_text: rawText });
   revalidatePath(`/prospects/${prospectId}`);
   return t;
@@ -1259,12 +1422,16 @@ export async function updateProspectTranscriptAction(
   prospectId: string,
   patch: Parameters<typeof data.updateProspectTranscript>[1]
 ) {
+  await requireProspectAccess(prospectId);
+  if (!(await data.getProspectTranscripts(prospectId)).some((transcript) => transcript.id === id)) forbidden();
   const t = await data.updateProspectTranscript(id, patch);
   revalidatePath(`/prospects/${prospectId}`);
   return t;
 }
 
 export async function deleteProspectTranscriptAction(id: string, prospectId: string) {
+  await requireProspectAccess(prospectId);
+  if (!(await data.getProspectTranscripts(prospectId)).some((transcript) => transcript.id === id)) forbidden();
   await data.deleteProspectTranscript(id);
   revalidatePath(`/prospects/${prospectId}`);
 }
@@ -1273,8 +1440,8 @@ export async function deleteProspectTranscriptAction(id: string, prospectId: str
 // inline on that transcript (mirrors the practitioner-facing summary flow
 // the original transcript already has via /api/ai/prospect-summary).
 export async function generateProspectTranscriptSummaryAction(id: string, prospectId: string, transcriptText: string) {
-  const prospect = await data.getProspect(prospectId);
-  if (!prospect) throw new Error("Prospect not found");
+  const prospect = await requireProspectAccess(prospectId);
+  if (!(await data.getProspectTranscripts(prospectId)).some((transcript) => transcript.id === id)) forbidden();
   const prompt = buildProspectIntroSummaryPrompt(transcriptText, prospect.full_name);
   const { data: content, model } = await runAiJson(prompt, () => ({
     what_they_are_seeking: `${prospect.full_name} discussed their goals for this work.`,
@@ -1295,8 +1462,7 @@ export async function generateProspectTranscriptSummaryAction(id: string, prospe
 }
 
 export async function convertProspectToClientAction(prospectId: string) {
-  const prospect = await data.getProspect(prospectId);
-  if (!prospect) throw new Error("Prospect not found");
+  const prospect = await requireProspectAccess(prospectId);
 
   const referralSources = await data.getReferralSources();
   const matchedSource = prospect.referral_source
@@ -1341,6 +1507,7 @@ export async function checkScheduleConflictsAction(
   durationMinutes: number,
   excludeId?: string
 ): Promise<ScheduleConflict[]> {
+  await requirePractitioner();
   const start = new Date(startIso).getTime();
   const end = start + durationMinutes * 60 * 1000;
   const overlaps = (otherStart: string, otherDurationMinutes?: number, otherEnd?: string) => {
@@ -1386,6 +1553,7 @@ export async function checkScheduleConflictsAction(
 // ---------------------------------------------------------------------------
 
 export async function getGoogleCalendarStatusAction() {
+  await requirePractitioner();
   const settings = await data.getGoogleCalendarSettings();
   return {
     connected: settings.connected,
@@ -1396,6 +1564,7 @@ export async function getGoogleCalendarStatusAction() {
 }
 
 export async function disconnectGoogleCalendarAction() {
+  await requirePractitioner();
   const { disconnectGoogle } = await import("@/lib/googleCalendar");
   await disconnectGoogle();
   revalidatePath("/settings");
@@ -1403,6 +1572,7 @@ export async function disconnectGoogleCalendarAction() {
 }
 
 export async function syncGoogleCalendarNowAction() {
+  await requirePractitioner();
   const { pullAndApplyChanges } = await import("@/lib/googleCalendarSync");
   await pullAndApplyChanges();
   revalidatePath("/settings");
@@ -1411,6 +1581,9 @@ export async function syncGoogleCalendarNowAction() {
 }
 
 export async function createPostJourneyTimelineAction(clientId: string, practitionerId: string) {
+  const practitioner = await requirePractitioner();
+  await requireClientAccess(clientId);
+  if (practitionerId !== practitioner.id) forbidden();
   const now = Date.now();
   const hrs = (h: number) => new Date(now + h * 60 * 60 * 1000).toISOString();
   await Promise.all([

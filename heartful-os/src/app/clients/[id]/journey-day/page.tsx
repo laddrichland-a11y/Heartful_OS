@@ -18,6 +18,7 @@ import ClientPhaseWorkspace from "@/components/client/ClientPhaseWorkspace";
 import PhasePrepareMe from "@/components/client/PhasePrepareMe";
 import { headers } from "next/headers";
 import { getJourneyStageWorkspaceState } from "@/lib/utils";
+import { selectCurrentOrNextSession, selectUpcomingSessions } from "@/lib/sessionSelectors";
 
 export const dynamic = "force-dynamic";
 
@@ -51,15 +52,10 @@ export default async function JourneyDayPage({ params }: { params: Promise<{ id:
 
   // Earliest still-scheduled session after Journey Day (e.g. the 12hr
   // check-in) — used as the "we'll talk again on ___" line in the prep email.
-  const followUpSession = sessions
-    .filter(
-      (s) =>
-        s.status === "scheduled" &&
-        s.scheduled_at &&
-        session?.scheduled_at &&
-        s.scheduled_at > session.scheduled_at
-    )
-    .sort((a, b) => (a.scheduled_at! < b.scheduled_at! ? -1 : 1))[0];
+  const currentOrNext = selectCurrentOrNextSession(sessions.filter((candidate) => candidate.id !== session?.id));
+  const followUpSession = currentOrNext && (!session?.scheduled_at || (currentOrNext.scheduled_at ?? "") > session.scheduled_at)
+    ? currentOrNext
+    : selectUpcomingSessions(sessions, session?.scheduled_at)[0];
 
   return (
     <AppShell title={client.full_name} variant="wellnest-client">

@@ -24,7 +24,8 @@ const PUBLIC_PATHS = ["/login", "/favicon.ico"];
 
 function isPractitionerAuthed(req: NextRequest): boolean {
   const expected = process.env.PRACTITIONER_PASSWORD;
-  if (!expected) return true; // no password configured — don't lock the owner out
+  // Fail closed: without a configured credential there is no valid session.
+  if (!expected) return false;
   return req.cookies.get(AUTH_COOKIE)?.value === expected;
 }
 

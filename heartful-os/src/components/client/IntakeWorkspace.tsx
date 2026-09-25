@@ -22,6 +22,7 @@ import {
   ScrollText,
 } from "@/components/ui/HeartfulIcon";
 import Link from "next/link";
+import { formTemplateAppliesToSession, requiredFormsForSession } from "@/lib/requiredForms";
 
 export default function IntakeWorkspace({
   clientId,
@@ -30,6 +31,7 @@ export default function IntakeWorkspace({
   formTemplates,
   formSubmissions,
   existingSummaries,
+  canCompleteStage,
 }: {
   clientId: string;
   clientName: string;
@@ -37,6 +39,7 @@ export default function IntakeWorkspace({
   formTemplates: FormTemplate[];
   formSubmissions: FormSubmission[];
   existingSummaries: AiSummary[];
+  canCompleteStage: boolean;
 }) {
   // Keep only an unfinished transcript draft. Once it has generated a summary,
   // its local copy is cleared so the ready-to-use field does not repopulate
@@ -71,8 +74,7 @@ export default function IntakeWorkspace({
   // but they aren't intake work — they live under "All Paperwork" instead.
   const intakeTemplates = formTemplates.filter(
     (t) =>
-      t.session_types?.includes("intake_assessment") &&
-      t.active &&
+      formTemplateAppliesToSession(t, "intake_assessment") &&
       !isGeneralPaperwork(t.document_type)
   );
   const intakeForms = intakeTemplates.flatMap((t) => {
@@ -81,6 +83,12 @@ export default function IntakeWorkspace({
       ? [{ doc, template: t, submission: formSubmissions.find((s) => s.document_id === doc.id) }]
       : [];
   });
+  const unavailableIntakeForms = requiredFormsForSession({
+    sessionType: "intake_assessment",
+    templates: formTemplates,
+    documents,
+    submissions: formSubmissions,
+  }).filter((form) => !isGeneralPaperwork(form.documentType) && (form.state === "missing_template" || form.state === "missing_document"));
 
   return (
     <div className="space-y-6">
@@ -105,7 +113,7 @@ export default function IntakeWorkspace({
                 setSummaryExpanded(true);
                 setTranscript("");
               }}
-              disabled={!transcript.trim()}
+              disabled={!canCompleteStage || !transcript.trim()}
               className="btn-primary inline-flex items-center gap-2 whitespace-nowrap text-sm disabled:opacity-60"
             />
           }
@@ -152,7 +160,7 @@ export default function IntakeWorkspace({
         </div>
       )}
 
-      {intakeForms.length > 0 && (
+      {(intakeForms.length > 0 || unavailableIntakeForms.length > 0) && (
         <div className="card p-4">
           <h3 className="session-panel-heading mb-3 flex items-center gap-3">
             <FileText className="h-4 w-4" aria-hidden="true" />
@@ -168,9 +176,22 @@ export default function IntakeWorkspace({
                 clientId={clientId}
               />
             ))}
+            {unavailableIntakeForms.map((form) => (
+              <MissingRequiredFormRow key={form.documentType} title={form.title} missingTemplate={form.state === "missing_template"} />
+            ))}
           </div>
         </div>
       )}
+    </div>
+  );
+}
+
+function MissingRequiredFormRow({ title, missingTemplate }: { title: string; missingTemplate: boolean }) {
+  return (
+    <div className="flex flex-wrap items-center gap-2.5 rounded-xl border border-amber-200 bg-amber-50/60 px-3 py-2.5 text-sm text-ink-600">
+      <FileText className="h-4 w-4 shrink-0 text-amber-600" aria-hidden="true" />
+      <span><strong className="font-medium text-ink-800">{title}</strong> {missingTemplate ? "is missing from the Form Library." : "is not attached to this client."}</span>
+      <Link href="/settings/forms" className="ml-auto font-medium text-clay-700 underline underline-offset-2">Open Form Library</Link>
     </div>
   );
 }

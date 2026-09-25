@@ -15,6 +15,7 @@ import ActionCardHeader from "@/components/client/ActionCardHeader";
 import { cx } from "@/lib/utils";
 import { FileText, ScrollText, Sparkles } from "@/components/ui/HeartfulIcon";
 import Link from "next/link";
+import { resolveFormByDocumentType } from "@/lib/requiredForms";
 
 export default function IntegrationWorkspace({
   clientId,
@@ -24,6 +25,7 @@ export default function IntegrationWorkspace({
   formTemplates,
   formSubmissions,
   existingSummary,
+  canCompleteStage,
 }: {
   clientId: string;
   clientName: string;
@@ -32,6 +34,7 @@ export default function IntegrationWorkspace({
   formTemplates: FormTemplate[];
   formSubmissions: FormSubmission[];
   existingSummary?: AiSummary;
+  canCompleteStage: boolean;
 }) {
   // Persisted to localStorage (not just React state) so the pasted transcript
   // survives a Generate click — that button triggers a router.refresh() to
@@ -56,9 +59,13 @@ export default function IntegrationWorkspace({
   const summaryLabel = sessionNumber === 1 ? "Integration Summary" : "Second Integration Summary";
 
   const docType = sessionNumber === 1 ? "integration_session_1" : "integration_session_2";
-  const doc = documents.find((d) => d.document_type === docType);
-  const template = formTemplates.find((t) => t.document_type === docType);
-  const submission = doc ? formSubmissions.find((s) => s.document_id === doc.id) : undefined;
+  const requiredForm = resolveFormByDocumentType({
+    documentType: docType,
+    templates: formTemplates,
+    documents,
+    submissions: formSubmissions,
+  });
+  const { document: doc, template, submission } = requiredForm;
 
   return (
     <div className="space-y-6">
@@ -76,9 +83,20 @@ export default function IntegrationWorkspace({
             clientId={clientId}
             clientName={clientName}
           />
+        ) : requiredForm.state === "missing_template" ? (
+          <p className="text-sm text-ink-500">
+            The required {requiredForm.title} template is missing. Restore it in{" "}
+            <Link href="/settings/forms" className="font-medium text-clay-700 underline underline-offset-2">
+              Settings → Form Library
+            </Link>.
+          </p>
         ) : (
-          <p className="text-sm text-ink-400">
-            Form not attached yet — go to <strong>Settings → Form Library → Update form content</strong> to sync.
+          <p className="text-sm text-ink-500">
+            The {requiredForm.title} template exists, but it is not attached to this client. Open{" "}
+            <Link href="/settings/forms" className="font-medium text-clay-700 underline underline-offset-2">
+              Settings → Form Library
+            </Link>{" "}
+            and update the form content to repair the attachment.
           </p>
         )}
       </div>
@@ -104,6 +122,7 @@ export default function IntegrationWorkspace({
               label={`Generate ${summaryLabel}`}
               extra={{ transcript, integrationSession: sessionNumber }}
               onDone={(s) => setSummary(s as unknown as AiSummary)}
+              disabled={!canCompleteStage || !transcript.trim()}
               className="btn-primary inline-flex items-center gap-2 whitespace-nowrap text-sm disabled:opacity-60"
             />
           }

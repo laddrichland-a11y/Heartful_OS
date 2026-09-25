@@ -2,8 +2,10 @@
 
 import Link from "next/link";
 import { CalendarClock, FileWarning, ClipboardList, BookOpen } from "@/components/ui/HeartfulIcon";
-import { Session, ClientDocument, Task, PortalAssignment, FormSubmission } from "@/lib/types";
+import { Session, ClientDocument, Task, PortalAssignment, FormSubmission, FormTemplate, JourneyPhase } from "@/lib/types";
 import { SESSION_TYPE_LABELS, formatDateTime, formatDate } from "@/lib/utils";
+import { isSessionActive, selectSessionTimeline } from "@/lib/sessionSelectors";
+import { resolveRequiredForms } from "@/lib/requiredForms";
 
 interface Props {
   clientId: string;
@@ -12,6 +14,8 @@ interface Props {
   tasks: Task[];
   portalAssignments: PortalAssignment[];
   formSubmissions: FormSubmission[];
+  formTemplates: FormTemplate[];
+  currentPhase: JourneyPhase;
 }
 
 export default function ClientActionCard({
@@ -21,13 +25,12 @@ export default function ClientActionCard({
   tasks,
   portalAssignments,
   formSubmissions,
+  formTemplates,
+  currentPhase,
 }: Props) {
   // Upcoming scheduled sessions, soonest first — only future sessions
   const now = new Date().toISOString();
-  const upcomingSessions = sessions
-    .filter((s) => s.status === "scheduled" && s.scheduled_at && s.scheduled_at > now)
-    .sort((a, b) => (a.scheduled_at! < b.scheduled_at! ? -1 : 1))
-    .slice(0, 5);
+  const upcomingSessions = selectSessionTimeline(sessions, now).activeAndUpcoming.slice(0, 5);
 
   // Open tasks (not completed or skipped, and not past due)
   const openTasks = tasks.filter(
@@ -39,23 +42,12 @@ export default function ClientActionCard({
     (a) => a.status !== "completed" && a.status !== "skipped"
   );
 
-  // Outstanding forms: required docs that are missing or in-progress.
-  // Exclude empty upload-only placeholder slots (no submission, no uploaded
-  // versions) — those are legacy artifacts from early development and don't
-  // represent real work the client needs to do.
-  const submissionDocIds = new Set(formSubmissions.map((s) => s.document_id));
-  const inProgressIds = new Set(
-    formSubmissions
-      .filter((s) => s.status === "in_progress" || s.status === "draft")
-      .map((s) => s.document_id)
-  );
-  const outstandingForms = documents.filter(
-    (d) =>
-      d.required &&
-      (d.status === "missing" || inProgressIds.has(d.id)) &&
-      // Only count if it's a digital form (has a submission record) or has been uploaded
-      (submissionDocIds.has(d.id) || d.versions.length > 0)
-  );
+  const outstandingForms = resolveRequiredForms({
+    templates: formTemplates,
+    documents,
+    submissions: formSubmissions,
+    currentPhase,
+  }).filter((form) => !form.complete);
 
   const hasAnything =
     upcomingSessions.length > 0 ||
@@ -79,7 +71,7 @@ export default function ClientActionCard({
           <ActionRow
             key={s.id}
             icon={<CalendarClock className="h-4 w-4" />}
-            label="Upcoming session"
+            label={isSessionActive(s, now) ? "Current session" : "Upcoming session"}
             labelHref={`/clients/${clientId}?tab=${encodeURIComponent("AI Copilot")}`}
             href={`/clients/${clientId}/sessions/${s.id}`}
             title={SESSION_TYPE_LABELS[s.session_type] ?? s.session_type}
@@ -89,14 +81,23 @@ export default function ClientActionCard({
         ))}
 
         {/* Outstanding Forms */}
-        {outstandingForms.map((d) => (
+        {outstandingForms.map((form) => (
           <ActionRow
-            key={d.id}
+            key={form.documentType}
             icon={<FileWarning className="h-4 w-4" />}
             label="Outstanding form"
             labelHref={`/clients/${clientId}?tab=${encodeURIComponent("Documents")}`}
-            title={d.title}
-            meta={d.status === "missing" ? "Not started" : "In progress"}
+            href={form.document ? `/clients/${clientId}/forms/${form.document.id}` : undefined}
+            title={form.title}
+            meta={
+              form.state === "missing_template"
+                ? "Template missing"
+                : form.state === "missing_document"
+                  ? "Not attached"
+                  : form.state === "in_progress"
+                    ? "In progress"
+                    : "Not started"
+            }
             tone="amber"
           />
         ))}

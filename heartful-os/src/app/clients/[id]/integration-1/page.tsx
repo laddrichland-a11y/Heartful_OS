@@ -62,6 +62,7 @@ export default async function Integration1Page({ params }: { params: Promise<{ i
         formTemplates={formTemplates}
         formSubmissions={formSubmissions}
         existingSummary={summaries.find((s) => s.title === "Integration Summary 1")}
+        canCompleteStage={stage.canCompleteStage}
       />
       </ClientPhaseWorkspace>
     </AppShell>

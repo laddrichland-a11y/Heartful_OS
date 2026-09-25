@@ -20,10 +20,11 @@ function SummaryContent({ content }: { content: Record<string, unknown> }) {
   );
 }
 
-export default function JourneyAiSummaries({ clientId, initialSummaries, checkInSubmitted }: {
+export default function JourneyAiSummaries({ clientId, initialSummaries, checkInSubmitted, canCompleteStage }: {
   clientId: string;
   initialSummaries: AiSummary[];
   checkInSubmitted: boolean;
+  canCompleteStage: boolean;
 }) {
   const [summaries, setSummaries] = useState(initialSummaries);
   const [deletingId, setDeletingId] = useState<string | null>(null);
@@ -72,7 +73,7 @@ export default function JourneyAiSummaries({ clientId, initialSummaries, checkIn
           summaryType="check_in_12hr_summary"
           label={current ? "Regenerate" : "Generate Summary"}
           className="btn-primary journey-ai-summary-generate"
-          disabled={!checkInSubmitted}
+          disabled={!checkInSubmitted || !canCompleteStage}
           onDone={(summary) => {
             const generated = summary as AiSummary;
             setSummaries((previous) => [generated, ...previous.filter((item) => item.id !== generated.id)]);

@@ -41,7 +41,10 @@ export function nextId(prefix: string) {
   return `${prefix}_${DEMO_ID_NAMESPACE}${n.toString().padStart(4, "0")}`;
 }
 
-const now = new Date("2026-06-23T12:00:00Z");
+// Anchor the demo timeline when the in-memory store is created instead of to
+// a calendar date that inevitably goes stale. A fresh demo server therefore
+// always starts with the same believable mix of recent and upcoming activity.
+const now = new Date();
 function daysAgo(n: number) {
   return new Date(now.getTime() - n * 24 * 60 * 60 * 1000).toISOString();
 }
@@ -94,8 +97,10 @@ function docSet(
     { type: "client_services_agreement", required: true },
     { type: "preparation_navigation_plan", required: true },
     { type: "preparation_education_session", required: true },
-    { type: "post_integration_form", required: true },
-    { type: "post_integration_form_updated", required: true },
+    { type: "integration_session_1", required: true },
+    { type: "integration_session_2", required: true },
+    { type: "post_integration_form", required: false },
+    { type: "post_integration_form_updated", required: false },
     { type: "session_notes", required: false },
     { type: "journey_brief", required: false },
     { type: "integration_summary_1", required: false },
@@ -103,7 +108,20 @@ function docSet(
     { type: "growth_action_plan", required: false },
   ];
   return base.map(({ type, required }) => {
-    const status = overrides[type] ?? "missing";
+    const legacyIntegrationStatus = type === "integration_session_1"
+      ? overrides.post_integration_form
+      : type === "integration_session_2"
+        ? overrides.post_integration_form_updated
+        : undefined;
+    const inferredCompletedStatus =
+      legacyIntegrationStatus && legacyIntegrationStatus !== "missing"
+        ? "reviewed"
+        : type === "preparation_education_session" && overrides.preparation_navigation_plan && overrides.preparation_navigation_plan !== "missing"
+          ? "reviewed"
+          : type === "participant_screening_form" && overrides.harm_reduction_services_agreement === "signed"
+            ? "reviewed"
+            : undefined;
+    const status = overrides[type] ?? inferredCompletedStatus ?? "missing";
     const versions =
       status === "missing"
         ? []
@@ -211,7 +229,6 @@ function buildMaya(): SeedBundle {
         status: "scheduled",
         location: "Video Call",
       },
-      { id: nextId("sess"), client_id: c.id, practitioner_id: PRACTITIONER.id, session_type: "intake_assessment", scheduled_at: daysFromNow(94), duration_minutes: 90, status: "scheduled", location: "Video Call" },
     ],
     transcripts: [],
     aiSummaries: [],
@@ -362,7 +379,6 @@ function buildDaniel(): SeedBundle {
       { id: nextId("sess"), client_id: c.id, practitioner_id: PRACTITIONER.id, session_type: "intake_assessment", scheduled_at: daysAgo(20), duration_minutes: 90, status: "completed" },
       { id: nextId("sess"), client_id: c.id, practitioner_id: PRACTITIONER.id, session_type: "preparation", scheduled_at: daysAgo(6), duration_minutes: 90, status: "completed" },
       { id: nextId("sess"), client_id: c.id, practitioner_id: PRACTITIONER.id, session_type: "harm_reduction_support", scheduled_at: daysFromNow(4), duration_minutes: 480, status: "scheduled", location: "Journey Space — Sunroom" },
-      { id: nextId("sess"), client_id: c.id, practitioner_id: PRACTITIONER.id, session_type: "harm_reduction_support", scheduled_at: daysFromNow(98), duration_minutes: 480, status: "scheduled", location: "Journey Space — Sunroom" },
     ],
     transcripts: [
       { id: nextId("tr"), client_id: c.id, source: "paste", raw_text: "[Intake transcript excerpt — Daniel discusses his father's passing, work transition, and prior psilocybin experiences...]", created_at: daysAgo(20) },
@@ -443,8 +459,6 @@ function buildPriya(): SeedBundle {
       { id: nextId("sess"), client_id: c.id, practitioner_id: PRACTITIONER.id, session_type: "intake_assessment", scheduled_at: daysAgo(34), duration_minutes: 90, status: "completed" },
       { id: nextId("sess"), client_id: c.id, practitioner_id: PRACTITIONER.id, session_type: "preparation", scheduled_at: daysAgo(20), duration_minutes: 90, status: "completed" },
       { id: nextId("sess"), client_id: c.id, practitioner_id: PRACTITIONER.id, session_type: "harm_reduction_support", scheduled_at: hoursAgo(30), duration_minutes: 480, status: "completed", location: "Journey Space — Garden Room" },
-      { id: nextId("sess"), client_id: c.id, practitioner_id: PRACTITIONER.id, session_type: "integration_1", scheduled_at: daysFromNow(86), duration_minutes: 60, status: "scheduled" },
-      { id: nextId("sess"), client_id: c.id, practitioner_id: PRACTITIONER.id, session_type: "integration_2", scheduled_at: daysFromNow(102), duration_minutes: 60, status: "scheduled" },
     ],
     transcripts: [],
     aiSummaries: [journeySummary],
@@ -462,7 +476,7 @@ function buildPriya(): SeedBundle {
     checkIns: [],
     postIntegrationForms: [],
     tasks: [
-      { id: nextId("task"), client_id: c.id, practitioner_id: PRACTITIONER.id, title: "12-Hour Check-In", task_type: "form", due_at: hoursFromNow(-6), status: "overdue", assigned_to: "client" },
+      { id: nextId("task"), client_id: c.id, practitioner_id: PRACTITIONER.id, title: "12-Hour Check-In", task_type: "form", due_at: hoursAgo(6), status: "overdue", assigned_to: "client" },
       { id: nextId("task"), client_id: c.id, practitioner_id: PRACTITIONER.id, title: "48-Hour Reflection Reminder", task_type: "reflection", due_at: hoursFromNow(18), status: "pending", assigned_to: "client" },
       { id: nextId("task"), client_id: c.id, practitioner_id: PRACTITIONER.id, title: "Schedule Integration Session 1 (within 72 hrs)", task_type: "session_prep", due_at: hoursFromNow(42), status: "pending", assigned_to: "practitioner" },
     ],
@@ -470,7 +484,7 @@ function buildPriya(): SeedBundle {
       { id: nextId("msg"), client_id: c.id, sender: "practitioner", body: "Checking in — how are you feeling this morning? No rush to respond fully, just want to know you're safe and resting.", created_at: hoursAgo(10) },
     ],
     portalAssignments: [
-      { id: nextId("pa"), client_id: c.id, assignment_type: "form", title: "12-Hour Check-In", status: "pending", due_at: hoursFromNow(-6) },
+      { id: nextId("pa"), client_id: c.id, assignment_type: "form", title: "12-Hour Check-In", status: "pending", due_at: hoursAgo(6) },
     ],
     payments: [
       { id: nextId("pay"), client_id: c.id, amount: 1000, paid_at: daysAgo(34).slice(0, 10), method: "Bank Transfer" },
@@ -538,7 +552,7 @@ function buildMarcus(): SeedBundle {
       { id: nextId("sess"), client_id: c.id, practitioner_id: PRACTITIONER.id, session_type: "preparation", scheduled_at: daysAgo(10), duration_minutes: 90, status: "completed" },
       { id: nextId("sess"), client_id: c.id, practitioner_id: PRACTITIONER.id, session_type: "harm_reduction_support", scheduled_at: daysAgo(5), duration_minutes: 480, status: "completed" },
       { id: nextId("sess"), client_id: c.id, practitioner_id: PRACTITIONER.id, session_type: "integration_1", scheduled_at: daysFromNow(1), duration_minutes: 60, status: "scheduled" },
-      { id: nextId("sess"), client_id: c.id, practitioner_id: PRACTITIONER.id, session_type: "integration_2", scheduled_at: daysFromNow(90), duration_minutes: 60, status: "scheduled" },
+      { id: nextId("sess"), client_id: c.id, practitioner_id: PRACTITIONER.id, session_type: "integration_2", scheduled_at: daysFromNow(9), duration_minutes: 60, status: "scheduled" },
     ],
     transcripts: [],
     aiSummaries: [checkInSummary],
@@ -663,7 +677,7 @@ function buildSarah(): SeedBundle {
       { id: nextId("sess"), client_id: c.id, practitioner_id: PRACTITIONER.id, session_type: "harm_reduction_support", scheduled_at: daysAgo(35), duration_minutes: 480, status: "completed" },
       { id: nextId("sess"), client_id: c.id, practitioner_id: PRACTITIONER.id, session_type: "integration_1", scheduled_at: daysAgo(33), duration_minutes: 60, status: "completed" },
       { id: nextId("sess"), client_id: c.id, practitioner_id: PRACTITIONER.id, session_type: "integration_2", scheduled_at: daysAgo(25), duration_minutes: 60, status: "completed" },
-      { id: nextId("sess"), client_id: c.id, practitioner_id: PRACTITIONER.id, session_type: "other", scheduled_at: daysFromNow(105), duration_minutes: 45, status: "scheduled" },
+      { id: nextId("sess"), client_id: c.id, practitioner_id: PRACTITIONER.id, session_type: "other", scheduled_at: daysFromNow(3), duration_minutes: 45, status: "scheduled" },
     ],
     transcripts: [
       { id: nextId("transcript"), client_id: c.id, source: "upload", raw_text: "Follow-up integration transcript uploaded for practitioner review.", created_at: daysAgo(24) },
@@ -684,7 +698,7 @@ function buildSarah(): SeedBundle {
     ],
     growthActionPlan: gap,
     tasks: [
-      { id: nextId("task"), client_id: c.id, practitioner_id: PRACTITIONER.id, title: "30-Day Follow-Up Call", task_type: "follow_up", due_at: daysFromNow(105), status: "pending", assigned_to: "practitioner" },
+      { id: nextId("task"), client_id: c.id, practitioner_id: PRACTITIONER.id, title: "30-Day Follow-Up Call", task_type: "follow_up", due_at: daysFromNow(3), status: "pending", assigned_to: "practitioner" },
     ],
     messages: [
       { id: nextId("msg"), client_id: c.id, sender: "client", body: "Wanted to say thank you — the pottery class restart has been such a small, good thing. Feels symbolic.", created_at: daysAgo(3) },

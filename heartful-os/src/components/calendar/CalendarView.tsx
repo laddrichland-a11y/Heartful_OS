@@ -15,6 +15,7 @@ import {
 } from "@/lib/actions";
 import { Session, SessionType, ProspectCall, ExternalCalendarEvent } from "@/lib/types";
 import { clientAvatarSrc, cx, formatDateTime, initials, occupiesCalendarSlot } from "@/lib/utils";
+import { selectSessionTimeline } from "@/lib/sessionSelectors";
 import ClientAvatarImage from "@/components/client/ClientAvatarImage";
 import {
   ChevronLeft,
@@ -102,15 +103,18 @@ function startOfMonthGrid(monthDate: Date) {
 export default function CalendarView({
   sessions,
   clients,
+  completableSessionIds,
   prospectCalls = [],
   externalEvents = [],
 }: {
   sessions: SessionWithClient[];
   clients: ClientOption[];
+  completableSessionIds: string[];
   prospectCalls?: ProspectCall[];
   externalEvents?: ExternalCalendarEvent[];
 }) {
   const router = useRouter();
+  const completableSessionIdSet = useMemo(() => new Set(completableSessionIds), [completableSessionIds]);
   const searchParams = useSearchParams();
   const requestedClientId = searchParams.get("clientId");
   const shouldOpenCreateForm = searchParams.get("createSession") === "1";
@@ -119,6 +123,7 @@ export default function CalendarView({
     const d = new Date();
     return new Date(d.getFullYear(), d.getMonth(), 1);
   });
+  const [timelineNow] = useState(() => Date.now());
 
   // Detail panel — shown when clicking a session chip or row
   const [selected, setSelected] = useState<SessionWithClient | null>(null);
@@ -186,13 +191,7 @@ export default function CalendarView({
   const today = new Date();
   const todayKey = localDateKey(today);
 
-  const now = Date.now();
-  const upcoming = localSessions
-    .filter((s) => s.status === "scheduled" && s.scheduled_at && new Date(s.scheduled_at).getTime() >= now)
-    .sort((a, b) => (a.scheduled_at! < b.scheduled_at! ? -1 : 1));
-  const past = localSessions
-    .filter((s) => s.status !== "scheduled" || !s.scheduled_at || new Date(s.scheduled_at).getTime() < now)
-    .sort((a, b) => ((a.scheduled_at ?? "") > (b.scheduled_at ?? "") ? -1 : 1));
+  const { activeAndUpcoming: upcoming, history: past } = selectSessionTimeline(localSessions, timelineNow);
 
   function openDetail(s: SessionWithClient) {
     setSelected(s);
@@ -377,6 +376,7 @@ export default function CalendarView({
             onClose={closeAll}
             onEdit={() => openEdit(selected)}
             onDuplicate={() => openDuplicate(selected)}
+            canComplete={completableSessionIdSet.has(selected.id)}
             onGoToClient={() => router.push(`/clients/${selected.client_id}?tab=Sessions`)}
             onCancel={() =>
               window.confirm("Cancel this session? This cannot be undone.") && startTransition(async () => {
@@ -411,6 +411,7 @@ export default function CalendarView({
             onSessionCreated={(created) => {
               const client = clients.find((item) => item.id === created.client_id);
               setLocalSessions((current) => [...current, { ...created, client_name: client?.full_name ?? "Client" }]);
+              router.refresh();
             }}
             onClose={closeAll}
           />
@@ -451,6 +452,7 @@ export default function CalendarView({
               <SessionRow
                 key={s.id}
                 session={s}
+                canComplete={completableSessionIdSet.has(s.id)}
                 isSelected={selected?.id === s.id}
                 onSelect={() => openDetail(s)}
                 startTransition={startTransition}
@@ -505,6 +507,7 @@ export default function CalendarView({
               <SessionRow
                 key={s.id}
                 session={s}
+                canComplete={completableSessionIdSet.has(s.id)}
                 isSelected={selected?.id === s.id}
                 onSelect={() => openDetail(s)}
                 startTransition={startTransition}
@@ -558,6 +561,7 @@ function Modal({ children, onClose, overflowVisible = false }: { children: React
 // ---------------------------------------------------------------------------
 function SessionDetailPanel({
   session,
+  canComplete,
   onClose,
   onEdit,
   onDuplicate,
@@ -567,6 +571,7 @@ function SessionDetailPanel({
   onUndoComplete,
 }: {
   session: SessionWithClient;
+  canComplete: boolean;
   onClose: () => void;
   onEdit: () => void;
   onDuplicate: () => void;
@@ -622,7 +627,12 @@ function SessionDetailPanel({
                     <Copy className="h-3.5 w-3.5" />
                     Duplicate Event
                   </button>
-                  <button disabled={busy === "complete"} onClick={handleComplete} className="flex w-full items-center gap-2 whitespace-nowrap rounded-md px-2.5 py-2 text-left text-sm text-ink-700 hover:bg-ink-50">
+                  <button
+                    disabled={busy === "complete" || !canComplete}
+                    onClick={handleComplete}
+                    title={canComplete ? "Mark complete" : "Complete previous journey stages first"}
+                    className="flex w-full items-center gap-2 whitespace-nowrap rounded-md px-2.5 py-2 text-left text-sm text-ink-700 hover:bg-ink-50 disabled:cursor-not-allowed disabled:opacity-50"
+                  >
                     {busy === "complete" ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <CheckCircle2 className="h-3.5 w-3.5" />}
                     Mark Complete
                   </button>
@@ -739,12 +749,14 @@ function SessionDetailPanel({
 // ---------------------------------------------------------------------------
 function SessionRow({
   session,
+  canComplete,
   isSelected,
   onSelect,
   startTransition,
   onStatusChange,
 }: {
   session: SessionWithClient;
+  canComplete: boolean;
   isSelected: boolean;
   onSelect: () => void;
   startTransition: (fn: () => void | Promise<void>) => void;
@@ -780,6 +792,8 @@ function SessionRow({
         <div className="flex items-center gap-1.5 shrink-0">
           <button
             className="calendar-session-complete-action"
+            disabled={!canComplete}
+            title={canComplete ? "Mark complete" : "Complete previous journey stages first"}
             onClick={() =>
               startTransition(async () => {
                 await completeSessionAction(session.id, session.client_id);

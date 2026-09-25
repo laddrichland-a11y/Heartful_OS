@@ -160,6 +160,7 @@ export default function JourneyDayWorkspace({
   // client-facing: it automatically shows up in the client's Portal under
   // Past Appointments once this session is marked complete.
   const [callSummaryBusy, setCallSummaryBusy] = useState(false);
+  const [callSummaryError, setCallSummaryError] = useState<string | null>(null);
   const [newCallSummary, setNewCallSummary] = useState<AiSummary | null>(null);
   const [localCallSummaries, setLocalCallSummaries] = useState(pastCallSummaries);
   const [expandedCallSummary, setExpandedCallSummary] = useState<string | null>(pastCallSummaries[0]?.id ?? null);
@@ -168,6 +169,7 @@ export default function JourneyDayWorkspace({
     const combined = [manualNotes, transcript].filter(Boolean).join("\n\n---\n\n");
     if (!combined.trim()) return;
     setCallSummaryBusy(true);
+    setCallSummaryError(null);
     try {
       const res = await fetch("/api/ai/generate", {
         method: "POST",
@@ -180,12 +182,13 @@ export default function JourneyDayWorkspace({
           transcript: combined,
         }),
       });
-      const json = await res.json();
-      if (json.summary) {
-        setNewCallSummary(json.summary);
-        setLocalCallSummaries((prev) => [json.summary, ...prev]);
-        setExpandedCallSummary(json.summary.id);
-      }
+      const json = await res.json().catch(() => ({}));
+      if (!res.ok || !json.summary) throw new Error(json.error ?? "Journey Day summary could not be generated.");
+      setNewCallSummary(json.summary);
+      setLocalCallSummaries((prev) => [json.summary, ...prev]);
+      setExpandedCallSummary(json.summary.id);
+    } catch (error) {
+      setCallSummaryError(error instanceof Error ? error.message : "Journey Day summary could not be generated. Try again.");
     } finally {
       setCallSummaryBusy(false);
     }
@@ -683,6 +686,8 @@ export default function JourneyDayWorkspace({
               Generate Journey Day Summary
             </button>}
           />
+
+          {callSummaryError && <p role="alert" className="text-sm text-red-600">{callSummaryError}</p>}
 
           {localCallSummaries.length > 0 && (
             <div className="space-y-2">

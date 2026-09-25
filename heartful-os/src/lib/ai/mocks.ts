@@ -49,6 +49,17 @@ export function mockJourneyManualNotesSummary(clientName: string) {
   };
 }
 
+export function mockSessionCallSummary(transcript: string, clientName: string) {
+  const providedTranscript = transcript.trim();
+  const actionItems = providedTranscript
+    .split(/(?<=[.!?])\s+/)
+    .filter((sentence) => /\b(will|should|plans? to|agreed to|committed to|follow[ -]?up|next step|send|schedule|try)\b/i.test(sentence));
+  return {
+    summary: `A transcript was provided for ${clientName}'s session. It records:\n\n${providedTranscript}`,
+    action_items: actionItems.length ? actionItems.map((item) => `- ${item}`).join("\n") : "None mentioned.",
+  };
+}
+
 export function mockCheckInSummary(clientName: string) {
   return {
     summary: `${clientName} is reporting a generally stable 12-hour check-in with no acute safety concerns. Continue light-touch follow-up through the 48-hour window.`,

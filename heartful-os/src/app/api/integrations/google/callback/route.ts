@@ -1,16 +1,12 @@
 import { NextRequest, NextResponse } from "next/server";
-import { cookies } from "next/headers";
 import { exchangeCodeAndSaveTokens, ensureHeartfulCalendar } from "@/lib/googleCalendar";
 import { renewWatchChannels, pullAndApplyChanges } from "@/lib/googleCalendarSync";
-
-async function isPractitionerAuthed(): Promise<boolean> {
-  const expected = process.env.PRACTITIONER_PASSWORD;
-  if (!expected) return true;
-  return (await cookies()).get("heartful_auth")?.value === expected;
-}
+import { requirePractitioner } from "@/lib/serverAuth";
 
 export async function GET(req: NextRequest) {
-  if (!(await isPractitionerAuthed())) {
+  try {
+    await requirePractitioner();
+  } catch {
     return NextResponse.redirect(new URL("/login", req.url));
   }
 

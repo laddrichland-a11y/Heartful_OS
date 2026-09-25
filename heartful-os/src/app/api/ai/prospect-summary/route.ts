@@ -1,7 +1,8 @@
 import { NextRequest, NextResponse } from "next/server";
 import { runAiJson } from "@/lib/ai/generate";
 import { buildProspectIntroSummaryPrompt, buildProspectClientSummaryPrompt } from "@/lib/ai/prompts";
-import { getProspect, updateProspect } from "@/lib/data";
+import { updateProspect } from "@/lib/data";
+import { authorizationResponse, requireProspectAccess } from "@/lib/serverAuth";
 
 interface ProspectSummaryRequest {
   prospectId: string;
@@ -35,8 +36,7 @@ export async function POST(req: NextRequest) {
     const body = (await req.json()) as ProspectSummaryRequest;
     const { prospectId, transcript } = body;
 
-    const prospect = await getProspect(prospectId);
-    if (!prospect) return NextResponse.json({ error: "Prospect not found" }, { status: 404 });
+    const prospect = await requireProspectAccess(prospectId);
 
     const prompt = buildProspectIntroSummaryPrompt(transcript, prospect.full_name);
     const clientPrompt = buildProspectClientSummaryPrompt(transcript, prospect.full_name);
@@ -50,9 +50,9 @@ export async function POST(req: NextRequest) {
 
     const now = new Date().toISOString();
 
-    // Save to Firestore — non-blocking so a Firestore hiccup doesn't prevent
-    // the response from reaching the client.
-    updateProspect(prospectId, {
+    // Do not report success until the generated result is persisted. Otherwise
+    // a storage failure looks successful and the summary disappears on reload.
+    await updateProspect(prospectId, {
       ai_summary_content: data as Record<string, unknown>,
       ai_summary_model: model,
       ai_summary_generated_at: now,
@@ -63,7 +63,7 @@ export async function POST(req: NextRequest) {
       status: prospect.status === "new" || prospect.status === "intro_scheduled"
         ? "intro_complete"
         : prospect.status,
-    }).catch((err) => console.error("Failed to save prospect summary to Firestore:", err));
+    });
 
     return NextResponse.json({
       content: data,
@@ -73,6 +73,8 @@ export async function POST(req: NextRequest) {
       generated_at: now,
     });
   } catch (err) {
+    const authResponse = authorizationResponse(err);
+    if (authResponse) return authResponse;
     const msg = err instanceof Error ? err.message : String(err);
     console.error("prospect-summary route error:", msg);
     return NextResponse.json({ error: msg }, { status: 500 });

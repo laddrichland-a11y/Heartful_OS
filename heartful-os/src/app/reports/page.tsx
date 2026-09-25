@@ -3,7 +3,7 @@ import { ClientGrowthChart, ReferralBarChart, StatusDonutChart } from "@/compone
 import ReportsNav from "@/components/reports/ReportsNav";
 import ReportsFilterBar from "@/components/reports/ReportsFilterBar";
 import { getReferralSources, getReportsSummary, parseReportsFilter } from "@/lib/data";
-import { STATUS_LABELS } from "@/lib/types";
+import { getClientJourneyProgress } from "@/lib/utils";
 import { ClipboardList, TrendingUp, UserRound, Users } from "@/components/ui/HeartfulIcon";
 
 export const dynamic = "force-dynamic";
@@ -14,7 +14,7 @@ export default async function ReportsOverviewPage({ searchParams }: { searchPara
   const query = new URLSearchParams(Object.entries(params).filter(([, value]) => value !== undefined) as [string, string][]).toString();
   const statusCounts = new Map<string, number>();
   for (const client of summary.clients) {
-    const label = STATUS_LABELS[client.status];
+    const label = getClientJourneyProgress(client, []).currentStageLabel;
     statusCounts.set(label, (statusCounts.get(label) ?? 0) + 1);
   }
   const statusData = Array.from(statusCounts.entries()).map(([name, value]) => ({ name, value })).sort((a, b) => b.value - a.value);
@@ -64,7 +64,7 @@ export default async function ReportsOverviewPage({ searchParams }: { searchPara
     </section>
     <div className="reports-grid reports-grid--balanced">
       <ReportCard title="Client growth" description="New clients in the selected period"><ClientGrowthChart data={summary.clientGrowth} /></ReportCard>
-      <ReportCard title="Clients by journey status" description="Current distribution across the client journey"><StatusDonutChart data={statusData} /></ReportCard>
+      <ReportCard title="Clients by journey stage" description="Current distribution across the client journey"><StatusDonutChart data={statusData} /></ReportCard>
     </div>
     <div className="reports-grid reports-grid--referrals">
       <ReportCard title="Referral sources" description="Where current client relationships began"><ReferralBarChart data={summary.referralBreakdown} /></ReportCard>

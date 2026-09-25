@@ -8,7 +8,11 @@ import { renewWatchChannels } from "@/lib/googleCalendarSync";
 export async function POST(req: NextRequest) {
   const secret = process.env.CRON_SECRET;
   const provided = req.headers.get("x-cron-secret");
-  if (secret && provided !== secret) {
+  if (!secret) {
+    console.error("Scheduled Google Calendar renewal is disabled: CRON_SECRET is not configured.");
+    return NextResponse.json({ error: "scheduled renewal is not configured" }, { status: 503 });
+  }
+  if (provided !== secret) {
     return NextResponse.json({ error: "unauthorized" }, { status: 401 });
   }
 

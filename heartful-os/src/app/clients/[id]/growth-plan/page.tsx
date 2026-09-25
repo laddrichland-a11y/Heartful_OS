@@ -41,6 +41,7 @@ export default async function GrowthPlanPage({ params }: { params: Promise<{ id:
         clientId={id}
         clientName={client.full_name}
         existingGrowthPlan={growthPlan ?? undefined}
+        canCompleteStage={stage.canCompleteStage}
       />
       </ClientPhaseWorkspace>
     </AppShell>

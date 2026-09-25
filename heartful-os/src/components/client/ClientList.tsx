@@ -5,8 +5,8 @@ import Link from "next/link";
 import { Search, SlidersHorizontal } from "@/components/ui/HeartfulIcon";
 import JourneyProgressBar from "@/components/JourneyProgressBar";
 import FilterSelect from "@/components/client/FilterSelect";
-import { Client, ClientStatus, JourneyMilestone } from "@/lib/types";
-import { CLIENT_JOURNEY_STAGE_OPTIONS, clientAvatarSrc, clientJourneyStageForStatus, clientJourneyWorkspaceHref, clientStatusBadgeClasses, cx, formatDate, initials, isCompletedClient, type ClientJourneyStageFilter } from "@/lib/utils";
+import { Client, ClientStatus, JourneyMilestone, Session } from "@/lib/types";
+import { CLIENT_JOURNEY_STAGE_OPTIONS, clientAvatarSrc, clientJourneyStageForStatus, clientJourneyWorkspaceHref, clientStatusBadgeClasses, cx, formatDate, getClientJourneyProgress, initials, isCompletedClient, journeyStageStatusLabel, type ClientJourneyStageFilter } from "@/lib/utils";
 import { useMemo, useState } from "react";
 
 type StageFilter = "all" | ClientJourneyStageFilter;
@@ -17,26 +17,10 @@ type SessionFilter = "all" | "scheduled" | "not_scheduled";
 export interface ClientListItem {
   client: Client;
   milestones: JourneyMilestone[];
+  sessions: Session[];
   referralName?: string;
   hasScheduledSession: boolean;
 }
-
-const CLIENT_LIST_STATUS_LABELS: Record<ClientStatus, string> = {
-  inquiry: "Inquiry",
-  intake_scheduled: "Intake",
-  intake_complete: "Intake",
-  preparation: "Preparation",
-  preparation_complete: "Preparation",
-  journey_scheduled: "Journey Day",
-  journey_complete: "Awaiting Integration",
-  check_in_complete: "Check-in",
-  integration_1: "Integration 1",
-  integration_1_complete: "Integration 1",
-  integration_2: "Integration 2",
-  integration_2_complete: "Integration 2",
-  journey_closed: "Completed",
-  inactive: "Inactive",
-};
 
 function clientActionLabel(status: ClientStatus) {
   if (isCompletedClient(status) || status === "inactive") return "View client →";
@@ -50,8 +34,8 @@ function clientActionLabel(status: ClientStatus) {
   return "Open client →";
 }
 
-function clientStageHref(client: Client): string {
-  return clientJourneyWorkspaceHref(client);
+function clientStageHref(client: Client, sessions: Session[]): string {
+  return clientJourneyWorkspaceHref(client, sessions);
 }
 
 const controlClass =
@@ -248,14 +232,16 @@ export default function ClientList({ items, emptyMessage }: { items: ClientListI
         </div>
       ) : (
         <div className="grid gap-3">
-          {visibleItems.map(({ client, milestones, referralName }) => {
+          {visibleItems.map(({ client, milestones, sessions, referralName }) => {
             const avatarSrc = clientAvatarSrc(client);
             const completed = isCompletedClient(client.status);
             const showAction = !client.on_hold_at;
+            const journeyProgress = getClientJourneyProgress(client, milestones);
+            const stageStatus = client.status === "inactive" ? "Inactive" : journeyStageStatusLabel(journeyProgress.currentStageStatus);
             return (
               <Link
                 key={client.id}
-                href={clientStageHref(client)}
+                href={clientStageHref(client, sessions)}
                 className={cx(
                   "group/card card block border border-ink-100 p-4 transition-colors hover:border-ink-200 hover:bg-ink-50",
                   client.on_hold_at && "opacity-75"
@@ -285,8 +271,11 @@ export default function ClientList({ items, emptyMessage }: { items: ClientListI
                         {client.hold_follow_up_at ? `Follow up ${formatDate(client.hold_follow_up_at)}` : "On hold"}
                       </span>
                     )}
-                    <span className={cx("badge client-list-status", clientStatusBadgeClasses(client.status))}>
-                      {CLIENT_LIST_STATUS_LABELS[client.status]}
+                    <span className="inline-flex items-center gap-1.5">
+                      <span className={cx("badge client-list-status", clientStatusBadgeClasses(client.status))}>
+                        {journeyProgress.currentStageLabel}
+                      </span>
+                      {stageStatus && <span className="text-xs text-ink-400">{stageStatus}</span>}
                     </span>
                     {referralName && (
                       <span className="client-list-referral">

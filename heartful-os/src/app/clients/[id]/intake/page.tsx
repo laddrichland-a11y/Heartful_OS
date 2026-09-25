@@ -61,6 +61,7 @@ export default async function IntakePage({ params }: { params: Promise<{ id: str
         formTemplates={formTemplates}
         formSubmissions={formSubmissions}
         existingSummaries={summaries}
+        canCompleteStage={stage.canCompleteStage}
       />
       </ClientPhaseWorkspace>
     </AppShell>

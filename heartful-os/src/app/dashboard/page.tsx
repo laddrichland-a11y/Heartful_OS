@@ -4,22 +4,16 @@ import DashboardOutstandingActions from "@/components/dashboard/DashboardOutstan
 import DashboardDateStrip from "@/components/dashboard/DashboardDateStrip";
 import { getAgreementStatusByClient, getAllSessions, getDashboardSummary, getMilestones, getPractitioner } from "@/lib/data";
 import {
-  ArrowRight, CalendarDays, CheckCircle2, ChevronRight, CircleAlert,
-  Clock3, DollarSign, FileText, IntegrationLink, OutstandingTasks, Plus, Users,
+  CheckCircle2, ChevronRight, CircleAlert, DollarSign, FileText,
+  IntegrationLink, OutstandingTasks, Users,
 } from "@/components/ui/HeartfulIcon";
 import ClientAvatarImage from "@/components/client/ClientAvatarImage";
 import Link from "next/link";
 import {
-  clientAvatarSrc, clientJourneyWorkspaceHref, clientStatusBadgeClasses, cx, formatDateTime, initials, isPastDue, outstandingItemHref,
-  relativeDueLabel, SESSION_TYPE_LABELS,
+  clientAvatarSrc, clientJourneyWorkspaceHref, clientStatusBadgeClasses, cx, initials, isPastDue, outstandingItemHref,
+  getClientJourneyProgress, journeyStageStatusLabel, relativeDueLabel,
 } from "@/lib/utils";
-import { STATUS_LABELS } from "@/lib/types";
-
-const AGREEMENT_ENGAGEMENT_LABELS = {
-  not_opened: "Not opened",
-  opened: "Opened",
-  completed: "Completed",
-} as const;
+import { AGREEMENT_STATE_LABELS } from "@/lib/agreementStatus";
 
 export const dynamic = "force-dynamic";
 
@@ -49,7 +43,7 @@ export default async function DashboardPage() {
     },
   ];
   const dashboardOutstandingItems = summary.outstandingTasks.slice(0, 4);
-  const dashboardSessions = allSessions.filter((session) => session.status === "scheduled");
+  const dashboardSessions = allSessions;
 
   return (
     <AppShell title="Dashboard">
@@ -83,9 +77,11 @@ export default async function DashboardPage() {
                 const agreement = agreementByClient.get(client.id);
                 const avatarSrc = clientAvatarSrc(client);
                 const engagement = agreement?.engagement ?? "not_opened";
+                const journeyProgress = getClientJourneyProgress(client, milestones);
+                const stageStatus = journeyStageStatusLabel(journeyProgress.currentStageStatus);
                 return (
                   <article key={client.id} className="dashboard-active-client">
-                    <Link href={clientJourneyWorkspaceHref(client)} className="dashboard-active-client-main">
+                    <Link href={clientJourneyWorkspaceHref(client, allSessions.filter((session) => session.client_id === client.id))} className="dashboard-active-client-main">
                       <div className="dashboard-active-client-top">
                         <span className="dashboard-active-client-identity">
                           <span className="dashboard-active-client-avatar" aria-hidden="true">
@@ -97,7 +93,10 @@ export default async function DashboardPage() {
                           </span>
                           <strong>{client.full_name}</strong>
                         </span>
-                        <span className={cx("badge", clientStatusBadgeClasses(client.status))}>{STATUS_LABELS[client.status]}</span>
+                        <span className="inline-flex items-center gap-1.5">
+                          <span className={cx("badge", clientStatusBadgeClasses(client.status))}>{journeyProgress.currentStageLabel}</span>
+                          {stageStatus && <span className="text-xs text-ink-400">{stageStatus}</span>}
+                        </span>
                       </div>
                       <JourneyProgressBar client={client} milestones={milestones} compact />
                     </Link>
@@ -107,9 +106,9 @@ export default async function DashboardPage() {
                       aria-label={`Open ${client.full_name}'s Agreements & Consents`}
                     >
                       {engagement === "completed" ? <CheckCircle2 aria-hidden="true" /> : <FileText aria-hidden="true" />}
-                      <span>Agreements {agreement?.signed_count ?? 0}/{agreement?.total_count ?? 3}</span>
+                      <span>Agreements {agreement?.completed_count ?? 0}/{agreement?.total_count ?? 3}</span>
                       <span aria-hidden="true">·</span>
-                      <span>{AGREEMENT_ENGAGEMENT_LABELS[engagement]}</span>
+                      <span>{AGREEMENT_STATE_LABELS[engagement]}</span>
                     </Link>
                   </article>
                 );
@@ -132,7 +131,7 @@ export default async function DashboardPage() {
               {dashboardOutstandingItems.map((item) => {
                 const overdue = item.status === "overdue" || isPastDue(item);
                 const dueStatus = "kind" in item
-                  ? (item.status === "in_progress" ? "In progress" : "Not started")
+                  ? (item.status === "missing_template" ? "Template missing" : item.status === "in_progress" ? "In progress" : "Not started")
                   : relativeDueLabel(item.due_at) || "No due date";
                 return (
                 <article key={item.id} className="dashboard-attention-row">
@@ -145,11 +144,13 @@ export default async function DashboardPage() {
                       <small>{item.client_name} · <span className={cx(overdue && "is-urgent")}>{dueStatus}</span></small>
                     </span>
                   </Link>
-                  <DashboardOutstandingActions
-                    clientId={item.client_id}
-                    title={item.title}
-                    taskId={"kind" in item ? undefined : item.id}
-                  />
+                  {item.status !== "missing_template" && (
+                    <DashboardOutstandingActions
+                      clientId={item.client_id}
+                      title={item.title}
+                      taskId={"kind" in item ? undefined : item.id}
+                    />
+                  )}
                 </article>
                 );
               })}

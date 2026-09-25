@@ -102,6 +102,7 @@ export default async function ClientPage({
           milestones={milestones}
           documents={documents}
           formSubmissions={formSubmissions}
+          formTemplates={formTemplates}
           tasks={tasks}
           portalAssignments={portalAssignments}
           checkIns={checkIns}

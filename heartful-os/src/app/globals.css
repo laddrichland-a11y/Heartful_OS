@@ -2335,12 +2335,12 @@ button:not([class~="rounded"]):not([class*="rounded-"]) {
 }
 
 .wellnest-client-screen .journey-stage-nav li[data-state="current"] .journey-stage-link,
-.wellnest-client-screen .journey-stage-nav li[data-state="viewing"] .journey-stage-link {
+.wellnest-client-screen .journey-stage-nav li[data-viewing="true"] .journey-stage-link {
   color: var(--color-orange-700);
 }
 
 .wellnest-client-screen .journey-stage-nav li[data-state="current"] .journey-stage-marker,
-.wellnest-client-screen .journey-stage-nav li[data-state="viewing"] .journey-stage-marker {
+.wellnest-client-screen .journey-stage-nav li[data-viewing="true"] .journey-stage-marker {
   border-color: var(--color-orange-500);
   background: var(--color-orange-500);
   color: var(--text-on-accent);
@@ -2348,12 +2348,12 @@ button:not([class~="rounded"]):not([class*="rounded-"]) {
 }
 
 .wellnest-client-screen .journey-stage-nav li[data-state="current"] .journey-stage-label,
-.wellnest-client-screen .journey-stage-nav li[data-state="viewing"] .journey-stage-label {
+.wellnest-client-screen .journey-stage-nav li[data-viewing="true"] .journey-stage-label {
   color: var(--color-orange-700);
 }
 
 .wellnest-client-screen .journey-stage-nav li[data-state="current"] .journey-stage-status,
-.wellnest-client-screen .journey-stage-nav li[data-state="viewing"] .journey-stage-status {
+.wellnest-client-screen .journey-stage-nav li[data-viewing="true"] .journey-stage-status {
   color: var(--color-orange-700);
   font-weight: 600;
 }
@@ -2363,13 +2363,13 @@ button:not([class~="rounded"]):not([class*="rounded-"]) {
 }
 
 .wellnest-client-screen .journey-stage-nav li[data-state="upcoming"] a:hover,
-.wellnest-client-screen .journey-stage-nav li[data-state="complete"] a:hover {
+.wellnest-client-screen .journey-stage-nav li[data-state="completed"] a:hover {
   border-color: var(--divider);
   background: var(--surface-hover);
 }
 
 .wellnest-client-screen .journey-stage-nav li[data-state="current"] a:hover,
-.wellnest-client-screen .journey-stage-nav li[data-state="viewing"] a:hover {
+.wellnest-client-screen .journey-stage-nav li[data-viewing="true"] a:hover {
   background: var(--brand-accent-soft);
 }
 
@@ -4026,13 +4026,13 @@ textarea:focus-visible {
 .wellnest-client-screen .wn-panel-header .btn-secondary,
 .wellnest-client-screen .journey-stage-nav li[data-active="true"] .journey-stage-marker,
 .wellnest-client-screen .journey-stage-nav li[data-state="current"] .journey-stage-marker,
-.wellnest-client-screen .journey-stage-nav li[data-state="viewing"] .journey-stage-marker {
+.wellnest-client-screen .journey-stage-nav li[data-viewing="true"] .journey-stage-marker {
   border-color: var(--color-petrol-500);
   background: var(--color-petrol-500);
   color: #fff;
 }
 
-.wellnest-client-screen .journey-stage-nav li:is([data-active="true"], [data-completed="true"], [data-state="current"], [data-state="viewing"]) .journey-stage-marker :is(svg, .heartful-icon) {
+.wellnest-client-screen .journey-stage-nav li:is([data-active="true"], [data-completed="true"], [data-state="current"], [data-viewing="true"]) .journey-stage-marker :is(svg, .heartful-icon) {
   color: currentColor;
 }
 
@@ -5466,14 +5466,14 @@ textarea {
 
 :root[data-theme="dark"] .wellnest-client-screen .journey-stage-nav li[data-active="true"] .journey-stage-marker,
 :root[data-theme="dark"] .wellnest-client-screen .journey-stage-nav li[data-state="current"] .journey-stage-marker,
-:root[data-theme="dark"] .wellnest-client-screen .journey-stage-nav li[data-state="viewing"] .journey-stage-marker {
+:root[data-theme="dark"] .wellnest-client-screen .journey-stage-nav li[data-viewing="true"] .journey-stage-marker {
   border-color: var(--color-ink-50);
   background: var(--color-ink-50);
   color: #fff;
 }
 
 :root[data-theme="dark"] .wellnest-client-screen .journey-stage-nav li[data-state="upcoming"] a:hover,
-:root[data-theme="dark"] .wellnest-client-screen .journey-stage-nav li[data-state="complete"] a:hover,
+:root[data-theme="dark"] .wellnest-client-screen .journey-stage-nav li[data-state="completed"] a:hover,
 :root[data-theme="dark"] .wellnest-client-screen .wn-recent-item:hover,
 :root[data-theme="dark"] .wellnest-client-screen .wn-attention-row:hover {
   border-color: var(--border-strong);
@@ -5482,7 +5482,7 @@ textarea {
 }
 
 :root[data-theme="dark"] .wellnest-client-screen .journey-stage-nav li[data-state="current"] a:hover,
-:root[data-theme="dark"] .wellnest-client-screen .journey-stage-nav li[data-state="viewing"] a:hover {
+:root[data-theme="dark"] .wellnest-client-screen .journey-stage-nav li[data-viewing="true"] a:hover {
   border-color: var(--color-orange-200);
   background: var(--surface-selected);
 }
@@ -5499,22 +5499,22 @@ textarea {
 
 /* A deep-linked stage is the active location; the client's actual current
    stage remains labelled but should not compete with the selected marker. */
-.wellnest-client-screen .journey-stage-nav:has(li[data-state="viewing"]) li[data-state="current"] .journey-stage-marker {
+.wellnest-client-screen .journey-stage-nav:has(li[data-viewing="true"]) li[data-state="current"] .journey-stage-marker {
   border-color: var(--border-strong);
   background: var(--surface-nested);
   color: var(--text-secondary);
   box-shadow: none;
 }
-.wellnest-client-screen .journey-stage-nav:has(li[data-state="viewing"]) li[data-state="current"] :is(.journey-stage-label, .journey-stage-status) {
+.wellnest-client-screen .journey-stage-nav:has(li[data-viewing="true"]) li[data-state="current"] :is(.journey-stage-label, .journey-stage-status) {
   color: var(--text-secondary);
 }
-.wellnest-client-screen .journey-stage-nav li[data-state="viewing"] .journey-stage-marker {
+.wellnest-client-screen .journey-stage-nav li[data-viewing="true"] .journey-stage-marker {
   border-color: var(--color-orange-600);
   background: var(--surface-selected);
   color: var(--color-orange-700);
   box-shadow: 0 0 0 4px var(--color-orange-100);
 }
-:root[data-theme="dark"] .wellnest-client-screen .journey-stage-nav li[data-state="viewing"] .journey-stage-marker {
+:root[data-theme="dark"] .wellnest-client-screen .journey-stage-nav li[data-viewing="true"] .journey-stage-marker {
   border-color: var(--color-orange-600);
   background: var(--color-orange-600);
   color: var(--surface-page);

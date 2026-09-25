@@ -6,6 +6,7 @@ import {
   getClient,
   getDocuments,
   getFormSubmissionsForClient,
+  getFormTemplates,
   getMessages,
   getMilestones,
   getPortalAssignments,
@@ -76,12 +77,13 @@ async function ClientPhaseHeader({ clientId }: { clientId: string }) {
 }
 
 async function ClientPhaseContextRail({ clientId }: { clientId: string }) {
-  const [client, sessions, milestones, documents, formSubmissions, tasks, portalAssignments, checkIns, postIntegrationForms, transcripts, aiSummaries, messages] = await Promise.all([
+  const [client, sessions, milestones, documents, formSubmissions, formTemplates, tasks, portalAssignments, checkIns, postIntegrationForms, transcripts, aiSummaries, messages] = await Promise.all([
     getClient(clientId),
     getSessions(clientId),
     getMilestones(clientId),
     getDocuments(clientId),
     getFormSubmissionsForClient(clientId),
+    getFormTemplates(),
     getTasks(clientId),
     getPortalAssignments(clientId),
     getCheckIns(clientId),
@@ -100,6 +102,7 @@ async function ClientPhaseContextRail({ clientId }: { clientId: string }) {
         milestones={milestones}
         documents={documents}
         formSubmissions={formSubmissions}
+        formTemplates={formTemplates}
         tasks={tasks}
         portalAssignments={portalAssignments}
         checkIns={checkIns}

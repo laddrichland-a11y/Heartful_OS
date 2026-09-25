@@ -6,6 +6,7 @@ import Link from "next/link";
 import { CalendarDays, ChevronLeft, ChevronRight, Plus, Clock3, ArrowRight } from "@/components/ui/HeartfulIcon";
 import type { Session } from "@/lib/types";
 import { clientAvatarSrc, formatDateTime, initials, SESSION_TYPE_LABELS } from "@/lib/utils";
+import { selectSessionTimeline } from "@/lib/sessionSelectors";
 const keyOf = (d: Date) => `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,"0")}-${String(d.getDate()).padStart(2,"0")}`;
 const isSameMonth = (first: Date, second: Date) => first.getFullYear() === second.getFullYear() && first.getMonth() === second.getMonth();
 export default function DashboardDateStrip({ sessions }: { sessions: (Session & {client_name: string})[] }) {
@@ -30,11 +31,12 @@ export default function DashboardDateStrip({ sessions }: { sessions: (Session & 
   const monthKey = keyOf(activeMonth).slice(0,7);
   const todayKey = keyOf(calendarToday);
   const dates = Array.from({length:9}, (_,i)=>new Date(rangeStart.getFullYear(), rangeStart.getMonth(), rangeStart.getDate() + i));
-  const filtered = sessions.filter(s=>{
-    if (!s.scheduled_at || s.status !== "scheduled") return false;
+  const visibleSessions = selectSessionTimeline(sessions, calendarToday).activeAndUpcoming;
+  const filtered = visibleSessions.filter(s=>{
+    if (!s.scheduled_at) return false;
     const scheduled = new Date(s.scheduled_at);
     const key = keyOf(scheduled);
-    return scheduled.getTime() >= calendarToday.getTime() && key.startsWith(monthKey) && (!day || key === day);
+    return key.startsWith(monthKey) && (!day || key === day);
   }).sort((a,b)=>new Date(a.scheduled_at!).getTime()-new Date(b.scheduled_at!).getTime());
   const isCurrentMonth = activeMonth.getFullYear() === calendarToday.getFullYear() && activeMonth.getMonth() === calendarToday.getMonth();
   const atEarliestDate = rangeStart.getTime() <= new Date(calendarToday.getFullYear(), calendarToday.getMonth(), calendarToday.getDate()).getTime();

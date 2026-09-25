@@ -38,9 +38,14 @@ export default function SignatureField({
   // Sync local state when the value prop is updated externally (e.g. live session
   // incoming from the other party via onSnapshot). useState only uses the initial
   // value, so without these effects remote changes would never appear locally.
-  useEffect(() => { if (value?.mode !== undefined) setMode(value.mode); }, [value?.mode]);
-  useEffect(() => { setTypedName(value?.typedName ?? ""); }, [value?.typedName]);
-  useEffect(() => { setAcknowledged(value?.acknowledged ?? false); }, [value?.acknowledged]);
+  useEffect(() => {
+    const frame = window.requestAnimationFrame(() => {
+      if (value?.mode !== undefined) setMode(value.mode);
+      setTypedName(value?.typedName ?? "");
+      setAcknowledged(value?.acknowledged ?? false);
+    });
+    return () => window.cancelAnimationFrame(frame);
+  }, [value?.mode, value?.typedName, value?.acknowledged]);
 
   useEffect(() => {
     const canvas = canvasRef.current;

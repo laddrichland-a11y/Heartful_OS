@@ -23,7 +23,8 @@ import {
   Session,
   Task,
 } from "@/lib/types";
-import { cx, formatDate, formatDateTime, getClientJourneyProgress, getJourneyStageWorkspaceState, isGeneralPaperwork, phaseForStatus, SESSION_TYPE_LABELS, Tab, type JourneyWorkspaceStage } from "@/lib/utils";
+import { canCompleteJourneyMilestone, canCompleteJourneySession, cx, formatDate, formatDateTime, getClientJourneyProgress, getJourneyStageWorkspaceState, isGeneralPaperwork, phaseForStatus, SESSION_TYPE_LABELS, Tab, type JourneyWorkspaceStage } from "@/lib/utils";
+import { selectCurrentOrNextSession, selectStageWorkspaceSession } from "@/lib/sessionSelectors";
 import {
   FileText,
   Upload,
@@ -86,6 +87,8 @@ import IntakeWorkspace from "@/components/client/IntakeWorkspace";
 import MilestoneToggleBanner from "@/components/client/MilestoneToggleBanner";
 import JourneyAiSummaries from "@/components/client/JourneyAiSummaries";
 import ConfirmDialog from "@/components/ui/ConfirmDialog";
+import { AGREEMENT_STATE_LABELS, agreementStateForDocument, normalizeAgreementStatus, type AgreementItemState } from "@/lib/agreementStatus";
+import { formTemplateAppliesToSession, resolveRequiredForms } from "@/lib/requiredForms";
 
 const CLIENT_TABS: { value: Tab; label: string }[] = [
   { value: "History", label: "Overview" },
@@ -187,13 +190,12 @@ export default function ClientRecordTabs({
       {tab === "Documents" && (
         <DocumentsTab
           clientId={client.id}
-          clientName={client.full_name}
           documents={documents}
           formTemplates={formTemplates}
           formSubmissions={formSubmissions}
         />
       )}
-      {tab === "Sessions" && <SessionsTab clientId={client.id} sessions={sessions} />}
+      {tab === "Sessions" && <SessionsTab clientId={client.id} sessions={sessions} milestones={milestones} />}
       {tab === "Journey & AI" && (
         <>
           <section id="journey-stages" className="client-surface journey-stages-card mb-5 px-5 py-4">
@@ -201,7 +203,7 @@ export default function ClientRecordTabs({
               <h2 className="journey-icon-heading text-base font-semibold text-ink-900"><ListChecks aria-hidden="true" />Journey stages</h2>
               <span className="text-xs text-ink-400">{journeyProgress.completed} of {journeyProgress.total} stages complete</span>
             </div>
-            <JourneyStageNav clientId={client.id} sessions={sessions} milestones={milestones} activePhase={phaseForStatus(client.status, client.current_phase)} current={viewingStage} />
+            <JourneyStageNav clientId={client.id} client={client} sessions={sessions} milestones={milestones} current={viewingStage} />
           </section>
           <JourneyTab
             client={client}
@@ -231,7 +233,6 @@ export default function ClientRecordTabs({
           documents={documents}
           formTemplates={formTemplates}
           formSubmissions={formSubmissions}
-          onOpenDocuments={() => setTab("Documents")}
         />
       )}
       {tab === "Messages" && <MessagesTab clientId={client.id} messages={messages} portalAssignments={portalAssignments} />}
@@ -395,13 +396,11 @@ const FORM_STAGE_GROUPS: {
 
 function DocumentsTab({
   clientId,
-  clientName,
   documents,
   formTemplates,
   formSubmissions,
 }: {
   clientId: string;
-  clientName: string;
   documents: ClientDocument[];
   formTemplates: FormTemplate[];
   formSubmissions: FormSubmission[];
@@ -433,7 +432,21 @@ function DocumentsTab({
   // The signed-once agreements get their own bucket at the top rather than
   // being filed under Intake — they're practice-wide paperwork, not intake
   // work, which is why the phase views no longer show them.
-  const agreementDocs = formBacked.filter((d) => isGeneralPaperwork(d.document_type));
+  const agreementStatus = normalizeAgreementStatus({
+    templates: formTemplates,
+    documents,
+    submissions: formSubmissions,
+  });
+  const agreementDocs = agreementStatus.items.flatMap((item) => item.document ? [item.document] : []);
+  const unavailableRequiredForms = resolveRequiredForms({
+    templates: formTemplates,
+    documents,
+    submissions: formSubmissions,
+  }).filter(
+    (form) =>
+      (form.state === "missing_template" || form.state === "missing_document") &&
+      (form.category !== "agreement" || form.state === "missing_template")
+  );
 
   // Build stage-grouped buckets. A form can appear in multiple stages if its
   // template lists multiple session_types (e.g. Participant Screening).
@@ -442,7 +455,7 @@ function DocumentsTab({
     docs: formBacked.filter((doc) => {
       if (isGeneralPaperwork(doc.document_type)) return false;
       const tmpl = formTemplates.find((t) => t.document_type === doc.document_type);
-      return tmpl?.session_types?.some((st) => group.sessionTypes.includes(st));
+      return Boolean(tmpl && group.sessionTypes.some((sessionType) => formTemplateAppliesToSession(tmpl, sessionType)));
     }),
   }));
 
@@ -454,7 +467,7 @@ function DocumentsTab({
   const ungrouped = formBacked.filter((d) => !allGroupedDocIds.has(d.id));
 
   const formGroups = [
-    agreementDocs.length > 0
+    agreementStatus.total_count > 0
       ? {
           label: "Agreements & Consents",
           hint: "Signed once when the client joins the practice",
@@ -473,6 +486,27 @@ function DocumentsTab({
 
   return (
     <div className="space-y-4">
+      {unavailableRequiredForms.length > 0 && (
+        <section className="client-surface px-5 py-4" aria-label="Missing required form setup">
+          <h2 className="text-sm font-semibold text-ink-900">Required form setup needed</h2>
+          <div className="mt-2 space-y-2">
+            {unavailableRequiredForms.map((form) => (
+              <div key={form.documentType} className="flex flex-wrap items-center gap-x-2 gap-y-1 text-sm text-ink-600">
+                <FileText className="h-4 w-4 shrink-0 text-amber-600" aria-hidden="true" />
+                <span>
+                  <strong className="font-medium text-ink-800">{form.title}</strong>{" "}
+                  {form.state === "missing_template"
+                    ? "is missing from the Form Library."
+                    : "has not been attached to this client."}
+                </span>
+                <Link href="/settings/forms" className="font-medium text-clay-700 underline underline-offset-2">
+                  Open Form Library
+                </Link>
+              </div>
+            ))}
+          </div>
+        </section>
+      )}
       {/* One shared document surface; the dividers belong to the internal groups, not to individual rows. */}
       {formGroups.length > 0 && (
         <section id="agreements-and-consents" className="client-surface overflow-hidden" aria-label="Agreements and consents">
@@ -498,9 +532,19 @@ function DocumentsTab({
                         document={doc}
                         template={template}
                         submission={submission}
+                        agreementState={agreementStateForDocument(doc, formTemplates, formSubmissions)}
                       />
                     );
                   })}
+                  {group.label === "Agreements & Consents" && agreementStatus.items
+                    .filter((item) => !item.document)
+                    .map((item) => (
+                      <div key={item.template.id} className="flex items-center gap-2.5 rounded-[var(--radius-control)] px-2 py-2.5">
+                        <FileText className="h-4 w-4 shrink-0 text-ink-400" />
+                        <span className="text-sm font-medium text-ink-800">{item.template.title}</span>
+                        <FormStatusChip statusBadge={{ label: AGREEMENT_STATE_LABELS.not_opened, cls: "status-pill--neutral" }} />
+                      </div>
+                    ))}
                 </div>
               </section>
             ))}
@@ -714,12 +758,14 @@ function FormSubmissionCard({
   document: doc,
   template,
   submission,
+  agreementState,
 }: {
   document: ClientDocument;
   template: FormTemplate;
   submission?: FormSubmission;
+  agreementState?: AgreementItemState;
 }) {
-  const statusBadge = getFormStatusBadge(doc, submission);
+  const statusBadge = getFormStatusBadge(doc, submission, agreementState);
 
   return (
     <Link
@@ -738,7 +784,14 @@ function FormSubmissionCard({
 
 type FormStatusBadge = { label: string; cls: string };
 
-function getFormStatusBadge(doc?: ClientDocument, submission?: FormSubmission): FormStatusBadge {
+function getFormStatusBadge(doc?: ClientDocument, submission?: FormSubmission, agreementState?: AgreementItemState): FormStatusBadge {
+  if (agreementState) {
+    return agreementState === "completed"
+      ? { label: AGREEMENT_STATE_LABELS.completed, cls: "status-pill--success" }
+      : agreementState === "opened"
+        ? { label: AGREEMENT_STATE_LABELS.opened, cls: "status-pill--warning" }
+        : { label: AGREEMENT_STATE_LABELS.not_opened, cls: "status-pill--neutral" };
+  }
   const submissionStatus = submission?.status ?? "missing";
   return doc?.status === "reviewed"
     ? { label: "Reviewed", cls: "status-pill--info" }
@@ -746,7 +799,7 @@ function getFormStatusBadge(doc?: ClientDocument, submission?: FormSubmission): 
       ? { label: "Signed", cls: "status-pill--success" }
       : submissionStatus === "submitted"
         ? { label: "Submitted", cls: "status-pill--success" }
-        : submissionStatus === "in_progress"
+      : submissionStatus === "in_progress" || submissionStatus === "draft"
           ? { label: "In Progress", cls: "status-pill--warning" }
           : { label: "Not Started", cls: "status-pill--neutral" };
 }
@@ -1061,7 +1114,7 @@ function UploadButton({ documentId, clientId }: { documentId: string; clientId: 
   );
 }
 
-function SessionsTab({ clientId, sessions }: { clientId: string; sessions: Session[] }) {
+function SessionsTab({ clientId, sessions, milestones }: { clientId: string; sessions: Session[]; milestones: JourneyMilestone[] }) {
   const [open, setOpen] = useState(false);
   const [busyId, setBusyId] = useState<string | null>(null);
   const [scheduleDate, setScheduleDate] = useState(() => getPrimaryScheduleDate(sessions));
@@ -1140,6 +1193,7 @@ function SessionsTab({ clientId, sessions }: { clientId: string; sessions: Sessi
           <tbody>
             {orderedSessions.map((s) => {
               const sessionDateKey = toDateKey(s.scheduled_at);
+              const canComplete = canCompleteJourneySession(milestones, s.session_type);
               return (
                 <tr key={s.id} data-selected={sessionDateKey === selectedDateKey ? "true" : "false"}>
                   <td className="wn-session-primary-cell">
@@ -1160,14 +1214,14 @@ function SessionsTab({ clientId, sessions }: { clientId: string; sessions: Sessi
                         <button
                           type="button"
                           className="wn-session-complete-action"
-                          disabled={busyId === s.id}
+                          disabled={busyId === s.id || !canComplete}
                           onClick={async () => {
                             setBusyId(s.id);
                             await completeSessionAction(s.id, clientId);
                             setBusyId(null);
                           }}
                         aria-label={`Complete ${SESSION_TYPE_LABELS[s.session_type] ?? "session"}`}
-                        title="Mark complete"
+                        title={canComplete ? "Mark complete" : "Complete previous journey stages first"}
                         ><Check aria-hidden="true" /></button>
                       )}
                       {s.status === "scheduled" && (
@@ -1212,9 +1266,7 @@ type ScheduleDay = {
 };
 
 function getPrimaryScheduleDate(sessions: Session[]) {
-  const nextScheduledSession = sessions
-    .filter((session) => session.status === "scheduled" && session.scheduled_at)
-    .sort((a, b) => (a.scheduled_at ?? "").localeCompare(b.scheduled_at ?? ""))[0];
+  const nextScheduledSession = selectCurrentOrNextSession(sessions);
   return nextScheduledSession?.scheduled_at ? new Date(nextScheduledSession.scheduled_at) : new Date();
 }
 
@@ -1384,15 +1436,11 @@ function JourneyTab({
   const planEntries = preparationPlan
     ? Object.entries(preparationPlan).filter(([key]) => !["id", "client_id", "updated_at"].includes(key))
     : [];
-  const checkInSession = sessions.find((session) => session.session_type === "check_in_12hr" && session.status === "scheduled") ??
-    sessions
-      .filter((session) => session.session_type === "check_in_12hr")
-      .sort((a, b) => (b.scheduled_at ?? "").localeCompare(a.scheduled_at ?? ""))[0];
   const stageLink = PHASE_LINKS.find((stage) => stage.phase === workspaceStage)!;
   const stageMilestone = milestones.find((milestone) => milestone.milestone_key === stageLink.milestoneKey);
   const stageState = getJourneyStageWorkspaceState(client, milestones, workspaceStage, stageLink.milestoneKey);
   const stageSession = stageLink.sessionType
-    ? sessions.find((session) => session.session_type === stageLink.sessionType && session.status === "scheduled") ?? sessions.find((session) => session.session_type === stageLink.sessionType)
+    ? selectStageWorkspaceSession(sessions, stageLink.sessionType)
     : undefined;
   const stageHref = workspaceStage === "post_journey_check_in"
     ? `/clients/${clientId}?tab=${encodeURIComponent("Journey & AI")}&stage=${workspaceStage}`
@@ -1424,6 +1472,7 @@ function JourneyTab({
             formTemplates={formTemplates}
             formSubmissions={formSubmissions}
             existingSummaries={intakeSummaries}
+            canCompleteStage={stageState.canCompleteStage}
           />
         ) : workspaceStage === "post_journey_check_in" ? (
           <CheckInWorkspace
@@ -1444,7 +1493,12 @@ function JourneyTab({
 
       <div className="journey-practitioner-grid">
         <div className="journey-practitioner-main">
-          <JourneyAiSummaries clientId={clientId} initialSummaries={aiSummaries} checkInSubmitted={checkInSubmitted} />
+          <JourneyAiSummaries
+            clientId={clientId}
+            initialSummaries={aiSummaries}
+            checkInSubmitted={checkInSubmitted}
+            canCompleteStage={canCompleteJourneyMilestone(milestones, "check_in_12hr_complete")}
+          />
           {preparationPlan && (
             <section className="journey-preparation-plan" aria-labelledby="journey-preparation-plan-heading">
               <h3 id="journey-preparation-plan-heading" className="journey-icon-heading"><BookOpen aria-hidden="true" />Preparation &amp; Navigation Plan</h3>
@@ -1503,7 +1557,6 @@ function ClientCopilotTab({
   documents,
   formTemplates,
   formSubmissions,
-  onOpenDocuments,
 }: {
   clientId: string;
   clientName: string;
@@ -1514,11 +1567,11 @@ function ClientCopilotTab({
   documents: ClientDocument[];
   formTemplates: FormTemplate[];
   formSubmissions: FormSubmission[];
-  onOpenDocuments: () => void;
 }) {
   const [busyId, setBusyId] = useState<string | null>(null);
   const [briefingFor, setBriefingFor] = useState<string | null>(null);
   const [briefing, setBriefing] = useState<{ content: Record<string, unknown>; model?: string } | null>(null);
+  const [briefingError, setBriefingError] = useState<string | null>(null);
   const [showHidden, setShowHidden] = useState(false);
   const [expandedBriefing, setExpandedBriefing] = useState<string | null>(null);
   const [expandedSessionIds, setExpandedSessionIds] = useState<Set<string>>(new Set());
@@ -1558,6 +1611,7 @@ function ClientCopilotTab({
   async function prepareMe(session: Session) {
     setBusyId(session.id);
     setBriefingFor(session.id);
+    setBriefingError(null);
     setExpandedSessionIds((previous) => new Set(previous).add(session.id));
     try {
       const res = await fetch("/api/ai/generate", {
@@ -1570,8 +1624,11 @@ function ClientCopilotTab({
           sessionTypeLabel: SESSION_TYPE_LABELS[session.session_type] ?? session.session_type,
         }),
       });
-      const json = await res.json();
+      const json = await res.json().catch(() => ({}));
+      if (!res.ok || !json.summary) throw new Error(json.error ?? "Briefing could not be generated.");
       setBriefing(json.summary);
+    } catch (error) {
+      setBriefingError(error instanceof Error ? error.message : "Briefing could not be generated. Try again.");
     } finally {
       setBusyId(null);
     }
@@ -1610,7 +1667,10 @@ function ClientCopilotTab({
   // nextUp comes from the full chronological list so a hidden session still
   // surfaces as Next Up — hiding is for the timeline rows, not for awareness
   // of what's coming next.
-  const nextUp = chronological.find((s) => (s.scheduled_at ?? "") > now);
+  const nextUp = selectCurrentOrNextSession(
+    chronological.filter((session) => !session.copilot_finished),
+    now,
+  );
   const rest = visible.filter((s) => s.id !== nextUp?.id);
   const timelineSessions = nextUp ? [nextUp, ...rest] : rest;
   const briefTarget = nextUp ?? chronological[chronological.length - 1];
@@ -1717,6 +1777,8 @@ function ClientCopilotTab({
           </button>
         )}
       </div>
+
+      {briefingError && <p role="alert" className="text-sm text-red-600">{briefingError}</p>}
 
       <section className="overflow-hidden" aria-label={`AI conversation with ${clientName}`}>
         <div className="max-h-[22rem] space-y-3 overflow-y-auto py-2">

@@ -1,7 +1,7 @@
 import Link from "next/link";
 import { ListChecks } from "@/components/ui/HeartfulIcon";
 import { getClient, getMilestones, getSessions } from "@/lib/data";
-import { getClientJourneyProgress, phaseForStatus } from "@/lib/utils";
+import { getClientJourneyProgress } from "@/lib/utils";
 import { JourneyStageNav, PhaseNavKey } from "@/components/client/JourneyStageNav";
 
 const CLIENT_NAV = [
@@ -32,7 +32,7 @@ export default async function ClientPhaseNav({
       </nav>
       <section id="journey-stages" className="client-surface wn-stage-journey journey-stages-card mb-5 px-5 py-5">
         <div className="mb-3 flex items-end justify-between gap-4"><div><h2 className="journey-icon-heading mt-0.5 text-base font-semibold text-ink-900"><ListChecks aria-hidden="true" />Journey stages</h2></div><span className="text-xs text-ink-400">{journeyProgress.completed} of {journeyProgress.total} stages complete</span></div>
-        <JourneyStageNav clientId={clientId} sessions={sessions} milestones={milestones} activePhase={phaseForStatus(client.status, client.current_phase)} current={current} />
+        <JourneyStageNav clientId={clientId} client={client} sessions={sessions} milestones={milestones} current={current} />
       </section>
     </section>
   );

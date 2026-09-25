@@ -4,7 +4,8 @@ import { useState } from "react";
 import ClientAvatarEditor from "@/components/client/ClientAvatarEditor";
 import { CalendarDays, CheckCircle2, ChevronDown, ChevronUp, CircleDollarSign, KeyRound, Mail, PauseCircle, Phone, UserRound } from "@/components/ui/HeartfulIcon";
 import { Client, JourneyMilestone, Profile, ReferralSource, Session } from "@/lib/types";
-import { clientAvatarSrc, cx, formatCurrency, formatDate, formatDateTime, getNextScheduledSession, phaseForStatus } from "@/lib/utils";
+import { clientAvatarSrc, cx, formatCurrency, formatDate, formatDateTime } from "@/lib/utils";
+import { selectCurrentOrNextSession } from "@/lib/sessionSelectors";
 import ClientStatusControl from "@/components/client/ClientStatusControl";
 import ClientHeaderActions from "@/components/client/ClientHeaderActions";
 import QuickNoteButton from "@/components/client/QuickNoteButton";
@@ -14,7 +15,7 @@ import RecordPaymentButton from "@/components/client/RecordPaymentButton";
 import EmergencyContactEditor from "@/components/client/EmergencyContactEditor";
 import HoldControl from "@/components/HoldControl";
 
-export default function ClientHeader({ client, sessions = [], referralSources, practitioner, portalUrl, autoOpenIntro = false }: {
+export default function ClientHeader({ client, milestones, sessions = [], referralSources, practitioner, portalUrl, autoOpenIntro = false }: {
   client: Client;
   milestones: JourneyMilestone[];
   sessions?: Session[];
@@ -32,11 +33,7 @@ export default function ClientHeader({ client, sessions = [], referralSources, p
   const avatarSrc = clientAvatarSrc(client);
   const balance = Math.max(0, (client.package_value ?? 0) - (client.amount_paid ?? 0));
   const now = new Date().toISOString();
-  const nextSession = getNextScheduledSession(
-    sessions,
-    now,
-    phaseForStatus(client.status, client.current_phase)
-  );
+  const nextSession = selectCurrentOrNextSession(sessions, now);
   const nextSessionLabel = nextSession ? formatDateTime(nextSession.scheduled_at) : "No session scheduled";
   const paymentLabel = balance > 0 ? `${formatCurrency(balance)} outstanding` : "Paid in full";
 
@@ -85,7 +82,7 @@ export default function ClientHeader({ client, sessions = [], referralSources, p
             <span className="wn-section-eyebrow">Client overview</span>
             <div className="wn-overview-title-row">
               <h1>{client.full_name}</h1>
-              <ClientStatusControl clientId={client.id} status={client.status} phase={client.current_phase} />
+              <ClientStatusControl clientId={client.id} status={client.status} phase={client.current_phase} milestones={milestones} />
             </div>
           </div>
         </div>

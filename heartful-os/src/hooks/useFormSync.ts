@@ -15,10 +15,7 @@ export function useFormSync(
   documentId: string,
   active: boolean,
   onUpdate: (sub: FormSubmission) => void,
-  fallbackPoll: (() => Promise<FormSubmission | undefined>) | undefined,
-  // Set of field keys the local user is currently editing — the hook will
-  // never overwrite these (same guard as the polling implementation).
-  dirtyRef: React.RefObject<Set<string>>
+  fallbackPoll: (() => Promise<FormSubmission | undefined>) | undefined
 ) {
   // Keep a stable ref to the callback so the effect doesn't re-subscribe
   // every render when onUpdate is an inline function.
@@ -61,8 +58,5 @@ export function useFormSync(
       }, POLL_MS);
       return () => clearInterval(interval);
     }
-  // documentId and active are the only values that should trigger
-  // re-subscription; callbacks are handled via refs above.
-  // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [documentId, active]);
 }

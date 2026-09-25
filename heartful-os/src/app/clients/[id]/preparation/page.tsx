@@ -61,6 +61,7 @@ export default async function PreparationPage({ params }: { params: Promise<{ id
         formTemplates={formTemplates}
         formSubmissions={formSubmissions}
         existingBrief={summaries[0]}
+        canCompleteStage={stage.canCompleteStage}
       />
       </ClientPhaseWorkspace>
     </AppShell>

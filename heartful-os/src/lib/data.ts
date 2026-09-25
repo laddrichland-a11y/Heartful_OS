@@ -1,8 +1,19 @@
 import { createHash } from "crypto";
+import { normalizeAgreementStatus } from "@/lib/agreementStatus";
+import { resolveRequiredForms } from "@/lib/requiredForms";
+import { selectSessionTimeline, selectStageWorkspaceSession } from "@/lib/sessionSelectors";
 import { store } from "@/lib/mock/store";
 import { nextId } from "@/lib/mock/seed";
 import { isFirebaseConfigured, getBucket } from "@/lib/firebaseAdmin";
-import { isActiveClient, isAwaitingIntegrationClient, isGeneralPaperwork, isPastDue, phaseForStatus } from "@/lib/utils";
+import {
+  canCompleteJourneyMilestone,
+  isActiveClient,
+  isAwaitingIntegrationClient,
+  isJourneyCompletionMilestoneKey,
+  isPastDue,
+  JOURNEY_COMPLETION_MILESTONE_KEYS,
+  phaseForStatus,
+} from "@/lib/utils";
 import {
   allDocs,
   deleteDoc,
@@ -296,6 +307,11 @@ async function applyJourneyProgress(clientId: string, rule?: SessionProgressRule
   const c = await getClient(clientId);
   if (!c || c.status === "inactive" || c.status === "journey_closed") return;
 
+  // Validate and persist the milestone before moving the client position.
+  // If this is a future stage, completeMilestone throws and no journey state
+  // is changed.
+  if (rule.milestoneKey) await completeMilestone(clientId, rule.milestoneKey);
+
   const patch: Partial<Client> = {};
   if (STATUS_ORDER.indexOf(rule.status) > STATUS_ORDER.indexOf(c.status)) {
     patch.status = rule.status;
@@ -304,7 +320,6 @@ async function applyJourneyProgress(clientId: string, rule?: SessionProgressRule
     patch.current_phase = rule.phase;
   }
   if (Object.keys(patch).length > 0) await updateClient(clientId, patch);
-  if (rule.milestoneKey) await completeMilestone(clientId, rule.milestoneKey);
 }
 
 // Marking a journey stage complete from its workspace has the same business
@@ -367,8 +382,10 @@ async function revertJourneyProgressForSession(session: Session) {
 // createClient below), so the client fills it out + signs it in the portal
 // rather than uploading a file.
 const UPLOAD_ONLY_DOCUMENT_TYPES: { type: DocumentType; required: boolean }[] = [
-  { type: "post_integration_form", required: true },
-  { type: "post_integration_form_updated", required: true },
+  // Legacy exports retained for old records. The active required forms are
+  // integration_session_1 / integration_session_2 in the Form Library.
+  { type: "post_integration_form", required: false },
+  { type: "post_integration_form_updated", required: false },
   { type: "session_notes", required: false },
   { type: "journey_brief", required: false },
   { type: "integration_summary_1", required: false },
@@ -596,8 +613,12 @@ export async function createClient(input: {
   // Every active+required template in the Form Library auto-attaches to
   // the new client as a form-backed document slot.
   const templates = await getFormTemplates();
-  const templateDocuments: ClientDocument[] = templates
-    .filter((t) => t.required && t.active)
+  const activeRequiredTemplates = [...new Map(
+    templates
+      .filter((template) => template.required && template.active)
+      .map((template) => [template.document_type, template]),
+  ).values()];
+  const templateDocuments: ClientDocument[] = activeRequiredTemplates
     .map((t) => ({
       id: nextId("doc"),
       client_id: id,
@@ -709,6 +730,12 @@ export async function completeMilestone(clientId: string, milestoneKey: string) 
   const milestones = await ensureMilestones(clientId);
   const m = milestones.find((x) => x.milestone_key === milestoneKey);
   if (!m) return undefined;
+  if (
+    isJourneyCompletionMilestoneKey(milestoneKey) &&
+    !canCompleteJourneyMilestone(milestones, milestoneKey)
+  ) {
+    throw new Error("Complete all previous journey stages before completing this stage.");
+  }
   return patchById(store.milestones, "milestones", m.id, {
     completed: true,
     completed_at: new Date().toISOString(),
@@ -719,10 +746,42 @@ export async function uncompleteMilestone(clientId: string, milestoneKey: string
   const milestones = await ensureMilestones(clientId);
   const m = milestones.find((x) => x.milestone_key === milestoneKey);
   if (!m) return undefined;
-  return patchById(store.milestones, "milestones", m.id, {
-    completed: false,
-    completed_at: "",
-  });
+  const targetIndex = JOURNEY_COMPLETION_MILESTONE_KEYS.indexOf(
+    milestoneKey as (typeof JOURNEY_COMPLETION_MILESTONE_KEYS)[number],
+  );
+  const affected = targetIndex >= 0
+    ? milestones.filter((candidate) => {
+        const candidateIndex = JOURNEY_COMPLETION_MILESTONE_KEYS.indexOf(
+          candidate.milestone_key as (typeof JOURNEY_COMPLETION_MILESTONE_KEYS)[number],
+        );
+        return candidate.completed && candidateIndex >= targetIndex;
+      })
+    : [m];
+
+  let target: JourneyMilestone | undefined;
+  for (const candidate of affected) {
+    const updated = await patchById(store.milestones, "milestones", candidate.id, {
+      completed: false,
+      completed_at: "",
+    });
+    if (candidate.id === m.id) target = updated;
+  }
+
+  if (targetIndex >= 0) {
+    const rollback: Array<{ status: ClientStatus; phase: JourneyPhase }> = [
+      { status: "intake_scheduled", phase: "intake" },
+      { status: "preparation", phase: "preparation" },
+      { status: "journey_scheduled", phase: "harm_reduction_session" },
+      { status: "journey_complete", phase: "post_journey_check_in" },
+      { status: "integration_1", phase: "integration_1" },
+      { status: "integration_2", phase: "integration_2" },
+      { status: "integration_2_complete", phase: "closed" },
+      { status: "integration_2_complete", phase: "closed" },
+    ];
+    await updateClient(clientId, rollback[targetIndex]);
+  }
+
+  return target;
 }
 
 export function milestoneTemplate() {
@@ -730,7 +789,31 @@ export function milestoneTemplate() {
 }
 
 export async function getDocuments(clientId: string): Promise<ClientDocument[]> {
-  return listWhere(store.documents, "documents", "client_id", clientId);
+  const [documents, templates] = await Promise.all([
+    listWhere(store.documents, "documents", "client_id", clientId),
+    getFormTemplates(),
+  ]);
+  const existingTypes = new Set(documents.map((document) => document.document_type));
+  const missingTemplates = [...new Map(
+    templates
+      .filter((template) => template.active && template.required && !existingTypes.has(template.document_type))
+      .map((template) => [template.document_type, template]),
+  ).values()];
+  const missingDocuments: ClientDocument[] = missingTemplates
+    .map((template) => ({
+      id: nextId("doc"),
+      client_id: clientId,
+      document_type: template.document_type,
+      title: template.title,
+      required: true,
+      status: "missing" as const,
+      versions: [],
+    }));
+
+  if (missingDocuments.length > 0) {
+    await createMany(store.documents, "documents", missingDocuments);
+  }
+  return [...documents, ...missingDocuments];
 }
 
 export async function getDocument(documentId: string): Promise<ClientDocument | undefined> {
@@ -810,7 +893,11 @@ export async function resyncFormTemplates(): Promise<FormTemplate[]> {
   // 2. Backfill missing document slots on existing clients for any templates
   //    that are required+active but don't yet have a document slot for that client.
   const clients = await getClients();
-  const activeRequired = updatedTemplates.filter((t) => t.required && t.active);
+  const activeRequired = [...new Map(
+    updatedTemplates
+      .filter((template) => template.required && template.active)
+      .map((template) => [template.document_type, template]),
+  ).values()];
   for (const client of clients) {
     const clientDocs = await getDocuments(client.id);
     const existingTypes = new Set(clientDocs.map((d) => d.document_type));
@@ -873,6 +960,8 @@ export async function saveFormSubmission(params: {
       template_id: params.templateId,
       answers: params.answers,
       status: params.status,
+      submitted_at: params.status === "submitted" ? now : undefined,
+      signed_at: params.status === "signed" ? now : undefined,
     };
     await create(store.formSubmissions, "formSubmissions", submission);
   } else {
@@ -935,18 +1024,10 @@ export async function getSession(sessionId: string): Promise<Session | undefined
   return findById(store.sessions, "sessions", sessionId);
 }
 
-// The one session a phase page is "about". Prefer a still-scheduled session
-// of that type; otherwise fall back to the most recent one by date, so a
-// completed or cancelled session still anchors the page. A plain .find()
-// here picks whichever record happens to sit first in the array, which can
-// be a stale cancelled one even when a newer session is on the calendar.
+// Stage workspaces share the canonical live/future selection rule. Reopening
+// the latest completed session is an explicit history fallback for the stage.
 export function pickPhaseSession(sessions: Session[], sessionType: SessionType): Session | undefined {
-  return (
-    sessions.find((s) => s.session_type === sessionType && s.status === "scheduled") ??
-    sessions
-      .filter((s) => s.session_type === sessionType)
-      .sort((a, b) => ((b.scheduled_at ?? "") > (a.scheduled_at ?? "") ? 1 : -1))[0]
-  );
+  return selectStageWorkspaceSession(sessions, sessionType);
 }
 
 /**
@@ -972,11 +1053,7 @@ async function withClientNames<T extends { client_id: string }>(
 
 export async function getUpcomingSessions(limit = 10): Promise<(Session & { client_name: string })[]> {
   const all = await listAll(store.sessions, "sessions");
-  const now = Date.now();
-  const upcoming = all
-    .filter((s) => s.status === "scheduled" && s.scheduled_at && new Date(s.scheduled_at).getTime() >= now)
-    .sort((a, b) => (a.scheduled_at! < b.scheduled_at! ? -1 : 1))
-    .slice(0, limit);
+  const upcoming = selectSessionTimeline(all).activeAndUpcoming.slice(0, limit);
   return withClientNames(upcoming);
 }
 
@@ -988,13 +1065,10 @@ export async function getUpcomingSessionsWithinDays(days: number): Promise<(Sess
   const now = Date.now();
   const cutoff = now + days * 24 * 60 * 60 * 1000;
   const all = await listAll(store.sessions, "sessions");
-  const upcoming = all
-    .filter((s) => {
-      if (s.status !== "scheduled" || !s.scheduled_at) return false;
-      const t = new Date(s.scheduled_at).getTime();
-      return t >= now && t <= cutoff;
-    })
-    .sort((a, b) => (a.scheduled_at! < b.scheduled_at! ? -1 : 1));
+  const upcoming = selectSessionTimeline(all, now).activeAndUpcoming.filter((session) => {
+    const scheduledAt = session.scheduled_at ? Date.parse(session.scheduled_at) : Number.NaN;
+    return Number.isFinite(scheduledAt) && scheduledAt <= cutoff;
+  });
   return withClientNames(upcoming);
 }
 
@@ -1073,6 +1147,13 @@ export async function updateSession(
   const existing = await findById(store.sessions, "sessions", sessionId);
   if (!existing) return undefined;
   const wasAlreadyCompleted = existing.status === "completed";
+  const completionRule = SESSION_COMPLETED_PROGRESS[patch.session_type ?? existing.session_type];
+  if (patch.status === "completed" && !wasAlreadyCompleted && completionRule?.milestoneKey) {
+    const milestones = await ensureMilestones(existing.client_id);
+    if (!canCompleteJourneyMilestone(milestones, completionRule.milestoneKey)) {
+      throw new Error("Complete all previous journey stages before completing this session.");
+    }
+  }
   const s = await patchById<Session>(store.sessions, "sessions", sessionId, patch);
   if (s && s.status === "completed" && !wasAlreadyCompleted) {
     await applyJourneyProgress(s.client_id, SESSION_COMPLETED_PROGRESS[s.session_type]);
@@ -1537,9 +1618,11 @@ export interface OutstandingFormItem {
   title: string;
   client_id: string;
   client_name: string;
-  status: "missing" | "in_progress";
+  status: "missing" | "in_progress" | "missing_template";
   due_at?: undefined;
   kind: "form";
+  category: "form" | "agreement";
+  href?: string;
 }
 
 // Form-backed documents (intake/consent forms, etc.) aren't Task records —
@@ -1556,19 +1639,29 @@ export async function getOutstandingForms(): Promise<OutstandingFormItem[]> {
       getDocuments(client.id),
       getFormSubmissionsForClient(client.id),
     ]);
-    for (const doc of docs) {
-      const template = templates.find((t) => t.document_type === doc.document_type);
-      if (!template) continue; // upload-only document types aren't in-app forms
-      const submission = submissions.find((s) => s.document_id === doc.id);
-      const status = submission?.status ?? "missing";
-      if (status === "submitted" || status === "signed") continue;
+    const requiredForms = resolveRequiredForms({
+      templates,
+      documents: docs,
+      submissions,
+      currentPhase: phaseForStatus(client.status, client.current_phase),
+    });
+    for (const form of requiredForms) {
+      if (form.complete) continue;
       items.push({
-        id: doc.id,
-        title: template.title,
+        id: form.document?.id ?? `required-${client.id}-${form.documentType}`,
+        title: form.title,
         client_id: client.id,
         client_name: client.full_name,
-        status: (status === "in_progress" || status === "draft") ? "in_progress" : "missing",
+        status: form.state === "missing_template"
+          ? "missing_template"
+          : form.state === "in_progress" ? "in_progress" : "missing",
         kind: "form",
+        category: form.category,
+        href: form.state === "missing_template"
+          ? "/settings/forms"
+          : form.document
+            ? `/clients/${client.id}/forms/${form.document.id}`
+            : `/clients/${client.id}?tab=Documents`,
       });
     }
   }
@@ -1588,7 +1681,7 @@ export interface ClientAgreementStatus {
   client_id: string;
   client_name: string;
   portal_account_created: boolean;
-  signed_count: number;
+  completed_count: number;
   total_count: number;
   complete: boolean;
   engagement: "not_opened" | "opened" | "completed";
@@ -1602,11 +1695,6 @@ export async function getAgreementStatusByClient(clientRecords?: Client[]): Prom
     clientRecords ? Promise.resolve(clientRecords) : getClients(),
     getFormTemplates(),
   ]);
-  const agreementTemplates = templates.filter(
-    (t) => isGeneralPaperwork(t.document_type) && t.active
-  );
-  if (agreementTemplates.length === 0) return [];
-
   const rows = await Promise.all(
     clients.map(async (client): Promise<ClientAgreementStatus> => {
       const [docs, submissions] = await Promise.all([
@@ -1614,45 +1702,17 @@ export async function getAgreementStatusByClient(clientRecords?: Client[]): Prom
         getFormSubmissionsForClient(client.id),
       ]);
 
-      let signed = 0;
-      let opened = false;
-      const outstanding: string[] = [];
-      const timestamps: string[] = [];
-
-      for (const template of agreementTemplates) {
-        const doc = docs.find((d) => d.document_type === template.document_type);
-        // No document slot yet means the client was created before this
-        // template existed. Treat it as outstanding rather than silently
-        // counting them complete — a re-sync will backfill the slot.
-        if (!doc) {
-          outstanding.push(template.title);
-          continue;
-        }
-        const submission = submissions.find((sub) => sub.document_id === doc.id);
-        if (submission) opened = true;
-        const status = submission?.status ?? "missing";
-        if (status === "signed" || status === "submitted") {
-          signed += 1;
-          const at = submission?.signed_at ?? submission?.submitted_at;
-          if (at) timestamps.push(at);
-        } else {
-          outstanding.push(template.title);
-        }
-      }
-
-      const total = agreementTemplates.length;
-      const complete = signed === total;
-      const engagement = complete ? "completed" : (client.portal_agreements_opened_at || opened) ? "opened" : "not_opened";
+      const status = normalizeAgreementStatus({ client, templates, documents: docs, submissions });
       return {
         client_id: client.id,
         client_name: client.full_name,
         portal_account_created: Boolean(client.portal_password_hash),
-        signed_count: signed,
-        total_count: total,
-        complete,
-        engagement,
-        outstanding_titles: outstanding,
-        completed_at: complete && timestamps.length > 0 ? timestamps.sort().at(-1) : undefined,
+        completed_count: status.completed_count,
+        total_count: status.total_count,
+        complete: status.complete,
+        engagement: status.engagement,
+        outstanding_titles: status.items.filter((item) => !item.complete).map((item) => item.template.title),
+        completed_at: status.completed_at,
       };
     })
   );
@@ -1661,7 +1721,7 @@ export async function getAgreementStatusByClient(clientRecords?: Client[]): Prom
   return rows.sort((a, b) => {
     if (a.complete !== b.complete) return a.complete ? 1 : -1;
     if (a.complete) return (b.completed_at ?? "").localeCompare(a.completed_at ?? "");
-    return a.signed_count - b.signed_count;
+    return a.completed_count - b.completed_count;
   });
 }
 

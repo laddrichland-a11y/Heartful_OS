@@ -19,6 +19,7 @@ import {
   ClientDocument,
   DOCUMENT_LABELS,
   FormSubmission,
+  FormTemplate,
   JourneyMilestone,
   Message,
   PortalAssignment,
@@ -27,7 +28,9 @@ import {
   Task,
   Transcript,
 } from "@/lib/types";
-import { clientJourneyWorkspaceHref, formatDate, formatDateTime, getClientJourneyProgress, getNextScheduledSession, phaseForStatus, SESSION_TYPE_LABELS } from "@/lib/utils";
+import { clientJourneyWorkspaceHref, formatDate, formatDateTime, getClientJourneyProgress, journeyStageStatusLabel, phaseForStatus, SESSION_TYPE_LABELS } from "@/lib/utils";
+import { resolveRequiredForms } from "@/lib/requiredForms";
+import { selectCurrentOrNextSession } from "@/lib/sessionSelectors";
 
 interface Props {
   client: Client;
@@ -35,6 +38,7 @@ interface Props {
   milestones: JourneyMilestone[];
   documents: ClientDocument[];
   formSubmissions: FormSubmission[];
+  formTemplates: FormTemplate[];
   tasks: Task[];
   portalAssignments: PortalAssignment[];
   checkIns: CheckIn[];
@@ -60,6 +64,7 @@ export default function ClientContextRail({
   milestones,
   documents,
   formSubmissions,
+  formTemplates,
   tasks,
   portalAssignments,
   checkIns,
@@ -69,11 +74,7 @@ export default function ClientContextRail({
   messages,
 }: Props) {
   const now = new Date().toISOString();
-  const nextSession = getNextScheduledSession(
-    sessions,
-    now,
-    phaseForStatus(client.status, client.current_phase)
-  );
+  const nextSession = selectCurrentOrNextSession(sessions, now);
 
   const followUpTask = tasks.find(
     (task) => task.status !== "completed" && task.status !== "skipped" && task.task_type === "follow_up"
@@ -87,18 +88,12 @@ export default function ClientContextRail({
   const journeyProgress = getClientJourneyProgress(client, milestones);
   const progress = Math.round((journeyProgress.completed / journeyProgress.total) * 100);
 
-  const submissionDocumentIds = new Set(formSubmissions.map((submission) => submission.document_id));
-  const inProgressDocumentIds = new Set(
-    formSubmissions
-      .filter((submission) => submission.status === "draft" || submission.status === "in_progress")
-      .map((submission) => submission.document_id)
-  );
-  const outstandingForms = documents.filter(
-    (document) =>
-      document.required &&
-      (document.status === "missing" || inProgressDocumentIds.has(document.id)) &&
-      (submissionDocumentIds.has(document.id) || document.versions.length > 0)
-  );
+  const outstandingFormCount = resolveRequiredForms({
+    templates: formTemplates,
+    documents,
+    submissions: formSubmissions,
+    currentPhase: phaseForStatus(client.status, client.current_phase),
+  }).filter((form) => !form.complete).length;
   const overdueTasks = tasks.filter(
     (task) =>
       task.status !== "completed" &&
@@ -116,7 +111,7 @@ export default function ClientContextRail({
     (message) => message.sender === "client" && !message.read_at
   );
   const hasAttentionItems =
-    outstandingForms.length > 0 ||
+    outstandingFormCount > 0 ||
     overdueTasks.length > 0 ||
     pendingCheckIns > 0 ||
     unreadMessages.length > 0;
@@ -171,9 +166,10 @@ export default function ClientContextRail({
 
       <section className="wn-rail-card">
         <RailHeading icon={ClipboardCheck} title="Journey Progress" />
-        <p className="wn-rail-kicker">Current stage</p>
+        <p className="wn-rail-kicker">Journey stage</p>
         <div className="wn-journey-summary">
           <strong>{journeyProgress.currentStageLabel}</strong>
+          <span>{client.status === "inactive" ? "Inactive" : journeyStageStatusLabel(journeyProgress.currentStageStatus)}</span>
           <span>{journeyProgress.completed} of {journeyProgress.total} stages</span>
         </div>
         <div
@@ -200,7 +196,7 @@ export default function ClientContextRail({
         <section className="wn-rail-card">
           <RailHeading icon={AlertCircle} title="Needs Attention" />
           <div className="wn-attention-list">
-            <AttentionRow label="Outstanding forms" count={outstandingForms.length} href={`/clients/${client.id}?tab=Documents`} />
+            <AttentionRow label="Outstanding forms" count={outstandingFormCount} href={`/clients/${client.id}?tab=Documents`} />
             <AttentionRow label="Overdue tasks" count={overdueTasks.length} href={overdueTasks[0] ? `/clients/${client.id}/tasks/${overdueTasks[0].id}` : `/clients/${client.id}?tab=Sessions`} />
             <AttentionRow label="Pending check-ins" count={pendingCheckIns} href={clientJourneyWorkspaceHref(client, sessions)} />
             <AttentionRow label="Unread messages" count={unreadMessages.length} href={`/clients/${client.id}?tab=Messages`} />

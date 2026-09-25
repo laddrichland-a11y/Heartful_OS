@@ -17,7 +17,7 @@ export default function MilestoneToggleBanner({
   prepareMeSessionId,
   initialBriefing,
   autoPrepare = false,
-  stageStatus = initialCompleted ? "completed" : "in_progress",
+  stageStatus = initialCompleted ? "completed" : "current",
   canMarkComplete = true,
   canPrepare = true,
 }: {
@@ -47,8 +47,8 @@ export default function MilestoneToggleBanner({
     if (!autoPrepare || !showPrepare || autoStarted.current) return;
     autoStarted.current = true;
     if (briefing) {
-      setBriefingOpen(true);
-      return;
+      const frame = window.requestAnimationFrame(() => setBriefingOpen(true));
+      return () => window.cancelAnimationFrame(frame);
     }
     const frame = window.requestAnimationFrame(() => document.getElementById(prepareButtonId)?.click());
     return () => window.cancelAnimationFrame(frame);
@@ -68,10 +68,12 @@ export default function MilestoneToggleBanner({
         <p className="client-eyebrow">Stage workspace</p>
         <div className="mt-1 flex flex-wrap items-center gap-2.5">
           <h2 className="journey-icon-heading text-lg font-semibold text-ink-900"><CalendarClock aria-hidden="true" />{label}</h2>
-          <span className={cx("badge inline-flex items-center gap-1.5", displayStatus === "completed" ? "bg-sage-100 text-sage-700" : displayStatus === "upcoming" ? "bg-ink-100 text-ink-500" : "bg-clay-50 text-clay-700")}>
-            {displayStatus === "completed" ? <CheckCircle2 className="h-3.5 w-3.5" /> : displayStatus === "upcoming" ? <CalendarClock className="h-3.5 w-3.5" /> : <CircleDot className="h-3.5 w-3.5" />}
-            {displayStatus === "completed" ? "Completed" : displayStatus === "upcoming" ? "Upcoming" : "In progress"}
-          </span>
+          {displayStatus !== "future" && (
+            <span className={cx("badge inline-flex items-center gap-1.5", displayStatus === "completed" ? "bg-sage-100 text-sage-700" : displayStatus === "upcoming" ? "bg-ink-100 text-ink-500" : "bg-clay-50 text-clay-700")}>
+              {displayStatus === "completed" ? <CheckCircle2 className="h-3.5 w-3.5" /> : displayStatus === "upcoming" ? <CalendarClock className="h-3.5 w-3.5" /> : <CircleDot className="h-3.5 w-3.5" />}
+              {displayStatus === "completed" ? "Completed" : displayStatus === "upcoming" ? "Upcoming" : "Current"}
+            </span>
+          )}
         </div>
         {meta && <p className="mt-1.5 text-xs text-ink-400">{meta}</p>}
       </div>

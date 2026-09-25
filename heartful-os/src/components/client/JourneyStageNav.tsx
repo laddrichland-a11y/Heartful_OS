@@ -2,17 +2,18 @@
 
 import Link from "next/link";
 import { useEffect } from "react";
-import { JourneyMilestone, Session } from "@/lib/types";
-import { formatDate } from "@/lib/utils";
+import { Client, JourneyMilestone, Session, SessionType } from "@/lib/types";
+import { getClientJourneyProgress, journeyStageStatusLabel } from "@/lib/utils";
 import { Check } from "@/components/ui/HeartfulIcon";
+import { selectStageWorkspaceSession } from "@/lib/sessionSelectors";
 
 export type PhaseNavKey = "overview" | "intake" | "preparation" | "harm_reduction_session" | "post_journey_check_in" | "integration_1" | "integration_2" | "growth_action_plan";
 
-export const PHASE_LINKS: { phase: PhaseNavKey; label: string; href: string; sessionType?: string; milestoneKey: string }[] = [
+export const PHASE_LINKS: { phase: PhaseNavKey; label: string; href: string; sessionType?: SessionType; milestoneKey: string }[] = [
   { phase: "intake", label: "Intake", href: "intake", sessionType: "intake_assessment", milestoneKey: "intake_complete" },
   { phase: "preparation", label: "Preparation", href: "preparation", sessionType: "preparation", milestoneKey: "preparation_complete" },
   { phase: "harm_reduction_session", label: "Journey Day", href: "journey-day", sessionType: "harm_reduction_support", milestoneKey: "journey_complete" },
-  { phase: "post_journey_check_in", label: "12h Check-In", href: "check-in", sessionType: "check_in_12hr", milestoneKey: "check_in_12hr_complete" },
+  { phase: "post_journey_check_in", label: "12-Hour Check-In", href: "check-in", sessionType: "check_in_12hr", milestoneKey: "check_in_12hr_complete" },
   { phase: "integration_1", label: "Integration 1", href: "integration-1", sessionType: "integration_1", milestoneKey: "integration_1_complete" },
   { phase: "integration_2", label: "Integration 2", href: "integration-2", sessionType: "integration_2", milestoneKey: "integration_2_complete" },
   { phase: "growth_action_plan", label: "Growth Plan", href: "growth-plan", milestoneKey: "growth_action_plan_complete" },
@@ -37,14 +38,13 @@ export function getJourneyStageProgress(milestones: JourneyMilestone[]) {
   return { completed, total: PHASE_LINKS.length };
 }
 
-function phaseSession(sessions: Session[], sessionType?: string) {
+function phaseSession(sessions: Session[], sessionType?: SessionType) {
   if (!sessionType) return undefined;
-  return sessions.find((session) => session.session_type === sessionType && session.status === "scheduled") ?? sessions.filter((session) => session.session_type === sessionType && session.status === "completed").sort((a, b) => ((b.scheduled_at ?? "") > (a.scheduled_at ?? "") ? 1 : -1))[0];
+  return selectStageWorkspaceSession(sessions, sessionType);
 }
 
-export function JourneyStageNav({ clientId, sessions, milestones, activePhase, current }: { clientId: string; sessions: Session[]; milestones: JourneyMilestone[]; activePhase: string; current?: PhaseNavKey }) {
-  const closed = milestones.some((milestone) => milestone.milestone_key === "journey_closed" && milestone.completed);
-  const firstIncomplete = PHASE_LINKS.find((stage) => !(stage.phase === "growth_action_plan" && closed) && !milestones.some((milestone) => milestone.milestone_key === stage.milestoneKey && milestone.completed))?.phase;
+export function JourneyStageNav({ clientId, client, sessions, milestones, current }: { clientId: string; client: Pick<Client, "status" | "current_phase">; sessions: Session[]; milestones: JourneyMilestone[]; current?: PhaseNavKey }) {
+  const journeyProgress = getClientJourneyProgress(client, milestones);
 
   useEffect(() => {
     const savedPosition = window.sessionStorage.getItem(stageScrollKey(clientId));
@@ -66,25 +66,26 @@ export function JourneyStageNav({ clientId, sessions, milestones, activePhase, c
       <ol>
         {PHASE_LINKS.map((stage, index) => {
           const session = phaseSession(sessions, stage.sessionType);
-          const completed = (stage.phase === "growth_action_plan" && closed) || milestones.some((milestone) => milestone.milestone_key === stage.milestoneKey && milestone.completed);
+          const stageStatus = journeyProgress.stages.find((candidate) => candidate.phase === stage.phase)?.status ?? "future";
+          const completed = stageStatus === "completed";
           const viewing = current === stage.phase;
-          const isCurrent = activePhase === stage.phase || (!PHASE_LINKS.some((item) => item.phase === activePhase) && firstIncomplete === stage.phase);
           const href = stage.phase === "post_journey_check_in"
             ? `/clients/${clientId}?tab=${encodeURIComponent("Journey & AI")}&stage=${stage.phase}`
             : session
               ? `/clients/${clientId}/sessions/${session.id}`
               : `/clients/${clientId}/${stage.href}`;
-          const statusText = viewing ? "Viewing stage" : isCurrent ? "Current stage" : session?.scheduled_at ? formatDate(session.scheduled_at) : "";
+          const statusText = journeyStageStatusLabel(stageStatus);
           return (
             <li
               key={stage.phase}
-              data-state={viewing ? "viewing" : completed ? "complete" : isCurrent ? "current" : "upcoming"}
+              data-state={stageStatus}
+              data-viewing={viewing ? "true" : undefined}
               data-completed={completed ? "true" : undefined}
             >
               <Link
                 href={href}
                 aria-current={viewing ? "step" : undefined}
-                aria-label={`${stage.label}: ${viewing ? "viewing stage" : completed ? "completed" : isCurrent ? "current stage" : "upcoming"}`}
+                aria-label={`${stage.label}: ${statusText?.toLowerCase() ?? "future stage"}${viewing ? ", viewing" : ""}`}
                 className="journey-stage-link"
                 scroll={false}
                 onClick={saveStageNavigationPosition}

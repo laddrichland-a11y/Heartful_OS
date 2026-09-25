@@ -145,7 +145,6 @@ export default function FullPageForm({
       <FormRenderer
         template={template}
         submission={submissionForRenderer}
-        clientId={clientId}
         documentId={documentId}
         readOnly={isLocked}
         packageValue={packageValue}

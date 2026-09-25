@@ -15,6 +15,7 @@ import SummaryCard from "@/components/ai/SummaryCard";
 import { cx } from "@/lib/utils";
 import { FileText, ScrollText } from "@/components/ui/HeartfulIcon";
 import Link from "next/link";
+import { formTemplateAppliesToSession, requiredFormsForSession } from "@/lib/requiredForms";
 
 export default function PreparationWorkspace({
   clientId,
@@ -23,6 +24,7 @@ export default function PreparationWorkspace({
   formTemplates,
   formSubmissions,
   existingBrief,
+  canCompleteStage,
 }: {
   clientId: string;
   clientName: string;
@@ -30,6 +32,7 @@ export default function PreparationWorkspace({
   formTemplates: FormTemplate[];
   formSubmissions: FormSubmission[];
   existingBrief?: AiSummary;
+  canCompleteStage: boolean;
 }) {
   // Persisted to localStorage (not just React state) so the pasted transcript
   // survives a Generate click — that button triggers a router.refresh() to
@@ -50,7 +53,7 @@ export default function PreparationWorkspace({
   const [brief, setBrief] = useState(existingBrief);
 
   const prepTemplates = formTemplates.filter(
-    (t) => t.session_types?.includes("preparation") && t.active
+    (template) => formTemplateAppliesToSession(template, "preparation")
   );
   const prepForms = prepTemplates.flatMap((t) => {
     const doc = documents.find((d) => d.document_type === t.document_type);
@@ -58,6 +61,12 @@ export default function PreparationWorkspace({
       ? [{ doc, template: t, submission: formSubmissions.find((s) => s.document_id === doc.id) }]
       : [];
   });
+  const unavailablePrepForms = requiredFormsForSession({
+    sessionType: "preparation",
+    templates: formTemplates,
+    documents,
+    submissions: formSubmissions,
+  }).filter((form) => form.state === "missing_template" || form.state === "missing_document");
 
   return (
     <div className="space-y-6">
@@ -81,7 +90,7 @@ export default function PreparationWorkspace({
                 setBrief(s as unknown as AiSummary);
                 setTranscript("");
               }}
-              disabled={!transcript.trim()}
+              disabled={!canCompleteStage || !transcript.trim()}
               className="btn-primary inline-flex items-center gap-2 whitespace-nowrap text-sm disabled:opacity-60"
             />
           }
@@ -99,7 +108,7 @@ export default function PreparationWorkspace({
         />
       )}
 
-      {prepForms.length > 0 && (
+      {(prepForms.length > 0 || unavailablePrepForms.length > 0) && (
         <div className="card p-4">
           <h3 className="session-panel-heading mb-3 flex items-center gap-3">
             <FileText className="h-4 w-4" aria-hidden="true" />
@@ -114,6 +123,13 @@ export default function PreparationWorkspace({
                 submission={submission}
                 clientId={clientId}
               />
+            ))}
+            {unavailablePrepForms.map((form) => (
+              <div key={form.documentType} className="flex flex-wrap items-center gap-2.5 rounded-xl border border-amber-200 bg-amber-50/60 px-3 py-2.5 text-sm text-ink-600">
+                <FileText className="h-4 w-4 shrink-0 text-amber-600" aria-hidden="true" />
+                <span><strong className="font-medium text-ink-800">{form.title}</strong> {form.state === "missing_template" ? "is missing from the Form Library." : "is not attached to this client."}</span>
+                <Link href="/settings/forms" className="ml-auto font-medium text-clay-700 underline underline-offset-2">Open Form Library</Link>
+              </div>
             ))}
           </div>
         </div>

@@ -49,6 +49,7 @@ import JourneySummaryTextButton from "@/components/client/JourneySummaryTextButt
 import JourneyTimingTimeline from "@/components/client/JourneyTimingTimeline";
 import ElapsedTimer from "@/components/client/ElapsedTimer";
 import { useNowTick } from "@/lib/useNowTick";
+import { formTemplateAppliesToSession } from "@/lib/requiredForms";
 import {
   completeSessionAction,
   cancelSessionAction,
@@ -125,7 +126,7 @@ export default function SessionDetailWorkspace({
   initialRecordings?: Recording[];
   portalUrl: string;
   autoPrepare?: boolean;
-  stageStatus?: "completed" | "in_progress" | "upcoming";
+  stageStatus?: "completed" | "current" | "upcoming" | "future";
   canMarkComplete?: boolean;
   canPrepare?: boolean;
 }) {
@@ -235,6 +236,8 @@ export default function SessionDetailWorkspace({
 
   // Call summary state
   const [callSummaryBusy, setCallSummaryBusy] = useState(false);
+  const [callSummaryError, setCallSummaryError] = useState<string | null>(null);
+  const callSummaryRequestInFlight = useRef(false);
   const [newCallSummary, setNewCallSummary] = useState<AiSummary | null>(null);
   const [localCallSummaries, setLocalCallSummaries] = useState(pastCallSummaries);
   const [expandedCallSummary, setExpandedCallSummary] = useState<string | null>(pastCallSummaries[0]?.id ?? null);
@@ -485,15 +488,16 @@ export default function SessionDetailWorkspace({
   // the practice-wide agreements that happen to be tagged to intake.
   const sessionForms = formTemplates.filter(
     (t) =>
-      t.session_types?.includes(session.session_type) &&
-      t.active &&
+      formTemplateAppliesToSession(t, session.session_type) &&
       !isGeneralPaperwork(t.document_type)
   );
 
   async function generateCallSummary() {
     const combined = [manualNotes, transcript].filter(Boolean).join("\n\n---\n\n");
-    if (!combined.trim()) return;
+    if (!combined.trim() || callSummaryRequestInFlight.current) return;
+    callSummaryRequestInFlight.current = true;
     setCallSummaryBusy(true);
+    setCallSummaryError(null);
     try {
       const res = await fetch("/api/ai/generate", {
         method: "POST",
@@ -506,13 +510,25 @@ export default function SessionDetailWorkspace({
           transcript: combined,
         }),
       });
-      const json = await res.json();
-      if (json.summary) {
-        setNewCallSummary(json.summary);
-        setLocalCallSummaries((prev) => [json.summary, ...prev]);
-        setExpandedCallSummary(json.summary.id);
+      const json = await res.json().catch(() => ({}));
+      if (!res.ok || !json.summary) throw new Error(json.error ?? "Session summary could not be generated.");
+
+      setNewCallSummary(json.summary);
+      setLocalCallSummaries((prev) => [json.summary, ...prev]);
+      setExpandedCallSummary(json.summary.id);
+
+      // Match the Intake/Preparation flow: a successfully processed draft is
+      // removed, while a failed request leaves it untouched for retry. Journey
+      // Day keeps its shared running transcript because that workspace also
+      // uses it outside this one summary action.
+      if (session.session_type !== "harm_reduction_support") {
+        setTranscript("");
+        await updateSessionTranscriptAction(session.id, clientId, "");
       }
+    } catch (error) {
+      setCallSummaryError(error instanceof Error ? error.message : "Session summary could not be generated. Try again.");
     } finally {
+      callSummaryRequestInFlight.current = false;
       setCallSummaryBusy(false);
     }
   }
@@ -884,6 +900,8 @@ export default function SessionDetailWorkspace({
               </button>
             </div>
 
+            {callSummaryError && <p role="alert" className="text-sm text-red-600">{callSummaryError}</p>}
+
             {localCallSummaries.length > 0 && (
               <div className="space-y-2">
                 {localCallSummaries.map((cs) => (
@@ -1076,6 +1094,7 @@ export default function SessionDetailWorkspace({
               title={<><ScrollText className="h-4 w-4 text-ink-400" />Session Transcript</>}
               description={`Generate a factual recap from the transcript for you and ${clientName}'s Client Portal.`}
               action={<button
+                type="button"
                 disabled={callSummaryBusy || !transcript.trim()}
                 onClick={generateCallSummary}
                 className="btn-primary flex items-center gap-2 whitespace-nowrap px-4 py-2 text-sm disabled:opacity-50"

@@ -534,14 +534,14 @@ export const DOCUMENT_LABELS: Record<DocumentType, string> = {
 };
 
 export const MILESTONE_TEMPLATE: { key: string; label: string; sort_order: number }[] = [
-  { key: "intake_complete", label: "Intake Complete", sort_order: 1 },
-  { key: "preparation_complete", label: "Preparation Complete", sort_order: 2 },
-  { key: "journey_complete", label: "Journey Complete", sort_order: 3 },
-  { key: "check_in_12hr_complete", label: "12 Hour Check-In Complete", sort_order: 4 },
-  { key: "integration_1_complete", label: "Integration 1 Complete", sort_order: 5 },
-  { key: "integration_2_complete", label: "Integration 2 Complete", sort_order: 6 },
-  { key: "growth_action_plan_complete", label: "Growth Action Plan Complete", sort_order: 7 },
-  { key: "journey_closed", label: "Journey Closed", sort_order: 8 },
+  { key: "intake_complete", label: "Intake", sort_order: 1 },
+  { key: "preparation_complete", label: "Preparation", sort_order: 2 },
+  { key: "journey_complete", label: "Journey Day", sort_order: 3 },
+  { key: "check_in_12hr_complete", label: "12-Hour Check-In", sort_order: 4 },
+  { key: "integration_1_complete", label: "Integration 1", sort_order: 5 },
+  { key: "integration_2_complete", label: "Integration 2", sort_order: 6 },
+  { key: "growth_action_plan_complete", label: "Growth Plan", sort_order: 7 },
+  { key: "journey_closed", label: "Journey", sort_order: 8 },
 ];
 
 // ---------------------------------------------------------------------------
@@ -640,20 +640,20 @@ export const PROSPECT_STATUS_LABELS: Record<ProspectStatus, string> = {
 };
 
 export const STATUS_LABELS: Record<ClientStatus, string> = {
-  inquiry: "Inquiry",
-  intake_scheduled: "Intake Scheduled",
-  intake_complete: "Intake Complete",
-  preparation: "In Preparation",
-  preparation_complete: "Preparation Complete",
-  journey_scheduled: "Journey Day Scheduled",
-  journey_complete: "Journey Day Complete",
-  check_in_complete: "12hr Check-In Complete",
-  integration_1: "Integration 1 In Progress",
-  integration_1_complete: "Integration 1 Complete",
-  integration_2: "Integration 2 In Progress",
-  integration_2_complete: "Integration 2 Complete",
-  journey_closed: "Journey Closed",
-  inactive: "Inactive",
+  inquiry: "Intake",
+  intake_scheduled: "Intake",
+  intake_complete: "Intake",
+  preparation: "Preparation",
+  preparation_complete: "Preparation",
+  journey_scheduled: "Journey Day",
+  journey_complete: "Journey Day",
+  check_in_complete: "12-Hour Check-In",
+  integration_1: "Integration 1",
+  integration_1_complete: "Integration 1",
+  integration_2: "Integration 2",
+  integration_2_complete: "Integration 2",
+  journey_closed: "Growth Plan",
+  inactive: "Journey",
 };
 
 // ---------------------------------------------------------------------------

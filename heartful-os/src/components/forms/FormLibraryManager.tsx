@@ -110,7 +110,7 @@ function TemplateCard({ template }: { template: FormTemplate }) {
       {open && (
         <div className="px-4 pb-4 border-t border-ink-100 pt-4 bg-ink-50/30">
           <div className="text-xs text-ink-400 mb-3">Preview — read-only, shown as the client would see it.</div>
-          <FormRenderer template={template} clientId="preview" documentId="preview" readOnly />
+          <FormRenderer template={template} documentId="preview" readOnly />
         </div>
       )}
     </div>

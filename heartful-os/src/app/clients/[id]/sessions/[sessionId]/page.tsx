@@ -20,6 +20,7 @@ import { headers } from "next/headers";
 import ClientHeader from "@/components/client/ClientHeader";
 import ClientPhaseWorkspace from "@/components/client/ClientPhaseWorkspace";
 import { getJourneyStageWorkspaceState, type JourneyWorkspaceStage } from "@/lib/utils";
+import { selectCurrentOrNextSession, selectUpcomingSessions } from "@/lib/sessionSelectors";
 
 export const dynamic = "force-dynamic";
 
@@ -88,11 +89,10 @@ export default async function SessionDetailPage({
   // Earliest still-scheduled session after this one (e.g. the 12hr check-in
   // after Journey Day) — used as the "we'll talk again on ___" line in the
   // Journey Day prep email.
-  const followUpSession = sessions
-    .filter(
-      (s) => s.status === "scheduled" && s.scheduled_at && session.scheduled_at && s.scheduled_at > session.scheduled_at
-    )
-    .sort((a, b) => (a.scheduled_at! < b.scheduled_at! ? -1 : 1))[0];
+  const currentOrNext = selectCurrentOrNextSession(sessions.filter((candidate) => candidate.id !== session.id));
+  const followUpSession = currentOrNext && (!session.scheduled_at || (currentOrNext.scheduled_at ?? "") > session.scheduled_at)
+    ? currentOrNext
+    : selectUpcomingSessions(sessions, session.scheduled_at)[0];
 
   const pastBriefings = aiSummaries.filter(
     (s) => s.summary_type === "prepare_me_briefing" && s.session_id === sessionId

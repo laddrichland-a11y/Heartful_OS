@@ -1,5 +1,5 @@
 import { Client, JourneyMilestone } from "@/lib/types";
-import { cx, getClientJourneyProgress, JOURNEY_PROGRESS_STAGE_COUNT } from "@/lib/utils";
+import { cx, getClientJourneyProgress, journeyStageLabelForMilestone, journeyStageStatusLabel, JOURNEY_PROGRESS_STAGE_COUNT, type JourneyStageStatus } from "@/lib/utils";
 import { Check, IntegrationLink } from "@/components/ui/HeartfulIcon";
 
 export default function JourneyProgressBar({
@@ -18,7 +18,6 @@ export default function JourneyProgressBar({
     .sort((a, b) => a.sort_order - b.sort_order);
   const calculated = client ? getClientJourneyProgress(client, milestones) : undefined;
   const completedCount = calculated?.completed ?? sorted.filter((m) => m.completed).length;
-  const currentIndex = completedCount < sorted.length ? completedCount : -1;
 
   return (
     <div className="w-full">
@@ -32,14 +31,17 @@ export default function JourneyProgressBar({
       )}
       <div className="flex items-center w-full">
         {sorted.map((m, i) => {
-          const completed = i < completedCount;
-          const isCurrent = !subdued && i === currentIndex;
-          const label = m.milestone_key === "journey_complete" ? "Journey Day Complete" : m.label;
+          const status = calculated?.stages.find((stage) => stage.milestoneKey === m.milestone_key)?.status
+            ?? (i < completedCount ? "completed" : i === completedCount ? "current" : i === completedCount + 1 ? "upcoming" : "future") as JourneyStageStatus;
+          const completed = status === "completed";
+          const isCurrent = !subdued && status === "current";
+          const label = journeyStageLabelForMilestone(m.milestone_key, m.label);
+          const statusLabel = journeyStageStatusLabel(status);
 
           return (
           <div key={m.id} className="group/step relative flex flex-1 items-center last:flex-none">
             <div
-              aria-label={`${i + 1}. ${label}${completed ? ", completed" : isCurrent ? ", current stage" : ""}`}
+              aria-label={`${i + 1}. ${label}${statusLabel ? `, ${statusLabel.toLowerCase()}` : ", future stage"}`}
               aria-current={isCurrent ? "step" : undefined}
               className={cx(
                 "flex shrink-0 items-center justify-center rounded-full transition-colors",
@@ -73,7 +75,7 @@ export default function JourneyProgressBar({
                     : "left-1/2 -translate-x-1/2"
               )}
             >
-              {i + 1}. {label}
+              {i + 1}. {label}{statusLabel ? ` · ${statusLabel}` : ""}
             </div>
           </div>
           );

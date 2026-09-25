@@ -6,7 +6,8 @@
     "dev": "next dev --turbopack",
     "build": "next build",
     "start": "next start",
-    "lint": "eslint"
+    "lint": "eslint",
+    "test:regression": "tsx --test tests/business-rules.test.ts"
   },
   "dependencies": {
     "@anthropic-ai/sdk": "^0.109.1",
@@ -22,7 +23,7 @@
     "firebase-admin": "^14.1.0",
     "googleapis": "^173.0.0",
     "lucide-react": "^1.21.0",
-    "next": "16.2.9",
+    "next": "16.3.6",
     "openai": "^6.44.0",
     "react": "19.2.4",
     "react-dom": "19.2.4",
@@ -35,8 +36,9 @@
     "@types/react": "^19",
     "@types/react-dom": "^19",
     "eslint": "^9",
-    "eslint-config-next": "16.2.9",
+    "eslint-config-next": "16.3.6",
     "tailwindcss": "^4",
+    "tsx": "^4.23.15",
     "typescript": "^5"
   }
 }

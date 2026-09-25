@@ -1,6 +1,6 @@
 "use client";
 
-import { useRef, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { FormTemplate, FormSubmission } from "@/lib/types";
 import SignatureField, { SignatureValue } from "./SignatureField";
 import { cx } from "@/lib/utils";
@@ -44,7 +44,6 @@ function isSignatureComplete(sig: SignatureValue | undefined): boolean {
 export default function FormRenderer({
   template,
   submission,
-  clientId,
   documentId,
   readOnly = false,
   packageValue,
@@ -57,7 +56,6 @@ export default function FormRenderer({
 }: {
   template: FormTemplate;
   submission?: FormSubmission;
-  clientId: string;
   documentId: string;
   readOnly?: boolean;
   // The fee owed is something the practitioner sets once on the client
@@ -116,12 +114,13 @@ export default function FormRenderer({
     return next;
   });
   const [busy, setBusy] = useState<"save" | "submit" | null>(null);
+  const [actionError, setActionError] = useState<string | null>(null);
   // Tracks live submission state separately from the initial `submission`
   // prop so a poll picking up the other party's submit/sign can lock the
   // form immediately, without waiting for a full page reload.
   const [liveStatus, setLiveStatus] = useState(submission?.status);
   const [liveSignedAt, setLiveSignedAt] = useState(submission?.signed_at);
-  const [syncState, setSyncState] = useState<"idle" | "saving" | "synced">("idle");
+  const [syncState, setSyncState] = useState<"idle" | "saving" | "synced" | "error">("idle");
   const locked = readOnly || liveStatus === "signed" || liveStatus === "submitted";
 
   // Field ids edited locally since the last successful save — autosave only
@@ -137,8 +136,10 @@ export default function FormRenderer({
   const answersRef = useRef<Answers>({});
   const saveTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
-  // Keep answersRef in sync with state on every render.
-  answersRef.current = answers;
+  // Keep the debounced autosave callback on the latest answer snapshot.
+  useEffect(() => {
+    answersRef.current = answers;
+  }, [answers]);
 
   function pick(obj: Answers, keys: Iterable<string>): Answers {
     const out: Answers = {};
@@ -160,9 +161,17 @@ export default function FormRenderer({
       // active across the entire save round-trip.
       for (const k of keys) pendingSaveRef.current.add(k);
       dirtyRef.current.clear();
-      await onSaveProgress(partial);
-      for (const k of keys) pendingSaveRef.current.delete(k);
-      setSyncState("synced");
+      setActionError(null);
+      try {
+        await onSaveProgress(partial);
+        setSyncState("synced");
+      } catch (error) {
+        for (const k of keys) dirtyRef.current.add(k);
+        setSyncState("error");
+        setActionError(error instanceof Error ? error.message : "Changes could not be saved. Try again.");
+      } finally {
+        for (const k of keys) pendingSaveRef.current.delete(k);
+      }
     }, 350); // fast autosave so the other side sees updates quickly
   }
 
@@ -193,8 +202,7 @@ export default function FormRenderer({
         return changed ? next : prev;
       });
     },
-    onPoll ?? undefined,
-    dirtyRef
+    onPoll ?? undefined
   );
 
   // Whether any field will actually render the red asterisk below — if so the
@@ -213,9 +221,17 @@ export default function FormRenderer({
     if (saveTimerRef.current) clearTimeout(saveTimerRef.current);
     const keys = dirtyRef.current.size > 0 ? [...dirtyRef.current] : Object.keys(answers);
     dirtyRef.current.clear();
-    await onSaveProgress(pick(answers, keys));
-    setSyncState("synced");
-    setBusy(null);
+    setActionError(null);
+    try {
+      await onSaveProgress(pick(answers, keys));
+      setSyncState("synced");
+    } catch (error) {
+      for (const key of keys) dirtyRef.current.add(key);
+      setSyncState("error");
+      setActionError(error instanceof Error ? error.message : "Progress could not be saved. Try again.");
+    } finally {
+      setBusy(null);
+    }
   }
 
   async function handleSubmit() {
@@ -223,8 +239,14 @@ export default function FormRenderer({
     setBusy("submit");
     if (saveTimerRef.current) clearTimeout(saveTimerRef.current);
     dirtyRef.current.clear();
-    await onSubmit(answers, allSignaturesComplete);
-    setBusy(null);
+    setActionError(null);
+    try {
+      await onSubmit(answers, allSignaturesComplete);
+    } catch (error) {
+      setActionError(error instanceof Error ? error.message : "The form could not be submitted. Try again.");
+    } finally {
+      setBusy(null);
+    }
   }
 
   return (
@@ -239,10 +261,17 @@ export default function FormRenderer({
           />
           {syncState === "saving"
             ? "Saving..."
+            : syncState === "error"
+              ? "Not saved"
             : editorLabel
               ? `Live — syncing with ${editorLabel}`
               : "Live — changes sync automatically"}
         </div>
+      )}
+      {actionError && (
+        <p role="alert" className="rounded-lg border border-red-200 bg-red-50 px-3 py-2 text-sm text-red-700">
+          {actionError}
+        </p>
       )}
       {locked && (
         <div className="rounded-xl bg-sage-50 border border-sage-200 text-sage-800 text-sm px-4 py-2.5">

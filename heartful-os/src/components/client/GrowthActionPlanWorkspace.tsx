@@ -16,10 +16,12 @@ export default function GrowthActionPlanWorkspace({
   clientId,
   clientName,
   existingGrowthPlan,
+  canCompleteStage,
 }: {
   clientId: string;
   clientName: string;
   existingGrowthPlan?: GrowthActionPlan;
+  canCompleteStage: boolean;
 }) {
   // Persisted to localStorage (not just React state) so the pasted transcript
   // survives a Generate/Enhance click — that button triggers a router.refresh()
@@ -83,6 +85,7 @@ export default function GrowthActionPlanWorkspace({
               summaryType="growth_action_plan"
               label={growthPlan ? "Enhance Growth Action Plan" : "Generate Growth Action Plan"}
               extra={{ transcript }}
+              disabled={!canCompleteStage || !transcript.trim()}
               onDone={(s) => {
                 const content = (s as unknown as AiSummary).content as unknown as GrowthActionPlan;
                 setGrowthPlan({

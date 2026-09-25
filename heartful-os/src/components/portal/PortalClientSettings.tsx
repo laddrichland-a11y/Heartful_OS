@@ -1,9 +1,9 @@
 "use client";
 
-import { useEffect, useState, useTransition } from "react";
+import { useState, useTransition } from "react";
 import { portalLogoutAction, updatePortalProfileAction } from "@/lib/actions";
 import type { Client } from "@/lib/types";
-import { CheckCircle2, FileText, LogOut, Mail, Phone, Settings, UserRound } from "@/components/ui/HeartfulIcon";
+import { CheckCircle2, FileText, LogOut, Mail, Settings, UserRound } from "@/components/ui/HeartfulIcon";
 import { getSavedTheme, saveTheme, ThemeOptions, type Theme } from "@/components/settings/ThemeSettings";
 
 const NOTIFICATIONS = [
@@ -15,6 +15,18 @@ const NOTIFICATIONS = [
 
 function storageKey(clientId: string) {
   return `heartful-portal-preferences-${clientId}`;
+}
+
+function savedPreferences(clientId: string) {
+  if (typeof window === "undefined") return {};
+  try {
+    return JSON.parse(window.localStorage.getItem(storageKey(clientId)) ?? "{}") as {
+      notifications?: Record<string, boolean>;
+      theme?: Theme;
+    };
+  } catch {
+    return {};
+  }
 }
 
 export default function PortalClientSettings({
@@ -30,36 +42,20 @@ export default function PortalClientSettings({
   const [email, setEmail] = useState(client.email ?? client.portal_email ?? "");
   const [phone, setPhone] = useState(client.phone ?? "");
   const [message, setMessage] = useState<string | null>(null);
-  const [theme, setTheme] = useState<Theme>("golden-canopy");
-  const [notifications, setNotifications] = useState<Record<string, boolean>>({
+  const [theme, setTheme] = useState<Theme>(() => {
+    const saved = savedPreferences(client.id).theme;
+    return saved === "golden-canopy" || saved === "mushroom-grove" || saved === "original" || saved === "dark"
+      ? saved
+      : getSavedTheme();
+  });
+  const [notifications, setNotifications] = useState<Record<string, boolean>>(() => ({
     appointments: true,
     forms: true,
     messages: true,
     journey: true,
-  });
+    ...savedPreferences(client.id).notifications,
+  }));
   const [isPending, startTransition] = useTransition();
-
-  useEffect(() => {
-    setFullName(client.full_name);
-    setEmail(client.email ?? client.portal_email ?? "");
-    setPhone(client.phone ?? "");
-  }, [client]);
-
-  useEffect(() => {
-    try {
-      const saved = JSON.parse(window.localStorage.getItem(storageKey(client.id)) ?? "{}") as {
-        notifications?: Record<string, boolean>;
-        theme?: Theme;
-      };
-      if (saved.notifications) setNotifications((current) => ({ ...current, ...saved.notifications }));
-      const savedTheme = saved.theme === "golden-canopy" || saved.theme === "mushroom-grove" || saved.theme === "original" || saved.theme === "dark"
-        ? saved.theme
-        : getSavedTheme();
-      setTheme(savedTheme);
-    } catch {
-      // Use the defaults when browser storage is unavailable.
-    }
-  }, [client.id]);
 
   function saveLocal(nextNotifications: Record<string, boolean>, nextTheme: Theme) {
     try {

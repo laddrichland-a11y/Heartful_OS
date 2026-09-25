@@ -14,6 +14,7 @@ import {
   Task,
   FormSubmission,
 } from "@/lib/types";
+import { journeyStageLabelForMilestone } from "@/lib/utils";
 
 // Builds a single chronological activity feed for a client out of records
 // that already live in separate tabs (sessions, documents, messages, etc).
@@ -283,7 +284,7 @@ export function buildClientActivity(input: {
         id: m.id,
         at: m.completed_at,
         kind: "milestone",
-        title: `Milestone reached: ${m.milestone_key === "journey_complete" ? "Journey Day Complete" : m.label}`,
+        title: `Milestone reached: ${journeyStageLabelForMilestone(m.milestone_key, m.label)} — Completed`,
         tab: "Journey & AI",
       });
     }

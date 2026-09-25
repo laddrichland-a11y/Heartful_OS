@@ -23,8 +23,8 @@ function taskType(task: Awaited<ReturnType<typeof getOutstandingTasks>>[number])
   return "Task";
 }
 
-function formType(title: string): OutstandingQueueItem["type"] {
-  return /agreement|consent/i.test(title) ? "Agreement" : "Form";
+function formType(category: Awaited<ReturnType<typeof getOutstandingForms>>[number]["category"]): OutstandingQueueItem["type"] {
+  return category === "agreement" ? "Agreement" : "Form";
 }
 
 function urgencyFor(dueAt?: string): OutstandingQueueItem["urgency"] {
@@ -68,11 +68,13 @@ export default async function OutstandingPage() {
     groupFor(form.client_id, form.client_name).items.push({
       id: `form-${form.id}`,
       title: form.title,
-      type: formType(form.title),
+      type: formType(form.category),
       href: outstandingItemHref(form),
       action: actionLabel(form),
       urgency: "pending",
-      statusLabel: form.status === "in_progress" ? "In progress" : "Not started",
+      statusLabel: form.category === "agreement"
+        ? form.status === "missing_template" ? "Template missing" : form.status === "in_progress" ? "Opened" : "Not opened"
+        : form.status === "missing_template" ? "Template missing" : form.status === "in_progress" ? "In progress" : "Not started",
     });
   }
 

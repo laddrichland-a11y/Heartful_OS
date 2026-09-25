@@ -1,61 +1,16 @@
 import { Client, ClientStatus, DocumentType, JourneyMilestone, JourneyPhase, Session } from "@/lib/types";
+import { AGREEMENT_DOCUMENT_TYPES, isAgreementDocumentType } from "@/lib/agreementStatus";
+import { selectCurrentOrNextSession } from "@/lib/sessionSelectors";
 
 export function cx(...args: (string | false | null | undefined)[]) {
   return args.filter(Boolean).join(" ");
 }
 
-const SESSION_PHASE_ORDER: Partial<Record<Session["session_type"], number>> = {
-  intake_assessment: 0,
-  preparation: 1,
-  harm_reduction_support: 2,
-  check_in_12hr: 3,
-  integration_1: 4,
-  integration_2: 5,
-  other: 6,
-};
-
-const JOURNEY_PHASE_ORDER: Record<JourneyPhase, number> = {
-  intake: 0,
-  preparation: 1,
-  harm_reduction_session: 2,
-  post_journey_check_in: 3,
-  integration_1: 4,
-  integration_2: 5,
-  closed: 6,
-};
-
-/**
- * Keep every client surface in agreement about the appointment to show.
- * When a phase is supplied, do not skip an earlier outstanding journey step
- * merely because a later session has a future date. Seeded and imported
- * records can retain a "scheduled" status after their timestamp passes; the
- * earliest outstanding stage remains the relevant next session in that case.
- */
+/** @deprecated Import selectCurrentOrNextSession from sessionSelectors instead. */
 export function getNextScheduledSession<
-  T extends Pick<Session, "status" | "scheduled_at" | "session_type">,
->(sessions: T[], now = new Date().toISOString(), currentPhase?: JourneyPhase): T | undefined {
-  let scheduled = sessions.filter(
-    (session) => session.status === "scheduled" && Boolean(session.scheduled_at)
-  );
-
-  if (currentPhase) {
-    const currentOrder = JOURNEY_PHASE_ORDER[currentPhase];
-    const relevant = scheduled.filter(
-      (session) => (SESSION_PHASE_ORDER[session.session_type] ?? Number.POSITIVE_INFINITY) >= currentOrder
-    );
-    const earliestOutstandingOrder = Math.min(
-      ...relevant.map((session) => SESSION_PHASE_ORDER[session.session_type] ?? Number.POSITIVE_INFINITY)
-    );
-
-    if (Number.isFinite(earliestOutstandingOrder)) {
-      scheduled = relevant.filter(
-        (session) => SESSION_PHASE_ORDER[session.session_type] === earliestOutstandingOrder
-      );
-    }
-  }
-
-  scheduled.sort((a, b) => (a.scheduled_at ?? "").localeCompare(b.scheduled_at ?? ""));
-  return scheduled.find((session) => (session.scheduled_at ?? "") > now) ?? scheduled.at(-1);
+  T extends Pick<Session, "id" | "status" | "scheduled_at" | "duration_minutes" | "session_type" | "journey_started_at" | "journey_ended_at">,
+>(sessions: T[], now = new Date().toISOString()): T | undefined {
+  return selectCurrentOrNextSession(sessions, now);
 }
 
 // Client record tab definitions — kept here (not in ClientRecordTabs.tsx)
@@ -246,8 +201,8 @@ export function phaseLabel(phase: JourneyPhase): string {
     preparation: "Preparation",
     harm_reduction_session: "Journey Day",
     post_journey_check_in: "Post-Journey Check-In",
-    integration_1: "Integration Session 1",
-    integration_2: "Integration Session 2",
+    integration_1: "Integration 1",
+    integration_2: "Integration 2",
     closed: "Closed",
   };
   return map[phase];
@@ -279,17 +234,101 @@ export function phaseForStatus(status: ClientStatus, fallback: JourneyPhase): Jo
 }
 
 export type JourneyWorkspaceStage = Exclude<JourneyPhase, "closed"> | "growth_action_plan";
-export type JourneyStageStatus = "completed" | "in_progress" | "upcoming";
+export type JourneyStageStatus = "completed" | "current" | "upcoming" | "future";
 
-const JOURNEY_WORKSPACE_STAGE_ORDER: Record<JourneyWorkspaceStage, number> = {
-  intake: 0,
-  preparation: 1,
-  harm_reduction_session: 2,
-  post_journey_check_in: 3,
-  integration_1: 4,
-  integration_2: 5,
-  growth_action_plan: 6,
+export const JOURNEY_COMPLETION_MILESTONE_KEYS = [
+  "intake_complete",
+  "preparation_complete",
+  "journey_complete",
+  "check_in_12hr_complete",
+  "integration_1_complete",
+  "integration_2_complete",
+  "growth_action_plan_complete",
+  "journey_closed",
+] as const;
+
+export type JourneyCompletionMilestoneKey = (typeof JOURNEY_COMPLETION_MILESTONE_KEYS)[number];
+
+export const JOURNEY_STAGE_DEFINITIONS: ReadonlyArray<{
+  phase: JourneyWorkspaceStage;
+  milestoneKey: JourneyCompletionMilestoneKey;
+  label: string;
+}> = [
+  { phase: "intake", milestoneKey: "intake_complete", label: "Intake" },
+  { phase: "preparation", milestoneKey: "preparation_complete", label: "Preparation" },
+  { phase: "harm_reduction_session", milestoneKey: "journey_complete", label: "Journey Day" },
+  { phase: "post_journey_check_in", milestoneKey: "check_in_12hr_complete", label: "12-Hour Check-In" },
+  { phase: "integration_1", milestoneKey: "integration_1_complete", label: "Integration 1" },
+  { phase: "integration_2", milestoneKey: "integration_2_complete", label: "Integration 2" },
+  { phase: "growth_action_plan", milestoneKey: "growth_action_plan_complete", label: "Growth Plan" },
+];
+
+export function journeyStageLabelForMilestone(milestoneKey: string, fallback = "Journey"): string {
+  if (milestoneKey === "journey_closed") return "Journey";
+  return JOURNEY_STAGE_DEFINITIONS.find((stage) => stage.milestoneKey === milestoneKey)?.label ?? fallback;
+}
+
+export function journeyStageStatusLabel(status: JourneyStageStatus): string | undefined {
+  if (status === "completed") return "Completed";
+  if (status === "current") return "Current";
+  if (status === "upcoming") return "Upcoming";
+  return undefined;
+}
+
+export function isJourneyCompletionMilestoneKey(key: string): key is JourneyCompletionMilestoneKey {
+  return JOURNEY_COMPLETION_MILESTONE_KEYS.includes(key as JourneyCompletionMilestoneKey);
+}
+
+/**
+ * A stage may only complete when every preceding journey milestone is done.
+ * This pure rule is shared by the UI and the server data layer so a future
+ * stage cannot be advanced by bypassing a disabled control.
+ */
+export function canCompleteJourneyMilestone(
+  milestones: Pick<JourneyMilestone, "milestone_key" | "completed">[],
+  milestoneKey: string,
+): boolean {
+  if (!isJourneyCompletionMilestoneKey(milestoneKey)) return false;
+  const targetIndex = JOURNEY_COMPLETION_MILESTONE_KEYS.indexOf(milestoneKey);
+  const completedKeys = new Set(
+    milestones.filter((milestone) => milestone.completed).map((milestone) => milestone.milestone_key),
+  );
+  return JOURNEY_COMPLETION_MILESTONE_KEYS
+    .slice(0, targetIndex)
+    .every((requiredKey) => completedKeys.has(requiredKey));
+}
+
+export type JourneyCompletionIssue = "missing_content" | "previous_stages_incomplete";
+
+/** Shared prerequisite check for every AI action that completes a journey stage. */
+export function journeyCompletionIssue(
+  milestones: Pick<JourneyMilestone, "milestone_key" | "completed">[],
+  milestoneKey: JourneyCompletionMilestoneKey,
+  hasContent: boolean,
+): JourneyCompletionIssue | undefined {
+  if (!hasContent) return "missing_content";
+  if (!canCompleteJourneyMilestone(milestones, milestoneKey)) return "previous_stages_incomplete";
+  return undefined;
+}
+
+export const SESSION_COMPLETION_MILESTONE_KEYS: Partial<
+  Record<Session["session_type"], JourneyCompletionMilestoneKey>
+> = {
+  intake_assessment: "intake_complete",
+  preparation: "preparation_complete",
+  harm_reduction_support: "journey_complete",
+  check_in_12hr: "check_in_12hr_complete",
+  integration_1: "integration_1_complete",
+  integration_2: "integration_2_complete",
 };
+
+export function canCompleteJourneySession(
+  milestones: Pick<JourneyMilestone, "milestone_key" | "completed">[],
+  sessionType: Session["session_type"],
+): boolean {
+  const milestoneKey = SESSION_COMPLETION_MILESTONE_KEYS[sessionType];
+  return !milestoneKey || canCompleteJourneyMilestone(milestones, milestoneKey);
+}
 
 /**
  * Computes the displayed stage state from the client's real journey position,
@@ -301,32 +340,25 @@ export function getJourneyStageWorkspaceState(
   stage: JourneyWorkspaceStage,
   milestoneKey: string,
 ) {
-  const stageOrder = JOURNEY_WORKSPACE_STAGE_ORDER[stage];
   const milestoneCompleted = milestones.some(
     (milestone) => milestone.milestone_key === milestoneKey && milestone.completed,
   );
-  const journeyClosed = client.status === "journey_closed" || milestones.some(
-    (milestone) => milestone.milestone_key === "journey_closed" && milestone.completed,
-  );
-  const phase = phaseForStatus(client.status, client.current_phase);
-  // "closed" means the final visible workspace is the Growth Action Plan
-  // until the client journey itself is explicitly closed.
-  const currentOrder = phase === "closed" ? 6 : JOURNEY_WORKSPACE_STAGE_ORDER[phase];
-  const completed = journeyClosed || milestoneCompleted || stageOrder < currentOrder;
-  const status: JourneyStageStatus = completed
-    ? "completed"
-    : stageOrder === currentOrder
-      ? "in_progress"
-      : "upcoming";
+  const status = getClientJourneyProgress(client, milestones).stages.find(
+    (candidate) => candidate.phase === stage,
+  )?.status ?? "future";
+  const canCompleteStage = milestoneCompleted || canCompleteJourneyMilestone(milestones, milestoneKey);
 
   return {
     status,
     // A prior stage inferred as complete from the client position should not
     // expose an "undo" control unless its milestone was explicitly recorded.
-    canMarkComplete: status === "in_progress" || milestoneCompleted,
-    // Briefings are useful for the active stage and the immediately next one,
-    // but should not be generated for distant future workspaces.
-    canPrepare: status === "in_progress" || (status === "upcoming" && stageOrder === currentOrder + 1),
+    canMarkComplete: canCompleteStage,
+    canCompleteStage,
+    // Every uncompleted practitioner-facing stage, from Intake through Growth
+    // Plan, can be prepared in advance. The briefing itself only receives
+    // context from earlier stages, so opening a later workspace does not leak
+    // future-session information into its preparation.
+    canPrepare: status !== "completed",
   };
 }
 
@@ -337,22 +369,9 @@ export function clientJourneyWorkspaceHref(
 ): string {
   const base = `/clients/${client.id}`;
   const phase = phaseForStatus(client.status, client.current_phase);
-  const sessionType: Partial<Record<JourneyPhase, Session["session_type"]>> = {
-    intake: "intake_assessment",
-    preparation: "preparation",
-    harm_reduction_session: "harm_reduction_support",
-    integration_1: "integration_1",
-    integration_2: "integration_2",
-  };
-  const matchingType = sessionType[phase];
-  const matchingSession = matchingType
-    ? sessions.find((session) => session.session_type === matchingType && session.status === "scheduled") ??
-      sessions
-        .filter((session) => session.session_type === matchingType)
-        .sort((a, b) => (b.scheduled_at ?? "").localeCompare(a.scheduled_at ?? ""))[0]
-    : undefined;
+  const selectedSession = selectCurrentOrNextSession(sessions);
 
-  if (matchingSession) return `${base}/sessions/${matchingSession.id}`;
+  if (selectedSession) return `${base}/sessions/${selectedSession.id}`;
 
   switch (phase) {
     case "intake":
@@ -392,7 +411,7 @@ export const CLIENT_JOURNEY_STAGE_OPTIONS = [
   { value: "check_in", label: "12-Hour Check-In" },
   { value: "integration", label: "Integration" },
   { value: "growth_plan", label: "Growth Plan" },
-  { value: "completed", label: "Completed" },
+  { value: "completed", label: "Growth Plan · Completed" },
 ] as const;
 
 export type ClientJourneyStageFilter = (typeof CLIENT_JOURNEY_STAGE_OPTIONS)[number]["value"];
@@ -431,6 +450,26 @@ export const JOURNEY_PROGRESS_COMPLETED_MILESTONES: Partial<Record<ClientStatus,
 
 export const JOURNEY_PROGRESS_STAGE_COUNT = 7;
 
+export function completedJourneyMilestonePrefix(
+  milestones: Pick<JourneyMilestone, "milestone_key" | "completed">[],
+): number {
+  const completedKeys = new Set(
+    milestones.filter((milestone) => milestone.completed).map((milestone) => milestone.milestone_key),
+  );
+  const firstIncomplete = JOURNEY_COMPLETION_MILESTONE_KEYS.findIndex((key) => !completedKeys.has(key));
+  return firstIncomplete === -1 ? JOURNEY_COMPLETION_MILESTONE_KEYS.length : firstIncomplete;
+}
+
+/** A manual status correction may roll back freely, but can only advance one stage at a time. */
+export function canSetJourneyStatus(
+  milestones: Pick<JourneyMilestone, "milestone_key" | "completed">[],
+  status: ClientStatus,
+): boolean {
+  const targetCompleted = JOURNEY_PROGRESS_COMPLETED_MILESTONES[status];
+  if (targetCompleted === undefined) return true;
+  return targetCompleted <= completedJourneyMilestonePrefix(milestones) + 1;
+}
+
 /**
  * The shared journey-progress model for every practitioner surface. A
  * completed milestone can only move the display forward, never backward;
@@ -447,23 +486,40 @@ export function getClientJourneyProgress(
     (milestone) => milestone.sort_order <= JOURNEY_PROGRESS_STAGE_COUNT && milestone.completed,
   ).length;
   const statusCompleted = JOURNEY_PROGRESS_COMPLETED_MILESTONES[client.status];
+  const retainedStageIndex = Math.max(
+    0,
+    JOURNEY_STAGE_DEFINITIONS.findIndex((stage) => stage.phase === client.current_phase),
+  );
   const completed = Math.min(
     client.status === "inactive" || statusCompleted === undefined
-      ? milestoneCompleted
+      ? Math.max(milestoneCompleted, retainedStageIndex)
       : Math.max(statusCompleted, milestoneCompleted),
     JOURNEY_PROGRESS_STAGE_COUNT,
   );
   const phase = phaseForStatus(client.status, client.current_phase);
+  const stages = JOURNEY_STAGE_DEFINITIONS.map((stage, index) => ({
+    ...stage,
+    status: (
+      closed || index < completed
+        ? "completed"
+        : index === completed
+          ? "current"
+          : index === completed + 1
+            ? "upcoming"
+            : "future"
+    ) as JourneyStageStatus,
+  }));
+  const currentStage = stages.find((stage) => stage.status === "current");
+  const lastStage = stages.at(-1)!;
 
   return {
     completed: closed ? JOURNEY_PROGRESS_STAGE_COUNT : completed,
     total: JOURNEY_PROGRESS_STAGE_COUNT,
     phase,
     /** Inactive is a relationship status, never a journey-stage label. */
-    currentStageLabel: closed ? "Journey complete" : [
-      "Intake", "Preparation", "Journey Day", "12-Hour Check-In",
-      "Integration Session 1", "Integration Session 2", "Growth Plan",
-    ][completed] ?? "Ready to close",
+    currentStageLabel: closed ? lastStage.label : currentStage?.label ?? lastStage.label,
+    currentStageStatus: (closed ? "completed" : "current") as JourneyStageStatus,
+    stages,
   };
 }
 
@@ -500,6 +556,7 @@ export interface ActionableOutstandingItem {
   kind?: "form";
   task_type?: "form" | "reminder" | "reflection" | "session_prep" | "follow_up";
   assigned_to?: string;
+  href?: string;
 }
 
 export function isPastDue(item: Pick<ActionableOutstandingItem, "due_at">) {
@@ -507,13 +564,17 @@ export function isPastDue(item: Pick<ActionableOutstandingItem, "due_at">) {
 }
 
 export function outstandingItemHref(item: ActionableOutstandingItem) {
+  if (item.href) return item.href;
   return item.kind === "form"
     ? `/clients/${item.client_id}/forms/${item.id}`
     : `/clients/${item.client_id}/tasks/${item.id}`;
 }
 
 export function outstandingActionLabel(item: ActionableOutstandingItem) {
-  if (item.kind === "form") return item.status === "in_progress" ? "Review" : "Request";
+  if (item.kind === "form") {
+    if (item.status === "missing_template") return "Fix template";
+    return item.status === "in_progress" ? "Review" : "Request";
+  }
 
   const title = item.title.toLocaleLowerCase();
   if (item.task_type === "session_prep" || title.includes("schedule") || title.includes(" call")) {
@@ -545,14 +606,10 @@ export function outstandingActionLabel(item: ActionableOutstandingItem) {
 // filter these out; the "All Paperwork" pill on the client timeline is where
 // the practitioner sees them all together.
 // ---------------------------------------------------------------------------
-export const GENERAL_PAPERWORK_DOCUMENT_TYPES: DocumentType[] = [
-  "informed_consent",
-  "harm_reduction_services_agreement",
-  "client_services_agreement",
-];
+export const GENERAL_PAPERWORK_DOCUMENT_TYPES: DocumentType[] = [...AGREEMENT_DOCUMENT_TYPES];
 
 export function isGeneralPaperwork(documentType: DocumentType): boolean {
-  return GENERAL_PAPERWORK_DOCUMENT_TYPES.includes(documentType);
+  return isAgreementDocumentType(documentType);
 }
 
 // ---------------------------------------------------------------------------

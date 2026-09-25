@@ -43,7 +43,8 @@ import {
   Recording,
 } from "@/lib/types";
 import { AlertCircle, Check, CheckCircle2, Send, Sparkles, FileText, ChevronDown, ChevronUp, CalendarDays, MapPin, Clock, Pencil, Trash2, MessageSquareText, Mail, Music, ScrollText, UserRound, LayoutDashboard, ListChecks, Sprout, PanelLeftClose, PanelLeftOpen, Settings, ArrowRight } from "@/components/ui/HeartfulIcon";
-import { formatDate, formatDateTime, getClientJourneyProgress, relativeDueLabel, cx, isGeneralPaperwork } from "@/lib/utils";
+import { formatDate, formatDateTime, getClientJourneyProgress, journeyStageStatusLabel, relativeDueLabel, cx, isGeneralPaperwork, phaseForStatus } from "@/lib/utils";
+import { selectCurrentOrNextSession, selectSessionTimeline } from "@/lib/sessionSelectors";
 import JourneyProgressBar from "@/components/JourneyProgressBar";
 import FormRenderer from "@/components/forms/FormRenderer";
 import { buildFormPrefill, FormPrefill } from "@/lib/formPrefill";
@@ -51,6 +52,14 @@ import PortalWelcome from "@/components/portal/PortalWelcome";
 import PortalClientSettings from "@/components/portal/PortalClientSettings";
 import SidebarNatureMessage from "@/components/layout/SidebarNatureMessage";
 import ConfirmDialog from "@/components/ui/ConfirmDialog";
+import {
+  AGREEMENT_STATE_LABELS,
+  agreementStateForDocument,
+  normalizeAgreementItem,
+  normalizeAgreementStatus,
+  type AgreementItemState,
+} from "@/lib/agreementStatus";
+import { formTemplateAppliesToSession, resolveRequiredForms } from "@/lib/requiredForms";
 
 export const dynamic = "force-dynamic";
 
@@ -65,20 +74,6 @@ const PHASE_ORDER: JourneyPhase[] = [
   "integration_2",
   "closed",
 ];
-
-// Maps document_type directly to the journey phase it belongs to. This is
-// more reliable than reading session_types off the template record because
-// Firestore templates seeded before session_types was added won't have that
-// field. If a document_type is absent here, we show it unconditionally (safe
-// default for consent docs, etc.).
-const DOCUMENT_TYPE_TO_PHASE: Partial<Record<string, JourneyPhase>> = {
-  integration_session_1: "integration_1",
-  integration_session_2: "integration_2",
-  post_integration_form: "integration_2",
-  post_integration_form_updated: "integration_2",
-  integration_summary_1: "integration_1",
-  integration_summary_2: "integration_2",
-};
 
 interface Bundle {
   client?: Client;
@@ -319,7 +314,7 @@ function PortalPageInner() {
     if (portalClientId) {
       getPortalBundleAction(portalClientId).then((b) => {
         if ("locked" in b && b.locked) {
-          setAuthGate({ accountExists: b.accountExists, clientEmail: b.clientEmail });
+          setAuthGate({ accountExists: b.accountExists });
           return;
         }
         const next = b as Bundle;
@@ -354,13 +349,13 @@ function PortalPageInner() {
   // order and crash the entire page.
   useEffect(() => {
     if (!bundle?.client || isPreview || process.env.NODE_ENV === "development") return;
-    const agreementDocuments = bundle.documents.filter((doc) => isGeneralPaperwork(doc.document_type));
-    if (agreementDocuments.length === 0) return;
-    const agreementsOutstanding = agreementDocuments.some((doc) => {
-      const submission = bundle.formSubmissions.find((sub) => sub.document_id === doc.id);
-      return submission?.status !== "signed" && submission?.status !== "submitted";
+    const agreements = normalizeAgreementStatus({
+      client: bundle.client,
+      templates: bundle.formTemplates,
+      documents: bundle.documents,
+      submissions: bundle.formSubmissions,
     });
-    if (agreementsOutstanding) void markPortalAgreementsOpenedAction(portalClientId);
+    if (agreements.outstanding_count > 0) void markPortalAgreementsOpenedAction(portalClientId);
   }, [bundle, isPreview, portalClientId]);
 
   // Nothing role-dependent can be rendered before hydration either — the
@@ -463,7 +458,6 @@ function PortalPageInner() {
       <PortalAuthGate
         clientId={portalClientId}
         accountExists={authGate.accountExists}
-        clientEmail={authGate.clientEmail}
         onReturnToPractitioner={canUsePortalPreviewControls ? returnToPractitionerView : undefined}
         onUnlocked={() => {
           getPortalBundleAction(portalClientId).then((b) => {
@@ -492,38 +486,26 @@ function PortalPageInner() {
   // auto-attached documents, not tasks), so the Action Items list has to
   // pull them in explicitly — otherwise a client with zero tasks but
   // unsubmitted forms incorrectly sees "all caught up".
-  const clientPhaseIdx = PHASE_ORDER.indexOf(client.current_phase);
-  const incompleteForms = bundle.documents
-    .map((doc) => {
-      const template = bundle.formTemplates.find((t) => t.document_type === doc.document_type);
-      if (!template) return null;
-      const submission = bundle.formSubmissions.find((s) => s.document_id === doc.id);
-      const status = submission?.status ?? "missing";
-      if (status === "submitted" || status === "signed") return null;
-      // Gate forms to their journey phase using document_type. This works
-      // even when Firestore templates lack session_types. If no phase entry
-      // exists for this document_type (e.g. consent forms), show it always.
-      const requiredPhase = DOCUMENT_TYPE_TO_PHASE[doc.document_type];
-      if (requiredPhase && PHASE_ORDER.indexOf(requiredPhase) > clientPhaseIdx) return null;
-      return { doc, template, status };
-    })
-    .filter((x): x is { doc: ClientDocument; template: FormTemplate; status: string } => x !== null);
+  const requiredForms = resolveRequiredForms({
+    templates: bundle.formTemplates,
+    documents: bundle.documents,
+    submissions: bundle.formSubmissions,
+    currentPhase: phaseForStatus(client.status, client.current_phase),
+  });
+  const incompleteForms = requiredForms.filter((form) => !form.complete);
   const hasActionItems = pendingTasks.length > 0 || pendingAssignments.length > 0 || incompleteForms.length > 0;
-  const sortedMilestones = [...bundle.milestones].filter((milestone) => milestone.sort_order <= 7).sort((a, b) => a.sort_order - b.sort_order);
   const journeyProgress = getClientJourneyProgress(client, bundle.milestones);
-  const completedMilestones = journeyProgress.completed;
-  const currentMilestoneIndex = completedMilestones < sortedMilestones.length ? completedMilestones : -1;
-  const currentMilestone = currentMilestoneIndex >= 0 ? sortedMilestones[currentMilestoneIndex] : sortedMilestones.at(-1);
-  const nextMilestone = currentMilestoneIndex >= 0 ? sortedMilestones[currentMilestoneIndex + 1] : undefined;
-  const nextSession = bundle.sessions
-    .filter((session) => session.status === "scheduled" && session.scheduled_at && new Date(session.scheduled_at).getTime() >= portalNow)
-    .sort((a, b) => a.scheduled_at!.localeCompare(b.scheduled_at!))[0];
+  const currentJourneyStage = journeyProgress.stages.find((stage) => stage.status === "current") ?? journeyProgress.stages.at(-1);
+  const nextJourneyStage = journeyProgress.stages.find((stage) => stage.status === "upcoming");
+  const nextSession = selectCurrentOrNextSession(bundle.sessions, portalNow);
   const homeActions = [
-    ...incompleteForms.map(({ doc, template, status }) => ({
-      id: `form-${doc.id}`,
-      title: DOCUMENT_LABELS[doc.document_type] ?? template.title,
-      status: (status === "in_progress" || status === "draft") ? "In progress" : "Not started",
-      action: (status === "in_progress" || status === "draft") ? "Continue" : "Start",
+    ...incompleteForms.map((form) => ({
+      id: `form-${form.document?.id ?? form.documentType}`,
+      title: form.title,
+      status: form.state === "missing_template" || form.state === "missing_document"
+        ? "Waiting for practitioner"
+        : form.state === "in_progress" ? "In progress" : "Not started",
+      action: form.state === "in_progress" ? "Continue" : "Review",
       onClick: () => setTab("Forms & Check-Ins"),
       overdue: false,
     })),
@@ -553,18 +535,15 @@ function PortalPageInner() {
   // they're done the portal shows nothing but them: no tabs, no journey, no
   // messages. Signing all three drops the gate permanently.
   // -------------------------------------------------------------------------
-  const agreementItems = bundle.documents
-    .filter((doc) => isGeneralPaperwork(doc.document_type))
-    .map((doc) => {
-      const template = bundle.formTemplates.find((t) => t.document_type === doc.document_type);
-      if (!template) return null;
-      const submission = bundle.formSubmissions.find((sub) => sub.document_id === doc.id);
-      const status = submission?.status ?? "missing";
-      return { doc, template, submission, done: status === "signed" || status === "submitted" };
-    })
-    .filter((x) => x !== null);
-  const agreementsDone = agreementItems.filter((a) => a.done).length;
-  const agreementsOutstanding = agreementItems.length - agreementsDone;
+  const agreementStatus = normalizeAgreementStatus({
+    client,
+    templates: bundle.formTemplates,
+    documents: bundle.documents,
+    submissions: bundle.formSubmissions,
+  });
+  const agreementItems = agreementStatus.items;
+  const agreementsDone = agreementStatus.completed_count;
+  const agreementsOutstanding = agreementStatus.outstanding_count;
 
   // This bypass is deliberately limited to an explicit practitioner preview.
   // A real client must always complete the required agreements.
@@ -616,18 +595,29 @@ function PortalPageInner() {
               />
             </div>
             <div className="portal-agreements-list">
-              {agreementItems.map(({ doc, template, submission }) => (
+              {agreementItems.map((item) => item.document ? (
                 <FormDocumentCard
-                  key={doc.id}
+                  key={item.document.id}
                   clientId={portalClientId}
-                  document={doc}
-                  template={template}
-                  submission={submission}
+                  document={item.document}
+                  template={item.template}
+                  submission={item.submission}
+                  agreementState={item.state}
                   packageValue={client.package_value}
                   prefill={prefill}
                   onChanged={refresh}
                   variant="onboarding"
                 />
+              ) : (
+                <div key={item.template.id} className="portal-agreement-row is-pending">
+                  <div className="portal-agreement-row__summary">
+                    <span className="portal-agreement-row__icon"><FileText aria-hidden="true" /></span>
+                    <span className="portal-agreement-row__copy">
+                      <span className="portal-agreement-row__title"><strong>{item.template.title}</strong><span className="portal-agreement-status is-pending">{AGREEMENT_STATE_LABELS.not_opened}</span></span>
+                      <small>Waiting to be assigned by your practitioner</small>
+                    </span>
+                  </div>
+                </div>
               ))}
             </div>
             <div className="portal-agreements-footer">
@@ -825,6 +815,7 @@ function PortalPageInner() {
         </div>
         {tab === "Settings" && (
           <PortalClientSettings
+            key={client.id}
             client={client}
             onSaved={refresh}
             onViewAgreements={() => setTab("Forms & Check-Ins")}
@@ -835,12 +826,12 @@ function PortalPageInner() {
             <section className="card p-5 portal-journey-card">
               <div className="portal-section-heading">
                 <div className="portal-heading-with-icon"><span className="portal-heading-icon"><Sprout aria-hidden="true" /></span><h2>Your Journey</h2></div>
-                {nextMilestone && <span className="portal-phase-label">Next: {nextMilestone.label}</span>}
+                {nextJourneyStage && <span className="portal-phase-label">Next: {nextJourneyStage.label}</span>}
               </div>
               <div className="portal-journey-summary">
                 <div>
-                  <span>Current step</span>
-                  <div className="portal-current-step-line"><strong>{currentMilestone?.label ?? "Your journey"}</strong><span className="portal-phase-label">{client.current_phase.replace(/_/g, " ")}</span></div>
+                  <span>Journey stage</span>
+                  <div className="portal-current-step-line"><strong>{currentJourneyStage?.label ?? "Your journey"}</strong><span className="portal-phase-label">{client.status === "inactive" ? "Inactive" : journeyStageStatusLabel(currentJourneyStage?.status ?? "future")}</span></div>
                 </div>
                 <div className="portal-journey-progress-copy"><strong>{journeyProgress.completed} of {journeyProgress.total}</strong><span>completed</span></div>
               </div>
@@ -879,6 +870,7 @@ function PortalPageInner() {
         {tab === "Appointments" && (
           <AppointmentsPanel
             clientId={portalClientId}
+            now={portalNow}
             sessions={bundle.sessions}
             sessionCallSummaries={bundle.sessionCallSummaries ?? []}
             recordings={bundle.recordings ?? []}
@@ -894,10 +886,19 @@ function PortalPageInner() {
           <div className="portal-content-grid">
             <div className="card p-5 portal-content-grid__primary">
               <h2 className="portal-forms-section-title font-semibold text-ink-900 mb-3"><FileText aria-hidden="true" />Required Forms &amp; Consents</h2>
-              {bundle.documents.filter((d) => bundle.formTemplates.some((t) => t.document_type === d.document_type)).length === 0 ? (
+              {bundle.documents.filter((d) => bundle.formTemplates.some((t) => t.document_type === d.document_type)).length === 0 &&
+              requiredForms.every((form) => form.state !== "missing_template" && form.state !== "missing_document") ? (
                 <p className="text-sm text-ink-400">Nothing to fill out right now.</p>
               ) : (
                 <div className="space-y-2">
+                  {requiredForms
+                    .filter((form) => form.state === "missing_template" || form.state === "missing_document")
+                    .map((form) => (
+                      <div key={form.documentType} className="rounded-xl border border-amber-200 bg-amber-50/60 px-3 py-3 text-sm text-ink-700">
+                        <strong className="block font-medium text-ink-900">{form.title}</strong>
+                        <span>This required form needs to be added by your practitioner before you can complete it.</span>
+                      </div>
+                    ))}
                   {bundle.documents
                     .filter((d) => bundle.formTemplates.some((t) => t.document_type === d.document_type))
                     .map((doc) => {
@@ -911,6 +912,7 @@ function PortalPageInner() {
                           document={doc}
                           template={template}
                           submission={submission}
+                          agreementState={agreementStateForDocument(doc, bundle.formTemplates, bundle.formSubmissions)}
                           packageValue={client.package_value}
               prefill={prefill}
                           onChanged={refresh}
@@ -1116,6 +1118,7 @@ function sessionTypeLabel(type: Session["session_type"]) {
 
 function AppointmentsPanel({
   clientId,
+  now,
   sessions,
   sessionCallSummaries,
   recordings,
@@ -1126,6 +1129,7 @@ function AppointmentsPanel({
   prefill,
 }: {
   clientId: string;
+  now: number;
   sessions: Session[];
   sessionCallSummaries: AiSummary[];
   recordings: Recording[];
@@ -1135,15 +1139,9 @@ function AppointmentsPanel({
   packageValue?: number;
   prefill?: FormPrefill;
 }) {
-  // Mirrors the "scheduled" vs everything-else split already used in
-  // lib/data.ts's getUpcomingSessions — avoids comparing against Date.now()
-  // during render (an impure call React's purity rules flag).
-  const upcoming = sessions
-    .filter((s) => s.status === "scheduled" && s.scheduled_at)
-    .sort((a, b) => (a.scheduled_at! < b.scheduled_at! ? -1 : 1));
-  const past = sessions
-    .filter((s) => s.status !== "scheduled" || !s.scheduled_at)
-    .sort((a, b) => ((b.scheduled_at ?? "") < (a.scheduled_at ?? "") ? -1 : 1));
+  // Use the same future-date boundary as the portal home, dashboard and
+  // calendar. `now` is owned by the parent state so render remains pure.
+  const { activeAndUpcoming: upcoming, history: past } = selectSessionTimeline(sessions, now);
 
   return (
     <div className="portal-appointments-grid">
@@ -1221,7 +1219,7 @@ function SessionRow({
   // client sees exactly the forms tied to that appointment, not every form
   // on their record.
   const sessionForms = formTemplates.filter(
-    (t) => t.session_types?.includes(s.session_type) && t.active
+    (template) => formTemplateAppliesToSession(template, s.session_type)
   );
 
   async function playOrDownload(rec: Recording) {
@@ -1332,7 +1330,15 @@ function SessionRow({
             const doc = documents.find((d) => d.document_type === tmpl.document_type);
             const sub = doc ? formSubmissions.find((fs) => fs.document_id === doc.id) : undefined;
             const status = sub?.status ?? (doc ? doc.status : "missing");
-            const isComplete = status === "signed" || status === "submitted";
+            const agreement = isGeneralPaperwork(tmpl.document_type)
+              ? normalizeAgreementItem(tmpl, doc, sub)
+              : undefined;
+            const isComplete = agreement?.complete ?? (status === "signed" || status === "submitted");
+            const displayStatus = agreement
+              ? AGREEMENT_STATE_LABELS[agreement.state]
+              : isComplete
+                ? "Submitted"
+                : status === "in_progress" || status === "draft" ? "In progress" : "Not started";
             const isOpen = doc ? openFormDocId === doc.id : false;
             return (
               <div key={tmpl.id}>
@@ -1345,17 +1351,27 @@ function SessionRow({
                 >
                   <FileText className="h-3.5 w-3.5" />
                   {tmpl.title}
-                  <span className={cx("badge", isComplete ? "bg-sage-100 text-sage-700" : "bg-ink-100 text-ink-500")}>
-                    {isComplete ? "Submitted" : status === "in_progress" || status === "draft" ? "In progress" : "Not started"}
+                  <span className={cx(
+                    "badge",
+                    isComplete
+                      ? "bg-sage-100 text-sage-700"
+                      : agreement?.state === "opened"
+                        ? "bg-amber-100 text-amber-700"
+                        : "bg-ink-100 text-ink-500",
+                  )}>
+                    {displayStatus}
                   </span>
-                  {isComplete && <span className="ml-0.5">{isOpen ? "▲" : "▼"}</span>}
+                  {isComplete && (isOpen ? (
+                    <ChevronUp className="ml-0.5 h-3.5 w-3.5" aria-hidden="true" />
+                  ) : (
+                    <ChevronDown className="ml-0.5 h-3.5 w-3.5" aria-hidden="true" />
+                  ))}
                 </button>
                 {isOpen && doc && (
                   <div className="mt-2">
                     <FormRenderer
                       template={tmpl}
                       submission={sub}
-                      clientId={clientId}
                       documentId={doc.id}
                       readOnly
                       packageValue={packageValue}
@@ -1390,6 +1406,7 @@ function FormDocumentCard({
   document: doc,
   template,
   submission,
+  agreementState,
   packageValue,
   prefill,
   onChanged,
@@ -1399,6 +1416,7 @@ function FormDocumentCard({
   document: ClientDocument;
   template: FormTemplate;
   submission?: FormSubmission;
+  agreementState?: AgreementItemState;
   packageValue?: number;
   prefill?: FormPrefill;
   onChanged: () => void;
@@ -1407,15 +1425,21 @@ function FormDocumentCard({
   const [open, setOpen] = useState(false);
   const [editing, setEditing] = useState(false);
   const status = submission?.status ?? "missing";
-  const isSubmitted = status === "signed" || status === "submitted";
+  const isSubmitted = agreementState === "completed" || status === "signed" || status === "submitted";
   const statusBadge =
-    status === "signed"
-      ? { label: "Signed", cls: "bg-sage-100 text-sage-700" }
-      : status === "submitted"
-        ? { label: "Submitted", cls: "bg-sage-100 text-sage-700" }
-        : (status === "in_progress" || status === "draft")
-          ? { label: "In Progress", cls: "bg-amber-100 text-amber-700" }
-          : { label: "Not Started", cls: "bg-ink-100 text-ink-500" };
+    agreementState === "completed"
+      ? { label: AGREEMENT_STATE_LABELS.completed, cls: "bg-sage-100 text-sage-700" }
+      : agreementState === "opened"
+        ? { label: AGREEMENT_STATE_LABELS.opened, cls: "bg-amber-100 text-amber-700" }
+        : agreementState === "not_opened"
+          ? { label: AGREEMENT_STATE_LABELS.not_opened, cls: "bg-ink-100 text-ink-500" }
+          : status === "signed"
+            ? { label: "Signed", cls: "bg-sage-100 text-sage-700" }
+            : status === "submitted"
+              ? { label: "Submitted", cls: "bg-sage-100 text-sage-700" }
+              : (status === "in_progress" || status === "draft")
+                ? { label: "In Progress", cls: "bg-amber-100 text-amber-700" }
+                : { label: "Not Started", cls: "bg-ink-100 text-ink-500" };
 
   // When editing a submitted form, pass a modified copy with status reset so
   // FormRenderer doesn't lock the fields (it locks on "submitted"/"signed").
@@ -1425,14 +1449,14 @@ function FormDocumentCard({
       : submission;
 
   if (variant === "onboarding") {
-    const actionLabel = isSubmitted ? "Signed" : status === "in_progress" || status === "draft" ? "Continue" : "Review";
-    const supportingText = isSubmitted ? "Completed" : status === "in_progress" || status === "draft" ? "Continue where you left off" : "Read and sign";
+    const actionLabel = isSubmitted ? "Completed" : agreementState === "opened" || status === "in_progress" || status === "draft" ? "Continue" : "Review";
+    const supportingText = isSubmitted ? "Completed" : agreementState === "opened" || status === "in_progress" || status === "draft" ? "Continue where you left off" : "Read and sign";
     return (
       <div className={cx("portal-agreement-row", open && "is-open", isSubmitted && "is-complete")}>
         <button onClick={() => setOpen((current) => !current)} className="portal-agreement-row__summary" aria-expanded={open}>
           <span className="portal-agreement-row__icon"><FileText aria-hidden="true" /></span>
           <span className="portal-agreement-row__copy">
-            <span className="portal-agreement-row__title"><strong>{DOCUMENT_LABELS[doc.document_type] ?? template.title}</strong><span className={cx("portal-agreement-status", isSubmitted ? "is-complete" : status === "in_progress" || status === "draft" ? "is-progress" : "is-pending")}>{statusBadge.label}</span></span>
+            <span className="portal-agreement-row__title"><strong>{DOCUMENT_LABELS[doc.document_type] ?? template.title}</strong><span className={cx("portal-agreement-status", isSubmitted ? "is-complete" : agreementState === "opened" || status === "in_progress" || status === "draft" ? "is-progress" : "is-pending")}>{statusBadge.label}</span></span>
             <small>{supportingText}</small>
           </span>
         </button>
@@ -1448,7 +1472,6 @@ function FormDocumentCard({
             <FormRenderer
               template={template}
               submission={submissionForRenderer}
-              clientId={clientId}
               documentId={doc.id}
               packageValue={packageValue}
               prefill={prefill}
@@ -1476,7 +1499,7 @@ function FormDocumentCard({
           <span className={cx("badge", statusBadge.cls)}>{statusBadge.label}</span>
         </button>
         <div className="flex items-center gap-1 shrink-0">
-          {isSubmitted && (
+          {isSubmitted && submission && (
             <button
               onClick={() => { setEditing(true); setOpen(true); }}
               className="flex items-center gap-1 text-xs text-ink-500 hover:text-clay-600 px-2 py-1 rounded-lg hover:bg-clay-50 transition-colors"
@@ -1487,7 +1510,7 @@ function FormDocumentCard({
             </button>
           )}
           <button onClick={() => setOpen((o) => !o)} className="portal-agreement-action" aria-expanded={open}>
-            {open ? "Close" : isSubmitted ? "View" : status === "in_progress" || status === "draft" ? "Continue" : "Review"}
+            {open ? "Close" : isSubmitted ? "View" : agreementState === "opened" || status === "in_progress" || status === "draft" ? "Continue" : "Review"}
             {open ? <ChevronUp className="h-4 w-4" /> : <ChevronDown className="h-4 w-4" />}
           </button>
         </div>
@@ -1497,7 +1520,6 @@ function FormDocumentCard({
           <FormRenderer
             template={template}
             submission={submissionForRenderer}
-            clientId={clientId}
             documentId={doc.id}
             packageValue={packageValue}
                       prefill={prefill}
