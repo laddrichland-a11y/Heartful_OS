@@ -282,7 +282,7 @@ function buildRecentActivity({
       category: "submission",
       title: "Client submission",
       detail: checkIn.check_in_type === "12_hour" ? "12-hour check-in" : "48-hour reflection",
-      href: `/clients/${client.id}?tab=${encodeURIComponent("Journey & AI")}&stage=post_journey_check_in#check-in`,
+      href: `/clients/${client.id}/check-in`,
       icon: ClipboardCheck,
     });
   }

@@ -96,7 +96,7 @@ export default function DashboardDateStrip({ sessions }: { sessions: (Session & 
         return <div key={session.id} className="dashboard-session-row">
           <div className="dashboard-session-time"><Clock3 aria-hidden="true" /><span>{formatDateTime(session.scheduled_at)}</span></div>
           <Link href={`/clients/${session.client_id}`} className="dashboard-client-link dashboard-session-client"><span className="dashboard-session-avatar" aria-hidden="true">{avatar ? <ClientAvatarImage clientName={session.client_name} src={avatar} width={24} height={24} sizes="24px" />:initials(session.client_name)}</span><span className="dashboard-session-client-name">{session.client_name}</span></Link>
-          <span className="dashboard-session-type">{session.session_type === "other" ? "Completed" : SESSION_TYPE_LABELS[session.session_type] ?? session.session_type.replace(/_/g," ")}</span>
+          <span className="dashboard-session-type">{session.session_type === "other" ? "Follow-Up Call" : SESSION_TYPE_LABELS[session.session_type] ?? session.session_type.replace(/_/g," ")}</span>
           <span className="badge status-pill--success">Scheduled</span>
           <Link href={`/clients/${session.client_id}/sessions/${session.id}`} className="dashboard-row-action">{session.location?.startsWith("http") ? "Join":"Prepare"}<ArrowRight aria-hidden="true" /></Link>
         </div>;

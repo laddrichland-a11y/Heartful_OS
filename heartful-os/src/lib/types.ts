@@ -74,7 +74,10 @@ export type DocumentType =
   | "integration_summary_1"
   | "integration_summary_2"
   | "growth_action_plan"
-  | "other";
+  | "check_in_12hr_form"
+  | "other"
+  // Forms the practitioner builds in Settings → Forms get a unique type.
+  | `custom_${string}`;
 
 export type SessionType =
   | "intake_assessment"
@@ -274,6 +277,10 @@ export interface FormTemplate {
   // by stage in the Documents tab and surface the right forms on the Copilot.
   session_types?: SessionType[];
   sections: FormSection[];
+  /** Built by the practitioner in Settings → Forms (not part of the built-in library). */
+  custom?: boolean;
+  created_at?: string;
+  updated_at?: string;
 }
 
 export interface FormSubmission {
@@ -342,6 +349,8 @@ export interface Recording {
   id: string;
   client_id: string;
   session_id?: string;
+  /** Set instead of session_id for a recording added on a stage page (no session on the calendar yet). */
+  stage?: StageNotesKey;
   /** Cloud Storage object path — not a public URL. A fresh signed download URL is generated on demand (getRecordingDownloadUrl) rather than stored, since signed URLs expire. */
   storage_path: string;
   /** Legacy/optional public URL field — unused by the real upload flow, kept for the Transcript-style shape used elsewhere */
@@ -366,7 +375,41 @@ export interface AiSummary {
   title: string;
   content: Record<string, unknown>;
   model?: string;
+  // The exact notes / transcript text this version was generated from, kept
+  // so every AI version on the record shows what it was based on.
+  source_notes?: string;
   created_at: string;
+}
+
+// Notes typed or uploaded on a stage page (Intake, Preparation, Integration,
+// Growth Plan) before a session for that stage is on the calendar. One
+// running record per client per stage, autosaved as the practitioner types.
+export type StageNotesKey =
+  | "intake"
+  | "preparation"
+  | "journey_day"
+  | "check_in_12hr"
+  | "integration_1"
+  | "integration_2"
+  | "growth_plan";
+
+// Which stage a session belongs to — so notes and recordings added on a stage
+// page BEFORE the session was scheduled still show on that session's page.
+export const SESSION_TYPE_STAGE: Partial<Record<SessionType, StageNotesKey>> = {
+  intake_assessment: "intake",
+  preparation: "preparation",
+  harm_reduction_support: "journey_day",
+  check_in_12hr: "check_in_12hr",
+  integration_1: "integration_1",
+  integration_2: "integration_2",
+};
+
+export interface StageNotes {
+  id: string;
+  client_id: string;
+  stage: StageNotesKey;
+  content: string;
+  updated_at: string;
 }
 
 export interface AiConversationMessage {
@@ -530,6 +573,7 @@ export const DOCUMENT_LABELS: Record<DocumentType, string> = {
   integration_summary_1: "Integration Summary (Session 1)",
   integration_summary_2: "Integration Summary (Session 2)",
   growth_action_plan: "Growth Action Plan",
+  check_in_12hr_form: "12-Hour Check-In",
   other: "Other Document",
 };
 

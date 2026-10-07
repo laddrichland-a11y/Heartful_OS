@@ -30,6 +30,7 @@ export default async function PhasePrepareMe({
   sessionTypeLabel,
   sessionType,
   sessionId: sessionIdProp,
+  readOnly = false,
 }: {
   clientId: string;
   sessionTypeLabel: string;
@@ -37,6 +38,8 @@ export default async function PhasePrepareMe({
   sessionType?: SessionType;
   /** Pass directly when the page has already resolved its session, to skip the extra lookup. */
   sessionId?: string;
+  /** Finished stage: show the briefing that was used (if any) for reference, but no generate/regenerate. */
+  readOnly?: boolean;
 }) {
   const [sessions, summaries, client] = await Promise.all([
     !sessionIdProp && sessionType ? getSessions(clientId) : Promise.resolve(null),
@@ -55,6 +58,7 @@ export default async function PhasePrepareMe({
       clientName={client?.full_name}
       sessionId={sessionId}
       existing={existing}
+      readOnly={readOnly}
     />
   );
 }

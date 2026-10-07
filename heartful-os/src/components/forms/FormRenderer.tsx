@@ -213,7 +213,8 @@ export default function FormRenderer({
   );
 
   const signatureFieldIds = template.sections.flatMap((s) => s.fields.filter((f) => f.type === "signature").map((f) => f.id));
-  const allSignaturesComplete = signatureFieldIds.every((id) => isSignatureComplete(unpackSignature(id, answers)));
+  // A form with no signature field is simply "submitted", not "signed".
+  const allSignaturesComplete = signatureFieldIds.length > 0 && signatureFieldIds.every((id) => isSignatureComplete(unpackSignature(id, answers)));
 
   async function handleSave() {
     if (!onSaveProgress) return;

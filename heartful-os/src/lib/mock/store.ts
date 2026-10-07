@@ -1,4 +1,4 @@
-import { buildSeedData, PRACTITIONER, REFERRAL_SOURCES, SeedBundle } from "./seed";
+import { buildDemoProspects, buildSeedData, PRACTITIONER, REFERRAL_SOURCES, SeedBundle } from "./seed";
 import { buildFormTemplates } from "./formTemplates";
 import {
   AiConversationMessage,
@@ -22,6 +22,7 @@ import {
   Recording,
   Session,
   SessionNote,
+  StageNotes,
   SmsLog,
   Task,
   Transcript,
@@ -53,6 +54,7 @@ class MockStore {
   aiConversationMessages: AiConversationMessage[] = [];
   memory: ClientMemoryItem[] = [];
   sessionNotes: SessionNote[] = [];
+  stageNotes: StageNotes[] = [];
   preparationPlans: PreparationPlan[] = [];
   checkIns: CheckIn[] = [];
   postIntegrationForms: PostIntegrationForm[] = [];
@@ -94,6 +96,7 @@ class MockStore {
       this.portalAssignments.push(...b.portalAssignments);
       this.payments.push(...b.payments);
     }
+    this.prospects.push(...buildDemoProspects());
   }
 
   reset() {
@@ -106,6 +109,7 @@ class MockStore {
     this.aiConversationMessages = [];
     this.memory = [];
     this.sessionNotes = [];
+    this.stageNotes = [];
     this.preparationPlans = [];
     this.checkIns = [];
     this.postIntegrationForms = [];
@@ -143,3 +147,8 @@ if (store.emailLogs === undefined) store.emailLogs = [];
 if (store.prospects === undefined) store.prospects = [];
 if (store.prospectCalls === undefined) store.prospectCalls = [];
 if (store.prospectTranscripts === undefined) store.prospectTranscripts = [];
+if (store.stageNotes === undefined) store.stageNotes = [];
+// Built-in forms added to the code after this dev server started.
+for (const template of buildFormTemplates()) {
+  if (!store.formTemplates.some((t) => t.id === template.id)) store.formTemplates.push(template);
+}

@@ -1,7 +1,6 @@
 "use client";
 
 import { useEffect, useRef, useState } from "react";
-import Link from "next/link";
 import {
   AiSummary,
   ClientDocument,
@@ -13,8 +12,7 @@ import {
 import {
   cx,
   formatDateTime,
-  isGeneralPaperwork,
-  SESSION_TYPE_LABELS,
+    SESSION_TYPE_LABELS,
   withManualNoteAutoTimestamp,
   insertManualNoteTimestamp,
   MANUAL_NOTE_MARKER,
@@ -34,7 +32,6 @@ import {
   Save,
   AlertTriangle,
   X,
-  Upload,
   Music,
   ScrollText,
   MoreHorizontal,
@@ -42,6 +39,9 @@ import {
   ChevronUp,
 } from "@/components/ui/HeartfulIcon";
 import SummaryCard from "@/components/ai/SummaryCard";
+import StageFormsCard from "@/components/client/StageFormsCard";
+import NotesFileUpload, { appendUploadedText } from "@/components/ai/NotesFileUpload";
+import { RecordingsSection } from "@/components/ai/RecordingsPanel";
 import ActionCardHeader from "@/components/client/ActionCardHeader";
 import MilestoneToggleBanner from "@/components/client/MilestoneToggleBanner";
 import JourneyPrepEmailButton from "@/components/client/JourneyPrepEmailButton";
@@ -49,7 +49,6 @@ import JourneySummaryTextButton from "@/components/client/JourneySummaryTextButt
 import JourneyTimingTimeline from "@/components/client/JourneyTimingTimeline";
 import ElapsedTimer from "@/components/client/ElapsedTimer";
 import { useNowTick } from "@/lib/useNowTick";
-import { formTemplateAppliesToSession } from "@/lib/requiredForms";
 import {
   completeSessionAction,
   cancelSessionAction,
@@ -60,7 +59,7 @@ import {
   createRecordingUploadUrlAction,
   addRecordingAction,
   getRecordingDownloadUrlAction,
-  deleteRecordingAction,
+  deleteClientRecordingAction,
   setJourneyMarkerAction,
   updateJourneyMarkerTimeAction,
   updateInitialDoseAmountAction,
@@ -70,11 +69,18 @@ import {
 type JourneyMarker = "started" | "ended" | "booster";
 const BOOSTER_REMINDER_MINUTES = 90;
 
-function formatBytes(bytes?: number): string {
-  if (!bytes && bytes !== 0) return "";
-  if (bytes < 1024) return `${bytes} B`;
-  if (bytes < 1024 * 1024) return `${(bytes / 1024).toFixed(1)} KB`;
-  return `${(bytes / (1024 * 1024)).toFixed(1)} MB`;
+// Notes typed on the stage page before this session was on the calendar.
+// Read-only here; they stay part of the record (never shown to the client).
+function EarlierStageNotes({ notes }: { notes: string }) {
+  if (!notes.trim()) return null;
+  return (
+    <details className="rounded-lg border border-ink-100 bg-white/60 px-3 py-2 text-sm">
+      <summary className="cursor-pointer select-none text-xs font-medium text-ink-500 hover:text-ink-800">
+        Notes added before this session was scheduled
+      </summary>
+      <p className="mt-2 max-h-72 overflow-y-auto whitespace-pre-wrap text-ink-700">{notes}</p>
+    </details>
+  );
 }
 
 export default function SessionDetailWorkspace({
@@ -98,6 +104,7 @@ export default function SessionDetailWorkspace({
   existingManualNotesSummary,
   initialTranscript = "",
   initialRecordings = [],
+  earlierStageNotes = "",
   portalUrl,
   autoPrepare = false,
   stageStatus,
@@ -124,6 +131,8 @@ export default function SessionDetailWorkspace({
   existingManualNotesSummary?: AiSummary;
   initialTranscript?: string;
   initialRecordings?: Recording[];
+  /** Notes typed on this stage's page before the session was scheduled. */
+  earlierStageNotes?: string;
   portalUrl: string;
   autoPrepare?: boolean;
   stageStatus?: "completed" | "current" | "upcoming" | "future";
@@ -188,9 +197,7 @@ export default function SessionDetailWorkspace({
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [transcript]);
 
-  async function handleFileSelected(e: React.ChangeEvent<HTMLInputElement>) {
-    const file = e.target.files?.[0];
-    if (!file) return;
+  async function uploadRecordingFile(file: File) {
     setUploadError(null);
     setUploadBusy(true);
     try {
@@ -230,7 +237,7 @@ export default function SessionDetailWorkspace({
 
   async function removeRecording(rec: Recording) {
     if (!window.confirm(`Delete "${rec.file_name ?? "this recording"}"? This can't be undone.`)) return;
-    await deleteRecordingAction(rec.id, clientId, session.id);
+    await deleteClientRecordingAction(clientId, rec.id);
     setRecordings((prev) => prev.filter((r) => r.id !== rec.id));
   }
 
@@ -281,6 +288,7 @@ export default function SessionDetailWorkspace({
 
   async function deleteManualNotesSummary() {
     if (!manualNotesSummary) return;
+    if (!window.confirm("Delete this archived summary? This can't be undone. Your notes are not affected.")) return;
     await deleteAiSummaryAction(manualNotesSummary.id, clientId);
     setManualNotesSummary(undefined);
   }
@@ -486,11 +494,6 @@ export default function SessionDetailWorkspace({
 
   // Same rule as the phase workspaces: a session shows its own form(s), not
   // the practice-wide agreements that happen to be tagged to intake.
-  const sessionForms = formTemplates.filter(
-    (t) =>
-      formTemplateAppliesToSession(t, session.session_type) &&
-      !isGeneralPaperwork(t.document_type)
-  );
 
   async function generateCallSummary() {
     const combined = [manualNotes, transcript].filter(Boolean).join("\n\n---\n\n");
@@ -517,14 +520,9 @@ export default function SessionDetailWorkspace({
       setLocalCallSummaries((prev) => [json.summary, ...prev]);
       setExpandedCallSummary(json.summary.id);
 
-      // Match the Intake/Preparation flow: a successfully processed draft is
-      // removed, while a failed request leaves it untouched for retry. Journey
-      // Day keeps its shared running transcript because that workspace also
-      // uses it outside this one summary action.
-      if (session.session_type !== "harm_reduction_support") {
-        setTranscript("");
-        await updateSessionTranscriptAction(session.id, clientId, "");
-      }
+      // The transcript is deliberately KEPT after generating: it is part of
+      // the session record (and each summary version also stores the exact
+      // notes it was generated from). It used to be wiped here.
     } catch (error) {
       setCallSummaryError(error instanceof Error ? error.message : "Session summary could not be generated. Try again.");
     } finally {
@@ -534,6 +532,7 @@ export default function SessionDetailWorkspace({
   }
 
   async function deleteCallSummary(summaryId: string) {
+    if (!window.confirm("Delete this summary version? This can't be undone. Your notes and transcript are not affected.")) return;
     await deleteAiSummaryAction(summaryId, clientId);
     setLocalCallSummaries((prev) => prev.filter((cs) => cs.id !== summaryId));
     setNewCallSummary((prev) => (prev?.id === summaryId ? null : prev));
@@ -579,7 +578,7 @@ export default function SessionDetailWorkspace({
               (session.status === "cancelled" || session.status === "no_show") && "bg-ink-100 text-ink-500"
             )}
           >
-            {session.status}
+            {session.status === "no_show" ? "No-show" : session.status.charAt(0).toUpperCase() + session.status.slice(1)}
           </span>
         </div>}
 
@@ -740,6 +739,15 @@ export default function SessionDetailWorkspace({
           />
         </div>
       )}
+      {/* Forms for this session — the same shared list every stage page uses. */}
+      <StageFormsCard
+        clientId={clientId}
+        sessionType={session.session_type}
+        formTemplates={formTemplates}
+        documents={documents}
+        formSubmissions={formSubmissions}
+      />
+
       {session.session_type === "harm_reduction_support" && (
         <div className="card p-4 space-y-3">
           <h3 className="session-panel-heading flex items-center gap-3">
@@ -801,12 +809,11 @@ export default function SessionDetailWorkspace({
 
           <div className="pt-3 border-t border-ink-100 space-y-3">
             <div className="session-transcript-heading-row">
-              <h3 className="session-panel-heading flex items-center gap-3">Transcripts &amp; Recordings</h3>
+              <h3 className="session-panel-heading flex items-center gap-3">Session Transcript</h3>
             </div>
             <p className="text-xs text-ink-400">
-              Paste the transcript from your recording device (Plaud, iPhone Voice Memos, etc.) and/or upload the
-              actual audio file here. This is the single saved source both the Journey Day Summary - Practitioner and
-              the Journey Day Summary - Client below generate from.
+              Paste the transcript from your recording device (Plaud, iPhone Voice Memos, etc.) or upload a transcript
+              file. Together with your Manual Notes, this is what the Journey Day Summary below is generated from.
             </p>
             <textarea
               value={transcript}
@@ -825,51 +832,24 @@ export default function SessionDetailWorkspace({
                 {transcriptSaving ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Save className="h-3.5 w-3.5" />}
                 Save Transcript
               </button>
-              <label className="cursor-pointer">
-                <input
-                  ref={fileInputRef}
-                  type="file"
-                  accept="audio/*"
-                  onChange={handleFileSelected}
-                  disabled={uploadBusy}
-                  className="hidden"
-                />
-                <span className="btn-ghost text-sm px-3 py-1.5 flex items-center gap-1.5">
-                  {uploadBusy ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Upload className="h-3.5 w-3.5" />}
-                  Upload Audio Recording
-                </span>
-              </label>
+              <NotesFileUpload
+                clientId={clientId}
+                label="Upload Transcript File"
+                className="btn-ghost text-sm px-3 py-1.5 flex items-center gap-1.5 cursor-pointer"
+                onText={(text, fileName) => setTranscript((prev) => appendUploadedText(prev, fileName, text))}
+              />
             </div>
-            <div>
-              {uploadError && <p className="text-xs text-red-600 mt-1.5">{uploadError}</p>}
-
-              {recordings.length > 0 && (
-                <div className="mt-3 space-y-1.5">
-                  {recordings.map((rec) => (
-                    <div key={rec.id} className="flex items-center gap-2 text-sm bg-ink-50 rounded-lg px-3 py-2">
-                      <Music className="h-3.5 w-3.5 text-ink-400 shrink-0" />
-                      <span className="text-ink-800 truncate">{rec.file_name ?? "Recording"}</span>
-                      <span className="text-xs text-ink-400 shrink-0">{formatBytes(rec.size_bytes)}</span>
-                      <span className="text-xs text-ink-400 shrink-0 ml-auto">{formatDateTime(rec.created_at)}</span>
-                      <button
-                        onClick={() => playOrDownloadRecording(rec)}
-                        className="text-xs text-clay-600 hover:text-clay-800 shrink-0"
-                      >
-                        Play
-                      </button>
-                      <button
-                        onClick={() => removeRecording(rec)}
-                        className="p-1 rounded hover:bg-ink-100 text-ink-400 hover:text-red-600 shrink-0"
-                        aria-label="Delete recording"
-                      >
-                        <Trash2 className="h-3.5 w-3.5" />
-                      </button>
-                    </div>
-                  ))}
-                </div>
-              )}
-            </div>
+            <RecordingsSection
+              busy={uploadBusy}
+              error={uploadError}
+              recordings={recordings}
+              onFile={(file) => void uploadRecordingFile(file)}
+              onPlay={playOrDownloadRecording}
+              onRemove={removeRecording}
+            />
           </div>
+
+          <EarlierStageNotes notes={earlierStageNotes} />
 
           {/* One summary per session, shared by practitioner and client — see
               the note on generateCallSummary. Any Practitioner Summary
@@ -879,6 +859,7 @@ export default function SessionDetailWorkspace({
               title="Journey Day Summary - Practitioner (archived)"
               content={manualNotesSummary.content}
               model={manualNotesSummary.model}
+                sourceNotes={manualNotesSummary.source_notes}
               onDelete={deleteManualNotesSummary}
               onSave={saveManualNotesSummary}
             />
@@ -927,6 +908,7 @@ export default function SessionDetailWorkspace({
                           title={cs.title}
                           content={cs.content}
                           model={cs.model}
+                sourceNotes={cs.source_notes}
                           onDelete={() => deleteCallSummary(cs.id)}
                           onSave={(next) => saveCallSummary(cs.id, next)}
                         />
@@ -942,6 +924,7 @@ export default function SessionDetailWorkspace({
                 title={newCallSummary.title}
                 content={newCallSummary.content}
                 model={newCallSummary.model}
+                sourceNotes={newCallSummary.source_notes}
                 onDelete={() => deleteCallSummary(newCallSummary.id)}
                 onSave={(next) => saveCallSummary(newCallSummary.id, next)}
               />
@@ -1025,6 +1008,7 @@ export default function SessionDetailWorkspace({
                       title="AI Session Brief"
                       content={pb.content}
                       model={pb.model}
+                sourceNotes={pb.source_notes}
                       onSave={(next) => savePastBriefing(pb.id, next)}
                     />
                   </div>
@@ -1064,6 +1048,7 @@ export default function SessionDetailWorkspace({
                       title={ps.title}
                       content={ps.content}
                       model={ps.model}
+                sourceNotes={ps.source_notes}
                       onDelete={() => deletePrimarySummary(ps.id)}
                       onSave={(next) => savePrimarySummary(ps.id, next)}
                       variant={ps.summary_type === "client_assessment_summary" ? "assessment" : ps.summary_type === "journey_brief" ? "journey" : "analysis"}
@@ -1107,9 +1092,30 @@ export default function SessionDetailWorkspace({
               value={transcript}
               onChange={(e) => setTranscript(e.target.value)}
               rows={6}
-              placeholder="Paste the full transcript here…"
+              placeholder="Type or paste your notes / the full transcript here, or upload a .txt, .pdf or .docx file…"
               className="w-full border border-ink-200 rounded-xl px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-clay-200 resize-y"
             />
+            <div className="flex flex-wrap items-center gap-2">
+              <span className="text-xs text-ink-400" role="status">
+                {transcriptSaving ? "Saving…" : transcriptSaved ? "Saved to the session record" : "Saved automatically as you type"}
+              </span>
+              <span className="ml-auto flex items-center gap-2">
+                <NotesFileUpload
+                  clientId={clientId}
+                  onText={(text, fileName) => setTranscript((prev) => appendUploadedText(prev, fileName, text))}
+                />
+              </span>
+            </div>
+            <RecordingsSection
+              busy={uploadBusy}
+              error={uploadError}
+              recordings={recordings}
+              onFile={(file) => void uploadRecordingFile(file)}
+              onPlay={playOrDownloadRecording}
+              onRemove={removeRecording}
+            />
+            <EarlierStageNotes notes={earlierStageNotes} />
+            {callSummaryError && <p role="alert" className="text-sm text-red-600">{callSummaryError}</p>}
           </div>
 
           {manualNotesSummary && (
@@ -1117,6 +1123,7 @@ export default function SessionDetailWorkspace({
               title={`${label} Summary - Practitioner (archived)`}
               content={manualNotesSummary.content}
               model={manualNotesSummary.model}
+                sourceNotes={manualNotesSummary.source_notes}
               onDelete={deleteManualNotesSummary}
               onSave={saveManualNotesSummary}
             />
@@ -1159,6 +1166,7 @@ export default function SessionDetailWorkspace({
                             title={cs.title}
                             content={cs.content}
                             model={cs.model}
+                sourceNotes={cs.source_notes}
                             onDelete={() => deleteCallSummary(cs.id)}
                             onSave={(next) => saveCallSummary(cs.id, next)}
                           />
@@ -1174,6 +1182,7 @@ export default function SessionDetailWorkspace({
                   title={newCallSummary.title}
                   content={newCallSummary.content}
                   model={newCallSummary.model}
+                sourceNotes={newCallSummary.source_notes}
                   onDelete={() => deleteCallSummary(newCallSummary.id)}
                   onSave={(next) => saveCallSummary(newCallSummary.id, next)}
                 />
@@ -1183,49 +1192,6 @@ export default function SessionDetailWorkspace({
         </>
       )}
 
-      {/* Related forms */}
-      {sessionForms.length > 0 && (
-        <div className="card p-4">
-          <h3 className="session-panel-heading mb-3 flex items-center gap-3">
-            <FileText className="h-4 w-4 text-ink-400" />
-            Forms for This Session
-          </h3>
-          <div className="space-y-2">
-            {sessionForms.map((tmpl) => {
-              const doc = documents.find((d) => d.document_type === tmpl.document_type);
-              const sub = doc ? formSubmissions.find((fs) => fs.document_id === doc.id) : undefined;
-              const docStatus = sub?.status ?? (doc ? doc.status : "missing");
-              const isComplete = docStatus === "signed" || docStatus === "submitted";
-              const inner = (
-                <>
-                  <div className="flex items-center gap-2">
-                    <FileText className={cx("h-4 w-4 shrink-0", isComplete ? "text-sage-500" : "text-amber-500")} />
-                    <span className="text-sm text-ink-800">{tmpl.title}</span>
-                  </div>
-                  <div className="flex items-center gap-2">
-                    <span className={cx("badge text-xs", isComplete ? "bg-sage-100 text-sage-700" : "bg-amber-50 text-amber-700")}>
-                      {isComplete ? "Done" : docStatus === "in_progress" ? "In progress" : "Not started"}
-                    </span>
-                  </div>
-                </>
-              );
-              return doc ? (
-                <Link
-                  key={tmpl.id}
-                  href={`/clients/${clientId}/forms/${doc.id}`}
-                  className="flex items-center justify-between py-2 border-b border-ink-100 last:border-0 -mx-2 px-2 rounded-lg hover:bg-clay-50 transition-colors"
-                >
-                  {inner}
-                </Link>
-              ) : (
-                <div key={tmpl.id} className="flex items-center justify-between py-2 border-b border-ink-100 last:border-0">
-                  {inner}
-                </div>
-              );
-            })}
-          </div>
-        </div>
-      )}
     </div>
   );
 }

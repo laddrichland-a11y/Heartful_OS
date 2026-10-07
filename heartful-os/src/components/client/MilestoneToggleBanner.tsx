@@ -54,6 +54,16 @@ export default function MilestoneToggleBanner({
     return () => window.cancelAnimationFrame(frame);
   }, [autoPrepare, briefing, prepareButtonId, showPrepare]);
 
+  // Esc closes the briefing dialog.
+  useEffect(() => {
+    if (!briefingOpen) return;
+    function onKey(event: KeyboardEvent) {
+      if (event.key === "Escape") setBriefingOpen(false);
+    }
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, [briefingOpen]);
+
   function toggle() {
     const next = !completed;
     setCompleted(next);
@@ -114,6 +124,10 @@ export default function MilestoneToggleBanner({
             </header>
             <SessionBriefContent content={briefing.content} />
             <footer className="prepare-brief-dialog-footer">
+              {/* A long brief scrolls the header's X out of view — always offer a close here too. */}
+              <button type="button" onClick={() => setBriefingOpen(false)} className="btn-secondary flex items-center gap-2 text-xs">
+                <X className="h-4 w-4" aria-hidden="true" /> Close
+              </button>
               <AiGenerateButton
                 clientId={clientId}
                 summaryType="prepare_me_briefing"

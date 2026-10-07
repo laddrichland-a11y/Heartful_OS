@@ -43,7 +43,7 @@ type ClientOption = { id: string; full_name: string };
 const SESSION_TYPE_OPTIONS: { value: SessionType; label: string }[] = [
   { value: "intake_assessment", label: "Intake Assessment" },
   { value: "preparation", label: "Preparation" },
-  { value: "harm_reduction_support", label: "Journey Day (Harm Reduction Support)" },
+  { value: "harm_reduction_support", label: "Journey Day" },
   { value: "check_in_12hr", label: "12-Hour Check-In" },
   { value: "integration_1", label: "Integration Session 1" },
   { value: "integration_2", label: "Integration Session 2" },
@@ -66,6 +66,12 @@ const CALL_TYPE_LABELS: Record<ProspectCall["call_type"], string> = {
  */
 function prospectCallHref(c: ProspectCall): string {
   return c.client_id ? `/clients/${c.client_id}` : `/prospects/${c.prospect_id}`;
+}
+
+/** "scheduled" → "Scheduled", "no_show" → "No-show" — matches badge casing elsewhere. */
+function sessionStatusLabel(status: string) {
+  if (status === "no_show") return "No-show";
+  return status.charAt(0).toUpperCase() + status.slice(1).replace(/_/g, " ");
 }
 
 function statusBadgeClass(status: Session["status"]) {
@@ -656,7 +662,7 @@ function SessionDetailPanel({
         <div className="flex-1 space-y-2">
           <div className="flex items-center gap-2 flex-wrap pt-1">
             <span className="text-sm font-semibold text-ink-900">{typeLabel(session.session_type)}</span>
-            <span className={cx("badge", statusBadgeClass(session.status))}>{session.status.charAt(0).toUpperCase() + session.status.slice(1)}</span>
+            <span className={cx("badge", statusBadgeClass(session.status))}>{sessionStatusLabel(session.status)}</span>
           </div>
 
           <div className="space-y-1 text-sm text-ink-600">
@@ -780,7 +786,7 @@ function SessionRow({
           >
             {session.client_name}
           </Link>
-          <span className={cx("badge shrink-0", statusBadgeClass(session.status))}>{session.status}</span>
+          <span className={cx("badge shrink-0", statusBadgeClass(session.status))}>{sessionStatusLabel(session.status)}</span>
         </div>
         <div className="text-xs text-ink-500 truncate">
           {typeLabel(session.session_type)} · {formatDateTime(session.scheduled_at)}

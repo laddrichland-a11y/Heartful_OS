@@ -10,12 +10,15 @@ import {
   getMilestones,
   getPractitioner,
   getRecordings,
+  getStageNotes,
+  getStageRecordings,
   getReferralSources,
+  ensureClientFormDocuments,
 } from "@/lib/data";
 import { notFound } from "next/navigation";
 import SessionDetailWorkspace from "@/components/client/SessionDetailWorkspace";
 import ClientPhaseNav from "@/components/client/ClientPhaseNav";
-import { AiSummaryType, SessionType } from "@/lib/types";
+import { AiSummaryType, SESSION_TYPE_STAGE, SessionType } from "@/lib/types";
 import { headers } from "next/headers";
 import ClientHeader from "@/components/client/ClientHeader";
 import ClientPhaseWorkspace from "@/components/client/ClientPhaseWorkspace";
@@ -64,6 +67,9 @@ export default async function SessionDetailPage({
   searchParams: Promise<{ prepare?: string }>;
 }) {
   const { id, sessionId } = await params;
+  // Attach any Form Library form this client doesn't have yet (e.g. one
+  // added after they became a client) so it shows under Forms for This Session.
+  await ensureClientFormDocuments(id);
   const { prepare } = await searchParams;
   const [client, session] = await Promise.all([getClient(id), getSession(sessionId)]);
   if (!client || !session) notFound();
@@ -85,6 +91,14 @@ export default async function SessionDetailPage({
       getRecordings(id, sessionId),
       getReferralSources(),
     ]);
+
+  // Notes and recordings added on this stage's page before the session was
+  // on the calendar — shown here so nothing disappears once it's scheduled.
+  const stageKey = SESSION_TYPE_STAGE[session.session_type];
+  const [earlierStageNotes, earlierStageRecordings] = stageKey
+    ? await Promise.all([getStageNotes(id, stageKey), getStageRecordings(id, stageKey)])
+    : [undefined, []];
+  const allRecordings = [...recordings, ...earlierStageRecordings].sort((a, b) => (a.created_at < b.created_at ? 1 : -1));
 
   // Earliest still-scheduled session after this one (e.g. the 12hr check-in
   // after Journey Day) — used as the "we'll talk again on ___" line in the
@@ -160,7 +174,8 @@ export default async function SessionDetailPage({
         initialManualNotes={session.manual_notes ?? ""}
         existingManualNotesSummary={manualNotesSummaries[0]}
         initialTranscript={session.transcript ?? ""}
-        initialRecordings={recordings}
+        initialRecordings={allRecordings}
+        earlierStageNotes={earlierStageNotes?.content ?? ""}
         portalUrl={portalUrl}
         autoPrepare={prepare === "1"}
       />

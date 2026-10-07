@@ -93,6 +93,7 @@ export default function JourneyAiSummaries({ clientId, initialSummaries, checkIn
             {menu(current)}
           </div>
           <SummaryContent content={current.content} />
+          <SourceNotesDetails notes={current.source_notes} />
         </article>
       ) : null}
 
@@ -111,6 +112,7 @@ export default function JourneyAiSummaries({ clientId, initialSummaries, checkIn
                       </time>
                     </summary>
                     <SummaryContent content={summary.content} />
+                    <SourceNotesDetails notes={summary.source_notes} />
                   </details>
                   {menu(summary)}
                 </div>
@@ -120,5 +122,17 @@ export default function JourneyAiSummaries({ clientId, initialSummaries, checkIn
         </details>
       )}
     </section>
+  );
+}
+
+function SourceNotesDetails({ notes }: { notes?: string }) {
+  if (!notes?.trim()) return null;
+  return (
+    <details className="mt-3 rounded-lg border border-ink-100 bg-white/60 px-3 py-2 text-sm">
+      <summary className="cursor-pointer select-none text-xs font-medium text-ink-500 hover:text-ink-800">
+        Notes this version was generated from
+      </summary>
+      <p className="mt-2 max-h-72 overflow-y-auto whitespace-pre-wrap text-ink-700">{notes}</p>
+    </details>
   );
 }

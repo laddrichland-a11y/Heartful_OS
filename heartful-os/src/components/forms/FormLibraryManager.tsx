@@ -5,8 +5,9 @@ import { useRouter } from "next/navigation";
 import { FormTemplate, DOCUMENT_LABELS } from "@/lib/types";
 import { cx } from "@/lib/utils";
 import { setFormTemplateFlagsAction, resyncFormTemplatesAction } from "@/lib/actions";
-import { FileText, ChevronDown, ChevronUp, ShieldCheck, ShieldOff, RefreshCw } from "@/components/ui/HeartfulIcon";
+import { FileText, ChevronDown, ChevronUp, ShieldCheck, ShieldOff, RefreshCw, Plus, Pencil } from "@/components/ui/HeartfulIcon";
 import FormRenderer from "./FormRenderer";
+import FormTemplateEditor, { FORM_STAGE_CHOICES } from "./FormTemplateEditor";
 
 // Form Library: lets a practitioner see every codified consent/intake template
 // and control which ones auto-attach to new clients. Toggling "Required" +
@@ -16,6 +17,7 @@ export default function FormLibraryManager({ templates }: { templates: FormTempl
   const router = useRouter();
   const [pending, startTransition] = useTransition();
   const [done, setDone] = useState(false);
+  const [creating, setCreating] = useState(false);
 
   function handleResync() {
     setDone(false);
@@ -29,10 +31,18 @@ export default function FormLibraryManager({ templates }: { templates: FormTempl
   return (
     <div className="space-y-4 max-w-4xl">
       <div className="card p-4 bg-clay-50/60 border-clay-100 text-sm text-ink-600">
-        Templates marked <strong>Required</strong> and <strong>Active</strong> are automatically attached to every new
-        client&apos;s record — there&apos;s no per-client picking. Mark a template inactive to retire it without deleting
-        history from clients who already have it.
+        Each form belongs to one or more <strong>stages</strong> and appears under &quot;Forms for This Session&quot; on those
+        stage and session pages. Forms marked <strong>Required</strong> and <strong>Active</strong> are attached to every
+        client automatically — current clients and new ones. Mark a form inactive to retire it without deleting history
+        from clients who already have it.
       </div>
+      {creating ? (
+        <FormTemplateEditor onClose={() => setCreating(false)} />
+      ) : (
+        <button type="button" onClick={() => setCreating(true)} className="btn-primary inline-flex items-center gap-2 text-sm px-4 py-2">
+          <Plus className="h-4 w-4" /> New Form
+        </button>
+      )}
       <div className="flex items-center justify-between gap-3">
         <p className="text-xs text-ink-400">
           Form wording/fields are stored once and don&apos;t update automatically after a fix ships — use this if a form
@@ -60,6 +70,7 @@ export default function FormLibraryManager({ templates }: { templates: FormTempl
 
 function TemplateCard({ template }: { template: FormTemplate }) {
   const [open, setOpen] = useState(false);
+  const [editing, setEditing] = useState(false);
   const [required, setRequired] = useState(template.required);
   const [active, setActive] = useState(template.active);
   const [busy, setBusy] = useState<"required" | "active" | null>(null);
@@ -84,10 +95,22 @@ function TemplateCard({ template }: { template: FormTemplate }) {
           <div className="min-w-0">
             <div className="font-medium text-sm text-ink-900">{template.title}</div>
             <div className="text-xs text-ink-400 mt-0.5">
-              {DOCUMENT_LABELS[template.document_type] ?? template.document_type} · {template.sections.length} sections ·{" "}
+              {template.custom ? "Built by you" : DOCUMENT_LABELS[template.document_type] ?? template.title} · {template.sections.length} sections ·{" "}
               {fieldCount} fields
             </div>
             {template.description && <p className="text-xs text-ink-500 mt-1.5 leading-relaxed">{template.description}</p>}
+            <div className="mt-2 flex flex-wrap items-center gap-1.5">
+              {template.custom && <span className="badge bg-plum-50 text-plum-700">Your form</span>}
+              {(template.session_types ?? []).length === 0 ? (
+                <span className="badge bg-amber-50 text-amber-700">No stage chosen</span>
+              ) : (
+                (template.session_types ?? []).map((st) => (
+                  <span key={st} className="badge bg-ink-100 text-ink-600">
+                    {FORM_STAGE_CHOICES.find((c) => c.value === st)?.label ?? st.replace(/_/g, " ")}
+                  </span>
+                ))
+              )}
+            </div>
           </div>
         </div>
         <div className="flex items-center gap-2 shrink-0">
@@ -99,6 +122,15 @@ function TemplateCard({ template }: { template: FormTemplate }) {
           />
           <ToggleBadge label="Active" active={active} busy={busy === "active"} onClick={() => toggle("active")} />
           <button
+            type="button"
+            onClick={() => setEditing((e) => !e)}
+            className="btn-ghost p-1.5"
+            aria-label={`Edit ${template.title}`}
+            title={template.custom ? "Edit form" : "Edit stages"}
+          >
+            <Pencil className="h-4 w-4 text-ink-400" />
+          </button>
+          <button
             onClick={() => setOpen((o) => !o)}
             className="btn-ghost p-1.5"
             aria-label={open ? "Collapse preview" : "Expand preview"}
@@ -107,6 +139,11 @@ function TemplateCard({ template }: { template: FormTemplate }) {
           </button>
         </div>
       </div>
+      {editing && (
+        <div className="px-4 pb-4 border-t border-ink-100 pt-4">
+          <FormTemplateEditor template={template} onClose={() => setEditing(false)} />
+        </div>
+      )}
       {open && (
         <div className="px-4 pb-4 border-t border-ink-100 pt-4 bg-ink-50/30">
           <div className="text-xs text-ink-400 mb-3">Preview — read-only, shown as the client would see it.</div>

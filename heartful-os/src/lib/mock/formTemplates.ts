@@ -693,5 +693,32 @@ export function buildFormTemplates(): FormTemplate[] {
         },
       ],
     },
+
+    // -------------------------------------------------------------------
+    // 9. 12-Hour Check-In
+    // -------------------------------------------------------------------
+    {
+      id: "tmpl_check_in_12hr_form",
+      document_type: "check_in_12hr_form",
+      title: "12-Hour Check-In",
+      description: "How things feel about 12 hours after the journey — filled in by the client or during the check-in call.",
+      required: true,
+      active: true,
+      session_types: ["check_in_12hr"],
+      sections: [
+        {
+          id: "check_in",
+          title: "How are you doing?",
+          body: "Take your time. There are no right answers — this just helps your guide support you well over the next few days.",
+          fields: [
+            { id: "emotional_state", type: "long_text", label: "Emotional state — how are you feeling emotionally?" },
+            { id: "physical_state", type: "long_text", label: "Physical state — how is your body feeling (sleep, appetite, energy)?" },
+            { id: "immediate_insights", type: "long_text", label: "Immediate insights — anything from the journey that's staying with you?" },
+            { id: "support_needs", type: "long_text", label: "Support needs — what would help you right now?" },
+            { id: "safety_concerns", type: "long_text", label: "Safety concerns — anything worrying you, or anything your guide should know?" },
+          ],
+        },
+      ],
+    },
   ];
 }

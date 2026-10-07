@@ -50,3 +50,6 @@ firebase-service-account*.json
 # scratch typecheck configs (tsconfig.check*.json) and local junk drawer
 tsconfig.check*.json
 _to_delete/
+
+# recordings saved by the local demo copy
+.local-recordings

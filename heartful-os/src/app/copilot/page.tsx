@@ -24,7 +24,7 @@ export default async function CopilotPage() {
           clientName: s.client_name,
           label:
             s.session_type === "other" && completedJourneyClients.has(s.client_id)
-              ? "Completed"
+              ? "Follow-Up Call"
               : SESSION_LABELS[s.session_type] ?? s.session_type,
           scheduledAt: s.scheduled_at ?? new Date().toISOString(),
         }))}

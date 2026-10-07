@@ -20,8 +20,9 @@ import {
   getCheckIns,
   completeMilestone,
   syncJourneyProgressFromMilestones,
+  saveStageNotes,
 } from "@/lib/data";
-import { AiSummary, AiSummaryType, ClientDocument, FormSubmission, FormTemplate, JourneyPhase, Session, SessionType } from "@/lib/types";
+import { AiSummary, AiSummaryType, StageNotesKey, ClientDocument, FormSubmission, FormTemplate, JourneyPhase, Session, SessionType } from "@/lib/types";
 import { journeyCompletionIssue, type JourneyCompletionMilestoneKey } from "@/lib/utils";
 import { authorizationResponse, requireClientAccess } from "@/lib/serverAuth";
 import { formTemplateSessionTypes, submittedFormText } from "@/lib/requiredForms";
@@ -107,7 +108,11 @@ interface GenerateRequest {
   integrationSession?: 1 | 2;
   /** Requests a fresh alternative rather than reusing an existing briefing. */
   regenerate?: boolean;
+  /** Stage page the notes came from — they're saved to the record first. */
+  stageNotesKey?: StageNotesKey;
 }
+
+const STAGE_NOTES_KEYS: StageNotesKey[] = ["intake", "preparation", "journey_day", "check_in_12hr", "integration_1", "integration_2", "growth_plan"];
 
 async function stageCompletionError(
   clientId: string,
@@ -139,12 +144,20 @@ export async function POST(req: NextRequest) {
   try {
     const body = (await req.json()) as GenerateRequest;
     const { clientId, summaryType } = body;
+    // Kept on each generated version so the record always shows exactly
+    // which notes / transcript that version came from.
+    const sourceNotes = body.transcript?.trim() ? body.transcript : undefined;
     if (!clientId || !summaryType) {
       return NextResponse.json({ error: "clientId and summaryType are required" }, { status: 400 });
     }
     const { client } = await requireClientAccess(clientId);
     if (body.sessionId && !(await getSessions(clientId)).some((session) => session.id === body.sessionId)) {
       return NextResponse.json({ error: "Session does not belong to this client." }, { status: 403 });
+    }
+    // Save the stage page's notes to the client record BEFORE asking the AI,
+    // so they're kept even if generation fails.
+    if (body.stageNotesKey && STAGE_NOTES_KEYS.includes(body.stageNotesKey) && typeof body.transcript === "string") {
+      await saveStageNotes(clientId, body.stageNotesKey, body.transcript);
     }
 
     switch (summaryType) {
@@ -154,7 +167,7 @@ export async function POST(req: NextRequest) {
       if (completionError) return completionError;
       const prompt = prompts.buildAssessmentSummaryPrompt(transcript, client.full_name);
       const { data, model } = await runAiJson(prompt, () => mocks.mockAssessmentSummary(transcript, client.full_name));
-      const summary = await addAiSummary(clientId, summaryType, "Client Assessment Summary", data, model);
+      const summary = await addAiSummary(clientId, summaryType, "Client Assessment Summary", data, model, undefined, undefined, sourceNotes);
       await addMemoryItems(clientId, [
         { item_type: "challenge", content: String((data as Record<string, unknown>).potential_risk_factors ?? ""), phase: "intake" },
       ]);
@@ -174,7 +187,7 @@ export async function POST(req: NextRequest) {
         : "No preparation plan recorded yet.";
       const prompt = prompts.buildJourneyBriefPrompt(transcript, client.full_name, planSummary);
       const { data, model } = await runAiJson(prompt, () => mocks.mockJourneyBrief(client.full_name));
-      const summary = await addAiSummary(clientId, summaryType, "Journey Brief", data, model);
+      const summary = await addAiSummary(clientId, summaryType, "Journey Brief", data, model, undefined, undefined, sourceNotes);
       await completeJourneyStage(clientId, "preparation_complete");
       return NextResponse.json({ summary });
     }
@@ -184,7 +197,7 @@ export async function POST(req: NextRequest) {
       if (completionError) return completionError;
       const prompt = prompts.buildJourneySummaryPrompt(notes, client.full_name);
       const { data, model } = await runAiJson(prompt, () => mocks.mockJourneySummary(client.full_name));
-      const summary = await addAiSummary(clientId, summaryType, "Journey Summary", data, model);
+      const summary = await addAiSummary(clientId, summaryType, "Journey Summary", data, model, undefined, undefined, sourceNotes);
       await completeJourneyStage(clientId, "journey_complete");
       return NextResponse.json({ summary });
     }
@@ -199,30 +212,44 @@ export async function POST(req: NextRequest) {
         `${sessionTypeLabel} Summary - Practitioner`,
         data,
         model,
-        body.sessionId
+        body.sessionId,
+        undefined,
+        sourceNotes
       );
       return NextResponse.json({ summary });
     }
     case "check_in_12hr_summary": {
-      const checkIns = await getCheckIns(clientId);
+      // Three possible sources, all used when present: the 12-Hour Check-In
+      // form (Forms for This Session), a check-in recorded the older way,
+      // and the practitioner's notes/transcript from the check-in call.
+      const [checkIns, documents, formTemplates, formSubmissions] = await Promise.all([
+        getCheckIns(clientId),
+        getDocuments(clientId),
+        getFormTemplates(),
+        getFormSubmissionsForClient(clientId),
+      ]);
       const latest = checkIns[checkIns.length - 1];
-      const hasSubmittedContent = Boolean(
-        latest?.submitted_at && [
-          latest.emotional_state,
-          latest.physical_state,
-          latest.immediate_insights,
-          latest.support_needs,
-          latest.safety_concerns,
-        ].some((value) => value?.trim()),
-      );
-      const completionError = await stageCompletionError(clientId, "check_in_12hr_complete", hasSubmittedContent);
+      const legacyText = latest?.submitted_at
+        ? [
+            ["Emotional State", latest.emotional_state],
+            ["Physical State", latest.physical_state],
+            ["Immediate Insights", latest.immediate_insights],
+            ["Support Needs", latest.support_needs],
+            ["Safety Concerns", latest.safety_concerns],
+          ].filter(([, v]) => v?.trim()).map(([k, v]) => `${k}: ${v}`).join("\n")
+        : "";
+      const formText = submittedFormText("check_in_12hr_form", formTemplates, documents, formSubmissions) ?? "";
+      const notes = body.transcript ?? "";
+      const checkInData = [
+        formText && `Check-In Form:\n${formText}`,
+        legacyText && `Check-In (recorded earlier):\n${legacyText}`,
+        notes.trim() && `Practitioner's check-in call notes / transcript:\n${notes}`,
+      ].filter(Boolean).join("\n\n");
+      const completionError = await stageCompletionError(clientId, "check_in_12hr_complete", Boolean(checkInData.trim()));
       if (completionError) return completionError;
-      const checkInData = latest
-        ? `Emotional State: ${latest.emotional_state}\nPhysical State: ${latest.physical_state}\nImmediate Insights: ${latest.immediate_insights}\nSupport Needs: ${latest.support_needs}\nSafety Concerns: ${latest.safety_concerns}`
-        : "No check-in data submitted.";
       const prompt = prompts.buildCheckInSummaryPrompt(checkInData, client.full_name);
       const { data, model } = await runAiJson(prompt, () => mocks.mockCheckInSummary(client.full_name));
-      const summary = await addAiSummary(clientId, summaryType, "12-Hour Check-In Summary", data, model);
+      const summary = await addAiSummary(clientId, summaryType, "12-Hour Check-In Summary", data, model, undefined, undefined, checkInData);
       await completeJourneyStage(clientId, "check_in_12hr_complete");
       return NextResponse.json({ summary });
     }
@@ -247,7 +274,7 @@ export async function POST(req: NextRequest) {
         client.full_name
       );
       const { data, model } = await runAiJson(prompt, () => mocks.mockIntegration1Brief(client.full_name));
-      const summary = await addAiSummary(clientId, summaryType, "Integration Session One Brief", data, model);
+      const summary = await addAiSummary(clientId, summaryType, "Integration Session One Brief", data, model, undefined, undefined, sourceNotes);
       return NextResponse.json({ summary });
     }
     case "integration_summary": {
@@ -258,7 +285,7 @@ export async function POST(req: NextRequest) {
       if (completionError) return completionError;
       const prompt = prompts.buildIntegrationSummaryPrompt(sessionNumber, transcript, client.full_name);
       const { data, model } = await runAiJson(prompt, () => mocks.mockIntegrationSummary(sessionNumber, client.full_name));
-      const summary = await addAiSummary(clientId, summaryType, `Integration Summary ${sessionNumber}`, data, model);
+      const summary = await addAiSummary(clientId, summaryType, `Integration Summary ${sessionNumber}`, data, model, undefined, undefined, sourceNotes);
       await completeJourneyStage(clientId, milestoneKey);
       return NextResponse.json({ summary });
     }
@@ -307,7 +334,7 @@ export async function POST(req: NextRequest) {
         reflection_questions: string[];
         accountability_commitments: string[];
       }>(prompt, () => mocks.mockGrowthActionPlan(client.full_name));
-      const summary = await addAiSummary(clientId, summaryType, "Growth Action Plan", data, model);
+      const summary = await addAiSummary(clientId, summaryType, "Growth Action Plan", data, model, undefined, undefined, sourceNotes);
       await setGrowthActionPlan(clientId, data);
       await completeJourneyStage(clientId, "growth_action_plan_complete");
       return NextResponse.json({ summary });
@@ -422,7 +449,7 @@ export async function POST(req: NextRequest) {
       // the one summary of record for EVERY session type, shown to the
       // practitioner and to the client, so a Preparation session's summary
       // should not be labelled "Journey Day".
-      const summary = await addAiSummary(clientId, summaryType, `${label} Summary`, data, model, body.sessionId);
+      const summary = await addAiSummary(clientId, summaryType, `${label} Summary`, data, model, body.sessionId, undefined, sourceNotes);
       return NextResponse.json({ summary });
     }
       default:

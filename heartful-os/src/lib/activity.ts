@@ -14,7 +14,7 @@ import {
   Task,
   FormSubmission,
 } from "@/lib/types";
-import { journeyStageLabelForMilestone } from "@/lib/utils";
+import { journeyStageLabelForMilestone, SESSION_TYPE_LABELS } from "@/lib/utils";
 
 // Builds a single chronological activity feed for a client out of records
 // that already live in separate tabs (sessions, documents, messages, etc).
@@ -75,7 +75,7 @@ function aiSummaryDestination(
     case "journey_summary":
       return { href: `/clients/${clientId}/journey-day` };
     case "check_in_12hr_summary":
-      return { href: `/clients/${clientId}?tab=Journey%20%26%20AI&stage=post_journey_check_in#check-in` };
+      return { href: `/clients/${clientId}/check-in` };
     case "integration_1_brief":
       return { href: `/clients/${clientId}/integration-1` };
     case "integration_summary":
@@ -124,7 +124,7 @@ export function buildClientActivity(input: {
 
   for (const s of input.sessions) {
     if (!s.scheduled_at) continue;
-    const typeLabel = s.session_type.replace(/_/g, " ");
+    const typeLabel = SESSION_TYPE_LABELS[s.session_type] ?? s.session_type.replace(/_/g, " ");
     const sessionHref = `/clients/${cid}/sessions/${s.id}`;
     if (s.status === "completed") {
       events.push({
@@ -261,7 +261,7 @@ export function buildClientActivity(input: {
         at: c.submitted_at,
         kind: "check_in",
         title: `${c.check_in_type === "12_hour" ? "12-Hour" : "48-Hour"} check-in submitted`,
-        href: `/clients/${cid}?tab=Journey%20%26%20AI&stage=post_journey_check_in#check-in`,
+        href: `/clients/${cid}/check-in`,
       });
     }
   }

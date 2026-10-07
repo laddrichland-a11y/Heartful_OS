@@ -8,6 +8,9 @@ import {
   getMilestones,
   getSessions,
   pickPhaseSession,
+  getStageNotes,
+  getStageRecordings,
+  ensureClientFormDocuments,
 } from "@/lib/data";
 import { notFound, redirect } from "next/navigation";
 import PreparationWorkspace from "@/components/client/PreparationWorkspace";
@@ -21,16 +24,21 @@ export const dynamic = "force-dynamic";
 
 export default async function PreparationPage({ params }: { params: Promise<{ id: string }> }) {
   const { id } = await params;
+  // Attach any Form Library form this client doesn't have yet (e.g. one
+  // added after they became a client) so it shows under Forms for This Session.
+  await ensureClientFormDocuments(id);
   const client = await getClient(id);
   if (!client) notFound();
 
-  const [summaries, documents, formTemplates, formSubmissions, milestones, sessions] = await Promise.all([
+  const [summaries, documents, formTemplates, formSubmissions, milestones, sessions, stageNotes, stageRecordings] = await Promise.all([
     getAiSummaries(id, "journey_brief"),
     getDocuments(id),
     getFormTemplates(),
     getFormSubmissionsForClient(id),
     getMilestones(id),
     getSessions(id),
+    getStageNotes(id, "preparation"),
+    getStageRecordings(id, "preparation"),
   ]);
 
   const session = pickPhaseSession(sessions, "preparation");
@@ -53,14 +61,16 @@ export default async function PreparationPage({ params }: { params: Promise<{ id
         canMarkComplete={stage.canMarkComplete}
         canPrepare={stage.canPrepare}
       />
-      {stage.canPrepare && <PhasePrepareMe clientId={id} sessionTypeLabel="Preparation" sessionType="preparation" />}
+      <PhasePrepareMe readOnly={!stage.canPrepare} clientId={id} sessionTypeLabel="Preparation" sessionType="preparation" />
       <PreparationWorkspace
         clientId={id}
         clientName={client.full_name}
         documents={documents}
         formTemplates={formTemplates}
         formSubmissions={formSubmissions}
-        existingBrief={summaries[0]}
+        existingBriefs={summaries}
+        initialNotes={stageNotes?.content ?? ""}
+        initialRecordings={stageRecordings}
         canCompleteStage={stage.canCompleteStage}
       />
       </ClientPhaseWorkspace>

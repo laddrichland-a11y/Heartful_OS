@@ -3,19 +3,18 @@
 import { useState } from "react";
 import {
   AiSummary,
+  Recording,
   ClientDocument,
   FormSubmission,
   FormTemplate,
-  DOCUMENT_LABELS,
 } from "@/lib/types";
 import TranscriptInput from "@/components/ai/TranscriptInput";
 import AiGenerateButton from "@/components/ai/AiGenerateButton";
-import SummaryCard from "@/components/ai/SummaryCard";
+import SummaryVersions from "@/components/ai/SummaryVersions";
+import { useStageNotes } from "@/components/ai/useStageNotes";
 import ActionCardHeader from "@/components/client/ActionCardHeader";
-import { cx } from "@/lib/utils";
-import { FileText, ScrollText, Sparkles } from "@/components/ui/HeartfulIcon";
-import Link from "next/link";
-import { resolveFormByDocumentType } from "@/lib/requiredForms";
+import { ScrollText, Sparkles } from "@/components/ui/HeartfulIcon";
+import StageFormsCard from "@/components/client/StageFormsCard";
 
 export default function IntegrationWorkspace({
   clientId,
@@ -24,7 +23,9 @@ export default function IntegrationWorkspace({
   documents,
   formTemplates,
   formSubmissions,
-  existingSummary,
+  existingSummaries,
+  initialNotes,
+  initialRecordings = [],
   canCompleteStage,
 }: {
   clientId: string;
@@ -33,73 +34,35 @@ export default function IntegrationWorkspace({
   documents: ClientDocument[];
   formTemplates: FormTemplate[];
   formSubmissions: FormSubmission[];
-  existingSummary?: AiSummary;
+  /** Every summary generated for this integration session, newest first. */
+  existingSummaries: AiSummary[];
+  /** Notes already saved on the client record for this stage. */
+  initialNotes: string;
+  /** Recordings already uploaded on this stage page. */
+  initialRecordings?: Recording[];
   canCompleteStage: boolean;
 }) {
-  // Persisted to localStorage (not just React state) so the pasted transcript
-  // survives a Generate click — that button triggers a router.refresh() to
-  // pull the freshly generated summary from the server, and plain useState
-  // isn't guaranteed to survive that trip through the Server Component tree.
-  const transcriptStorageKey = `heartful_transcript_${clientId}_integration_${sessionNumber}`;
-  const [transcript, setTranscriptState] = useState(() => {
-    if (typeof window === "undefined") return "";
-    return window.localStorage.getItem(transcriptStorageKey) ?? "";
-  });
-  function setTranscript(v: string) {
-    setTranscriptState(v);
-    if (typeof window !== "undefined") {
-      if (v) window.localStorage.setItem(transcriptStorageKey, v);
-      else window.localStorage.removeItem(transcriptStorageKey);
-    }
-  }
-  const [summary, setSummary] = useState(existingSummary);
+  // Saved to the client record as you type, and kept after generating.
+  const { notes, setNotes, saveState } = useStageNotes(
+    clientId,
+    sessionNumber === 1 ? "integration_1" : "integration_2",
+    initialNotes,
+  );
+  const [summaries, setSummaries] = useState(existingSummaries);
 
   // "Integration Summary" / "Second Integration Summary" — the button reads
   // `Generate ${summaryLabel}`.
   const summaryLabel = sessionNumber === 1 ? "Integration Summary" : "Second Integration Summary";
 
-  const docType = sessionNumber === 1 ? "integration_session_1" : "integration_session_2";
-  const requiredForm = resolveFormByDocumentType({
-    documentType: docType,
-    templates: formTemplates,
-    documents,
-    submissions: formSubmissions,
-  });
-  const { document: doc, template, submission } = requiredForm;
-
   return (
     <div className="space-y-6">
-      {/* Reflection Form */}
-      <div className="card p-5">
-        <h2 className="flex items-center gap-2 font-semibold text-ink-900 mb-4">
-          <FileText className="h-4 w-4 text-ink-500" />
-          Integration Session {sessionNumber} — Reflection Form
-        </h2>
-        {doc && template ? (
-          <IntegrationFormCard
-            doc={doc}
-            template={template}
-            submission={submission}
-            clientId={clientId}
-            clientName={clientName}
-          />
-        ) : requiredForm.state === "missing_template" ? (
-          <p className="text-sm text-ink-500">
-            The required {requiredForm.title} template is missing. Restore it in{" "}
-            <Link href="/settings/forms" className="font-medium text-clay-700 underline underline-offset-2">
-              Settings → Form Library
-            </Link>.
-          </p>
-        ) : (
-          <p className="text-sm text-ink-500">
-            The {requiredForm.title} template exists, but it is not attached to this client. Open{" "}
-            <Link href="/settings/forms" className="font-medium text-clay-700 underline underline-offset-2">
-              Settings → Form Library
-            </Link>{" "}
-            and update the form content to repair the attachment.
-          </p>
-        )}
-      </div>
+      <StageFormsCard
+        clientId={clientId}
+        sessionType={sessionNumber === 1 ? "integration_1" : "integration_2"}
+        formTemplates={formTemplates}
+        documents={documents}
+        formSubmissions={formSubmissions}
+      />
 
       {/* AI Generation — same shape for both sessions: paste the transcript,
           generate that session's summary. Pre-session preparation is Prepare
@@ -108,73 +71,38 @@ export default function IntegrationWorkspace({
           "Integration Session One Brief" button that did the same work with
           less context. Briefs already generated stay in the client record. */}
       <div className="card p-5 space-y-4">
-        <h2 className="flex items-center gap-2 font-semibold text-ink-900"><ScrollText className="h-4 w-4 text-ink-500" />Session Transcript</h2>
-        <TranscriptInput value={transcript} onChange={setTranscript} hideLabel />
+        <h2 className="flex items-center gap-2 font-semibold text-ink-900"><ScrollText className="h-4 w-4 text-ink-500" />Session Notes &amp; Transcript</h2>
+        <TranscriptInput clientId={clientId} stage={sessionNumber === 1 ? "integration_1" : "integration_2"} initialRecordings={initialRecordings} value={notes} onChange={setNotes} saveState={saveState} hideLabel />
       </div>
       <div className="card p-5 space-y-4">
         <ActionCardHeader
           title={<><Sparkles className="h-4 w-4 text-ink-500" />{summaryLabel}</>}
-          description={`Generate from the transcript above. Saves to the client record and completes Integration Session ${sessionNumber}.`}
+          description={`Generate from the notes above. Saves to the client record and completes Integration Session ${sessionNumber}. Each one is kept as a new version.`}
           action={
             <AiGenerateButton
               clientId={clientId}
               summaryType="integration_summary"
-              label={`Generate ${summaryLabel}`}
-              extra={{ transcript, integrationSession: sessionNumber }}
-              onDone={(s) => setSummary(s as unknown as AiSummary)}
-              disabled={!canCompleteStage || !transcript.trim()}
+              label={summaries.length > 0 ? "Generate New Version" : `Generate ${summaryLabel}`}
+              extra={{
+                transcript: notes,
+                integrationSession: sessionNumber,
+                stageNotesKey: sessionNumber === 1 ? "integration_1" : "integration_2",
+              }}
+              onDone={(s) => setSummaries((prev) => [s as unknown as AiSummary, ...prev])}
+              disabled={!canCompleteStage || !notes.trim()}
               className="btn-primary inline-flex items-center gap-2 whitespace-nowrap text-sm disabled:opacity-60"
             />
           }
         />
-        {summary && (
-          <SummaryCard title={summaryLabel} content={summary.content} model={summary.model} />
-        )}
       </div>
+      <SummaryVersions
+        clientId={clientId}
+        summaries={summaries}
+        onChange={setSummaries}
+        heading={summaryLabel}
+        description={`Every ${summaryLabel.toLowerCase()} generated for ${clientName}, newest first.`}
+        cardTitle={summaryLabel}
+      />
     </div>
-  );
-}
-
-// ---------------------------------------------------------------------------
-// Simple clickable form row — title + status badge, opens full-page on click
-// ---------------------------------------------------------------------------
-function IntegrationFormCard({
-  doc,
-  template,
-  submission,
-  clientId,
-}: {
-  doc: ClientDocument;
-  template: FormTemplate;
-  submission?: FormSubmission;
-  clientId: string;
-  clientName: string;
-}) {
-  const submissionStatus = submission?.status ?? "missing";
-  const docStatus = doc.status;
-
-  const statusBadge =
-    docStatus === "reviewed"
-      ? { label: "Reviewed", cls: "bg-blue-100 text-blue-700" }
-      : submissionStatus === "signed"
-        ? { label: "Signed", cls: "bg-sage-100 text-sage-700" }
-        : submissionStatus === "submitted"
-          ? { label: "Submitted", cls: "bg-sage-100 text-sage-700" }
-          : submissionStatus === "in_progress"
-            ? { label: "In Progress", cls: "bg-amber-100 text-amber-700" }
-            : { label: "Not Started", cls: "bg-ink-100 text-ink-500" };
-
-  return (
-    <Link
-      href={`/clients/${clientId}/forms/${doc.id}`}
-      target="_blank"
-      className="flex items-center gap-2.5 px-3 py-2.5 rounded-xl border border-ink-100 hover:bg-ink-50/60 hover:border-clay-200 transition-colors group"
-    >
-      <FileText className="h-4 w-4 text-ink-400 shrink-0 group-hover:text-clay-500" />
-      <span className="text-sm font-medium text-ink-800 group-hover:text-clay-700">
-        {DOCUMENT_LABELS[doc.document_type] ?? template.title}
-      </span>
-      <span className={cx("badge ml-auto", statusBadge.cls)}>{statusBadge.label}</span>
-    </Link>
   );
 }

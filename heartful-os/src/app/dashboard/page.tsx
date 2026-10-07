@@ -5,7 +5,7 @@ import DashboardDateStrip from "@/components/dashboard/DashboardDateStrip";
 import { getAgreementStatusByClient, getAllSessions, getDashboardSummary, getMilestones, getPractitioner } from "@/lib/data";
 import {
   CheckCircle2, ChevronRight, CircleAlert, DollarSign, FileText,
-  IntegrationLink, OutstandingTasks, Users,
+  MessageCircle, OutstandingTasks, Users,
 } from "@/components/ui/HeartfulIcon";
 import ClientAvatarImage from "@/components/client/ClientAvatarImage";
 import Link from "next/link";
@@ -29,9 +29,18 @@ export default async function DashboardPage() {
     Promise.all(activeClientRecords.map(async (client) => ({ client, milestones: await getMilestones(client.id) }))),
   ]);
   const agreementByClient = new Map(agreementStatus.map((agreement) => [agreement.client_id, agreement]));
+  const newestUnreadThread = summary.unreadMessageThreads[0];
   const metrics = [
     { label: "Active Clients", value: summary.activeClients, icon: Users, iconSize: 20, href: "/clients?filter=active", tone: "clients" },
-    { label: "Awaiting Integration", value: summary.awaitingIntegration, icon: IntegrationLink, iconSize: 20, href: "/clients?filter=awaiting_integration", tone: "integration" },
+    {
+      label: summary.unreadMessageCount === 1 ? "Unread Message" : "Unread Messages",
+      value: summary.unreadMessageCount,
+      icon: MessageCircle,
+      iconSize: 20,
+      // Newest unread conversation first; opening its Messages tab marks it read.
+      href: newestUnreadThread ? `/clients/${newestUnreadThread.client_id}?tab=Messages` : "/clients?filter=active",
+      tone: "integration",
+    },
     { label: "Outstanding Forms / Tasks", value: summary.outstandingTasksCount, icon: OutstandingTasks, iconSize: 20, href: "/outstanding", tone: "outstanding" },
     {
       label: "Revenue Collected",

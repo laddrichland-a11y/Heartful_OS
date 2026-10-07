@@ -1,14 +1,15 @@
 "use client";
 
 import { useEffect, useRef, useState } from "react";
-import { AiSummary, Recording } from "@/lib/types";
+import { AiSummary, ClientDocument, FormSubmission, FormTemplate, Recording } from "@/lib/types";
 import {
   updateSessionManualNotesAction,
   updateSessionTranscriptAction,
   createRecordingUploadUrlAction,
   addRecordingAction,
   getRecordingDownloadUrlAction,
-  deleteRecordingAction,
+  deleteClientRecordingAction,
+  ensureJourneyDaySessionAction,
   setJourneyMarkerAction,
   updateJourneyMarkerTimeAction,
   updateInitialDoseAmountAction,
@@ -30,19 +31,12 @@ import {
   Clock,
   Sparkles,
   MessageSquareText,
-  Upload,
-  Trash2,
   Music,
 } from "@/components/ui/HeartfulIcon";
+import { RecordingsSection, } from "@/components/ai/RecordingsPanel";
+import StageFormsCard from "@/components/client/StageFormsCard";
 
 const BOOSTER_REMINDER_MINUTES = 90;
-
-function formatBytes(bytes?: number): string {
-  if (!bytes && bytes !== 0) return "";
-  if (bytes < 1024) return `${bytes} B`;
-  if (bytes < 1024 * 1024) return `${(bytes / 1024).toFixed(1)} KB`;
-  return `${(bytes / (1024 * 1024)).toFixed(1)} MB`;
-}
 
 type JourneyMarker = "started" | "ended" | "booster";
 
@@ -60,6 +54,10 @@ export default function JourneyDayWorkspace({
   pastCallSummaries = [],
   initialTranscript = "",
   initialRecordings = [],
+  initialStageRecordings = [],
+  formTemplates = [],
+  documents = [],
+  formSubmissions = [],
 }: {
   clientId: string;
   clientName: string;
@@ -74,6 +72,11 @@ export default function JourneyDayWorkspace({
   pastCallSummaries?: AiSummary[];
   initialTranscript?: string;
   initialRecordings?: Recording[];
+  /** Recordings added here before a Journey Day session was scheduled. */
+  initialStageRecordings?: Recording[];
+  formTemplates?: FormTemplate[];
+  documents?: ClientDocument[];
+  formSubmissions?: FormSubmission[];
 }) {
   // Transcripts & Recordings — the single, persisted place to paste the
   // transcript from a recording device (Plaud, iPhone Voice Memos, etc.)
@@ -82,17 +85,40 @@ export default function JourneyDayWorkspace({
   // clinician-facing Journey Summary and the client-facing Client Journey
   // Summary below now generate from this shared transcript (plus Manual
   // Notes), and it survives page reloads instead of being lost.
+  // The Journey Day appointment is created automatically the first time
+  // anything on this page is saved (a note, a dose, Journey Begin, a
+  // recording…), dated right then — no need to schedule it first.
+  const [activeSessionId, setActiveSessionId] = useState(sessionId);
+  const [sessionCreatedNotice, setSessionCreatedNotice] = useState(false);
+  const pendingSession = useRef<Promise<string> | null>(null);
+  async function ensureSession(): Promise<string> {
+    if (activeSessionId) return activeSessionId;
+    if (!pendingSession.current) {
+      pendingSession.current = ensureJourneyDaySessionAction(clientId)
+        .then((id) => {
+          setActiveSessionId(id);
+          setSessionCreatedNotice(true);
+          return id;
+        })
+        .catch((error) => {
+          pendingSession.current = null;
+          throw error;
+        });
+    }
+    return pendingSession.current;
+  }
+
   const [transcript, setTranscript] = useState(initialTranscript);
   const [transcriptSaving, setTranscriptSaving] = useState(false);
   const [transcriptSaved, setTranscriptSaved] = useState(false);
-  const [recordings, setRecordings] = useState(initialRecordings);
+  const [recordings, setRecordings] = useState(() => [...initialRecordings, ...initialStageRecordings]);
   const [uploadBusy, setUploadBusy] = useState(false);
   const [uploadError, setUploadError] = useState<string | null>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
 
   async function saveTranscript() {
     setTranscriptSaving(true);
-    await updateSessionTranscriptAction(sessionId, clientId, transcript);
+    await updateSessionTranscriptAction(await ensureSession(), clientId, transcript);
     setTranscriptSaving(false);
     setTranscriptSaved(true);
     setTimeout(() => setTranscriptSaved(false), 2000);
@@ -113,13 +139,12 @@ export default function JourneyDayWorkspace({
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [transcript]);
 
-  async function handleFileSelected(e: React.ChangeEvent<HTMLInputElement>) {
-    const file = e.target.files?.[0];
-    if (!file) return;
+  async function uploadRecordingFile(file: File) {
     setUploadError(null);
     setUploadBusy(true);
     try {
-      const result = await createRecordingUploadUrlAction(clientId, sessionId, file.name, file.type || "application/octet-stream");
+      const sid = await ensureSession();
+      const result = await createRecordingUploadUrlAction(clientId, sid, file.name, file.type || "application/octet-stream");
       if (!result) {
         setUploadError("Audio storage isn't set up yet — ask your admin to finish the Firebase Storage setup.");
         return;
@@ -133,7 +158,7 @@ export default function JourneyDayWorkspace({
         setUploadError("The upload didn't go through — check your connection and try again.");
         return;
       }
-      const recording = await addRecordingAction(clientId, sessionId, file.name, result.storagePath, file.size);
+      const recording = await addRecordingAction(clientId, sid, file.name, result.storagePath, file.size);
       setRecordings((prev) => [recording, ...prev]);
     } catch {
       setUploadError("The upload didn't go through — check your connection and try again.");
@@ -150,7 +175,7 @@ export default function JourneyDayWorkspace({
 
   async function removeRecording(rec: Recording) {
     if (!window.confirm(`Delete "${rec.file_name ?? "this recording"}"? This can't be undone.`)) return;
-    await deleteRecordingAction(rec.id, clientId, sessionId);
+    await deleteClientRecordingAction(clientId, rec.id);
     setRecordings((prev) => prev.filter((r) => r.id !== rec.id));
   }
 
@@ -177,7 +202,7 @@ export default function JourneyDayWorkspace({
         body: JSON.stringify({
           clientId,
           summaryType: "session_call_summary",
-          sessionId,
+          sessionId: await ensureSession(),
           sessionTypeLabel: "Journey Day",
           transcript: combined,
         }),
@@ -195,6 +220,7 @@ export default function JourneyDayWorkspace({
   }
 
   async function deleteCallSummary(summaryId: string) {
+    if (!window.confirm("Delete this summary version? This can't be undone. Your notes and transcript are not affected.")) return;
     await deleteAiSummaryAction(summaryId, clientId);
     setLocalCallSummaries((prev) => prev.filter((cs) => cs.id !== summaryId));
     setNewCallSummary((prev) => (prev?.id === summaryId ? null : prev));
@@ -234,10 +260,9 @@ export default function JourneyDayWorkspace({
   }
 
   async function saveManualNotes() {
-    if (!sessionId) return;
     setManualNotesSaving(true);
     try {
-      await updateSessionManualNotesAction(sessionId, clientId, manualNotes);
+      await updateSessionManualNotesAction(await ensureSession(), clientId, manualNotes);
       setManualNotesSaved(true);
       setTimeout(() => setManualNotesSaved(false), 2000);
     } catch {
@@ -250,6 +275,7 @@ export default function JourneyDayWorkspace({
 
   async function deleteManualNotesSummary() {
     if (!manualNotesSummary) return;
+    if (!window.confirm("Delete this archived summary? This can't be undone. Your notes are not affected.")) return;
     await deleteAiSummaryAction(manualNotesSummary.id, clientId);
     setManualNotesSummary(undefined);
   }
@@ -295,7 +321,8 @@ export default function JourneyDayWorkspace({
   // in which case there is nothing to stamp, and the controls below are
   // shown disabled with an explanation rather than firing writes that can't
   // land.
-  const hasSession = !!sessionId;
+  // Always usable: the session is created automatically on first save.
+  const hasSession = true;
 
   function markerTimestamp(marker: JourneyMarker) {
     return marker === "started" ? journeyStartedAt : marker === "ended" ? journeyEndedAt : boosterDoseAt;
@@ -318,7 +345,6 @@ export default function JourneyDayWorkspace({
   // toggle left the switch spinning forever with no error anywhere — which
   // is exactly what a missing session used to look like from the outside.
   async function toggleJourneyMarker(marker: JourneyMarker) {
-    if (!hasSession) return;
     const isOn = !!markerTimestamp(marker);
     const previousMarkers = {
       started: journeyStartedAt,
@@ -343,7 +369,7 @@ export default function JourneyDayWorkspace({
       // zone along so the note line written into Manual Notes lands in local
       // time instead of UTC.
       const timeZone = Intl.DateTimeFormat().resolvedOptions().timeZone;
-      const updated = await setJourneyMarkerAction(sessionId, clientId, marker, !isOn, manualNotes, timeZone);
+      const updated = await setJourneyMarkerAction(await ensureSession(), clientId, marker, !isOn, manualNotes, timeZone);
       if (updated) applyMarkerResult(updated);
       else {
         setJourneyStartedAt(previousMarkers.started);
@@ -362,11 +388,10 @@ export default function JourneyDayWorkspace({
   }
 
   async function updateMarkerTime(marker: JourneyMarker, isoTimestamp: string) {
-    if (!hasSession) return;
     setTimeSavingMarker(marker);
     setMarkerError(null);
     try {
-      const updated = await updateJourneyMarkerTimeAction(sessionId, clientId, marker, isoTimestamp);
+      const updated = await updateJourneyMarkerTimeAction(await ensureSession(), clientId, marker, isoTimestamp);
       if (updated) applyMarkerResult(updated);
       else setMarkerError("Couldn't save that time — the Journey Day session record wasn't found.");
     } catch {
@@ -398,10 +423,9 @@ export default function JourneyDayWorkspace({
   const [boosterDoseSaved, setBoosterDoseSaved] = useState(false);
 
   async function saveInitialDoseAmount() {
-    if (!hasSession) return;
     setInitialDoseSaving(true);
     try {
-      await updateInitialDoseAmountAction(sessionId, clientId, initialDoseAmount);
+      await updateInitialDoseAmountAction(await ensureSession(), clientId, initialDoseAmount);
       setInitialDoseSaved(true);
       setTimeout(() => setInitialDoseSaved(false), 2000);
     } catch {
@@ -412,10 +436,9 @@ export default function JourneyDayWorkspace({
   }
 
   async function saveBoosterDoseAmount() {
-    if (!hasSession) return;
     setBoosterDoseSaving(true);
     try {
-      await updateBoosterDoseAmountAction(sessionId, clientId, boosterDoseAmount);
+      await updateBoosterDoseAmountAction(await ensureSession(), clientId, boosterDoseAmount);
       setRecordedBoosterDoseAmount(boosterDoseAmount);
       setBoosterDoseSaved(true);
       setTimeout(() => setBoosterDoseSaved(false), 2000);
@@ -434,7 +457,7 @@ export default function JourneyDayWorkspace({
   // reload or navigation-and-back — which, over a multi-hour session,
   // happens often enough that the reminder kept resurfacing every time the
   // practitioner reopened the tab, even after they'd already dismissed it.
-  const boosterReminderStorageKey = `journey-booster-reminder-dismissed:${sessionId}`;
+  const boosterReminderStorageKey = `journey-booster-reminder-dismissed:${activeSessionId || "new"}`;
   const [boosterReminderDismissed, setBoosterReminderDismissedState] = useState(() => {
     if (typeof window === "undefined") return false;
     return window.localStorage.getItem(boosterReminderStorageKey) === "1";
@@ -450,17 +473,26 @@ export default function JourneyDayWorkspace({
     journeyInProgress && minutesSinceStart >= BOOSTER_REMINDER_MINUTES && !boosterDoseAt && !boosterReminderDismissed;
 
   return (
+    <>
+    <div className="mb-6">
+      <StageFormsCard
+        clientId={clientId}
+        sessionType="harm_reduction_support"
+        formTemplates={formTemplates}
+        documents={documents}
+        formSubmissions={formSubmissions}
+      />
+    </div>
+    {sessionCreatedNotice && (
+      <p className="mb-4 rounded-xl border border-sage-200 bg-sage-50 px-4 py-2.5 text-sm text-sage-800" role="status">
+        A Journey Day session for today was added to the calendar, and everything on this page is saved to it.
+      </p>
+    )}
     <fieldset disabled={!hasSession} className="contents">
     <div className="grid lg:grid-cols-3 gap-6">
       <div className="lg:col-span-3 card journey-timing-panel p-4">
         <h2 className="font-semibold text-ink-900 mb-3">Journey Timing</h2>
 
-        {!hasSession && (
-          <p className="journey-timing-notice">
-            No Journey Day session is on the calendar for {clientName} yet. Schedule one before recording Journey
-            Begin, Booster Dose, Journey End, notes, or a transcript.
-          </p>
-        )}
 
         {markerError && (
           <p className="journey-timing-error" role="alert">
@@ -590,7 +622,7 @@ export default function JourneyDayWorkspace({
         </div>
 
         <div className="pt-3 border-t border-ink-100 space-y-3">
-          <h3 className="font-semibold text-ink-900 text-sm">Transcripts &amp; Recordings</h3>
+          <h3 className="font-semibold text-ink-900 text-sm">Session Transcript</h3>
           <p className="text-xs text-ink-400">
             Paste the transcript from your recording device (Plaud, iPhone Voice Memos, etc.) and/or upload the actual
             audio file here. This is the single saved source the Journey Day Summary below generates from.
@@ -614,49 +646,18 @@ export default function JourneyDayWorkspace({
             </button>
           </div>
 
-          <div className="pt-2 border-t border-ink-100">
-            <label className="flex items-center gap-2 text-sm font-medium text-ink-700 cursor-pointer w-fit">
-              <input
-                ref={fileInputRef}
-                type="file"
-                accept="audio/*"
-                onChange={handleFileSelected}
-                disabled={uploadBusy}
-                className="hidden"
-              />
-              <span className="btn-ghost text-sm px-3 py-1.5 flex items-center gap-1.5">
-                {uploadBusy ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Upload className="h-3.5 w-3.5" />}
-                Upload Audio Recording
-              </span>
-            </label>
-            {uploadError && <p className="text-xs text-red-600 mt-1.5">{uploadError}</p>}
-
-            {recordings.length > 0 && (
-              <div className="mt-3 space-y-1.5">
-                {recordings.map((rec) => (
-                  <div key={rec.id} className="flex items-center gap-2 text-sm bg-ink-50 rounded-lg px-3 py-2">
-                    <Music className="h-3.5 w-3.5 text-ink-400 shrink-0" />
-                    <span className="text-ink-800 truncate">{rec.file_name ?? "Recording"}</span>
-                    <span className="text-xs text-ink-400 shrink-0">{formatBytes(rec.size_bytes)}</span>
-                    <span className="text-xs text-ink-400 shrink-0 ml-auto">{formatDateTime(rec.created_at)}</span>
-                    <button
-                      onClick={() => playOrDownloadRecording(rec)}
-                      className="text-xs text-clay-600 hover:text-clay-800 shrink-0"
-                    >
-                      Play
-                    </button>
-                    <button
-                      onClick={() => removeRecording(rec)}
-                      className="p-1 rounded hover:bg-ink-100 text-ink-400 hover:text-red-600 shrink-0"
-                      aria-label="Delete recording"
-                    >
-                      <Trash2 className="h-3.5 w-3.5" />
-                    </button>
-                  </div>
-                ))}
-              </div>
-            )}
-          </div>
+          {/* With no session yet, the same box is shown at the top of the page
+              instead (this area is locked until a session is scheduled). */}
+          {hasSession && (
+            <RecordingsSection
+              busy={uploadBusy}
+              error={uploadError}
+              recordings={recordings}
+              onFile={(file) => void uploadRecordingFile(file)}
+              onPlay={playOrDownloadRecording}
+              onRemove={removeRecording}
+            />
+          )}
         </div>
 
         {/* One summary per session, shared by practitioner and client. The
@@ -667,7 +668,7 @@ export default function JourneyDayWorkspace({
           <SummaryCard
             title="Journey Day Summary - Practitioner (archived)"
             content={manualNotesSummary.content}
-            model={manualNotesSummary.model}
+            model={manualNotesSummary.model} sourceNotes={manualNotesSummary.source_notes}
             onDelete={deleteManualNotesSummary}
             onSave={saveManualNotesSummary}
           />
@@ -706,7 +707,7 @@ export default function JourneyDayWorkspace({
                       <SummaryCard
                         title={cs.title}
                         content={cs.content}
-                        model={cs.model}
+                        model={cs.model} sourceNotes={cs.source_notes}
                         onDelete={() => deleteCallSummary(cs.id)}
                         onSave={(next) => saveCallSummary(cs.id, next)}
                       />
@@ -721,7 +722,7 @@ export default function JourneyDayWorkspace({
             <SummaryCard
               title={newCallSummary.title}
               content={newCallSummary.content}
-              model={newCallSummary.model}
+              model={newCallSummary.model} sourceNotes={newCallSummary.source_notes}
               onDelete={() => deleteCallSummary(newCallSummary.id)}
               onSave={(next) => saveCallSummary(newCallSummary.id, next)}
             />
@@ -760,5 +761,6 @@ export default function JourneyDayWorkspace({
       </div>
     </div>
     </fieldset>
+    </>
   );
 }

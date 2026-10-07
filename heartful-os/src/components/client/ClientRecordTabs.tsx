@@ -20,6 +20,8 @@ import {
   PortalAssignment,
   PostIntegrationForm,
   PreparationPlan,
+  Recording,
+  StageNotesKey,
   Session,
   Task,
 } from "@/lib/types";
@@ -82,7 +84,7 @@ import { SessionType } from "@/lib/types";
 import SummaryCard from "@/components/ai/SummaryCard";
 import { buildClientActivity, ActivityKind } from "@/lib/activity";
 import { JourneyStageNav, PHASE_LINKS, PhaseNavKey } from "@/components/client/JourneyStageNav";
-import CheckInWorkspace from "@/components/client/CheckInWorkspace";
+import { StageRecordingsBox } from "@/components/ai/RecordingsPanel";
 import IntakeWorkspace from "@/components/client/IntakeWorkspace";
 import MilestoneToggleBanner from "@/components/client/MilestoneToggleBanner";
 import JourneyAiSummaries from "@/components/client/JourneyAiSummaries";
@@ -102,12 +104,23 @@ const CLIENT_TABS: { value: Tab; label: string }[] = [
 const SESSION_TYPE_OPTIONS: { value: SessionType; label: string }[] = [
   { value: "intake_assessment", label: "Intake Assessment" },
   { value: "preparation", label: "Preparation" },
-  { value: "harm_reduction_support", label: "Journey Day (Harm Reduction Support)" },
+  { value: "harm_reduction_support", label: "Journey Day" },
   { value: "check_in_12hr", label: "12-Hour Check-In" },
   { value: "integration_1", label: "Integration Session 1" },
   { value: "integration_2", label: "Integration Session 2" },
   { value: "other", label: "Other" },
 ];
+
+// Journey-tab stage → the stage key recordings are filed under.
+const PHASE_STAGE_KEY: Partial<Record<string, StageNotesKey>> = {
+  intake: "intake",
+  preparation: "preparation",
+  harm_reduction_session: "journey_day",
+  post_journey_check_in: "check_in_12hr",
+  integration_1: "integration_1",
+  integration_2: "integration_2",
+  growth_action_plan: "growth_plan",
+};
 
 export default function ClientRecordTabs({
   client,
@@ -126,6 +139,9 @@ export default function ClientRecordTabs({
   formSubmissions,
   milestones,
   emailLogs,
+  intakeNotes = "",
+  intakeRecordings = [],
+  allRecordings = [],
   defaultTab,
   defaultStage,
 }: {
@@ -145,6 +161,11 @@ export default function ClientRecordTabs({
   formSubmissions: FormSubmission[];
   milestones: JourneyMilestone[];
   emailLogs: EmailLog[];
+  /** Intake notes saved on the record (the Intake stage's notes box). */
+  intakeNotes?: string;
+  intakeRecordings?: Recording[];
+  /** Every recording on the record — used by the Journey tab's stage card. */
+  allRecordings?: Recording[];
   defaultTab?: Tab;
   defaultStage?: string;
 }) {
@@ -219,6 +240,9 @@ export default function ClientRecordTabs({
             documents={documents}
             formTemplates={formTemplates}
             formSubmissions={formSubmissions}
+            intakeNotes={intakeNotes}
+            intakeRecordings={intakeRecordings}
+            allRecordings={allRecordings}
           />
         </>
       )}
@@ -1413,6 +1437,9 @@ function JourneyTab({
   documents,
   formTemplates,
   formSubmissions,
+  intakeNotes,
+  intakeRecordings,
+  allRecordings,
 }: {
   client: Client;
   clientId: string;
@@ -1427,12 +1454,14 @@ function JourneyTab({
   documents: ClientDocument[];
   formTemplates: FormTemplate[];
   formSubmissions: FormSubmission[];
+  intakeNotes: string;
+  intakeRecordings: Recording[];
+  allRecordings: Recording[];
 }) {
-  const [checkInSubmitted, setCheckInSubmitted] = useState(
+  const [checkInSubmitted] = useState(
     checkIns.some((checkIn) => checkIn.check_in_type === "12_hour" && Boolean(checkIn.submitted_at))
   );
   const [showAllMemory, setShowAllMemory] = useState(false);
-  const twelveHourCheckIn = checkIns.find((checkIn) => checkIn.check_in_type === "12_hour");
   const planEntries = preparationPlan
     ? Object.entries(preparationPlan).filter(([key]) => !["id", "client_id", "updated_at"].includes(key))
     : [];
@@ -1442,13 +1471,12 @@ function JourneyTab({
   const stageSession = stageLink.sessionType
     ? selectStageWorkspaceSession(sessions, stageLink.sessionType)
     : undefined;
-  const stageHref = workspaceStage === "post_journey_check_in"
-    ? `/clients/${clientId}?tab=${encodeURIComponent("Journey & AI")}&stage=${workspaceStage}`
-    : stageSession
-      ? `/clients/${clientId}/sessions/${stageSession.id}`
-      : `/clients/${clientId}/${stageLink.href}`;
+  const stageHref = stageSession
+    ? `/clients/${clientId}/sessions/${stageSession.id}`
+    : `/clients/${clientId}/${stageLink.href}`;
   const stageTitle = workspaceStage === "intake" ? "Intake & Assessment" : stageLink.label;
   const intakeSummaries = aiSummaries.filter((summary) => summary.summary_type === "client_assessment_summary");
+  const stageRecordingKey = PHASE_STAGE_KEY[workspaceStage];
 
   return (
     <>
@@ -1472,14 +1500,9 @@ function JourneyTab({
             formTemplates={formTemplates}
             formSubmissions={formSubmissions}
             existingSummaries={intakeSummaries}
+            initialNotes={intakeNotes}
+            initialRecordings={intakeRecordings}
             canCompleteStage={stageState.canCompleteStage}
-          />
-        ) : workspaceStage === "post_journey_check_in" ? (
-          <CheckInWorkspace
-            clientId={clientId}
-            clientName={clientName}
-            existingCheckIn={twelveHourCheckIn}
-            onSubmitted={() => setCheckInSubmitted(true)}
           />
         ) : (
           <div className="card p-5 text-sm text-ink-600">
@@ -1487,6 +1510,18 @@ function JourneyTab({
             <Link href={stageHref} className="mt-3 inline-flex font-semibold text-clay-600 hover:text-clay-700 hover:underline">
               Open {stageTitle} workspace <span aria-hidden="true" className="ml-1">→</span>
             </Link>
+            {stageRecordingKey && (
+              <div className="mt-4">
+                <StageRecordingsBox
+                  key={`${workspaceStage}-${stageSession?.id ?? "stage"}`}
+                  clientId={clientId}
+                  target={stageSession ? { sessionId: stageSession.id } : { stage: stageRecordingKey }}
+                  initialRecordings={allRecordings.filter((r) =>
+                    (stageSession && r.session_id === stageSession.id) || (!r.session_id && r.stage === stageRecordingKey)
+                  )}
+                />
+              </div>
+            )}
           </div>
         )}
       </section>
@@ -1718,7 +1753,7 @@ function ClientCopilotTab({
             </div>
             {expandedBriefing === pb.id && (
               <div className="mt-1">
-                <SummaryCard title="AI Session Brief" content={pb.content} model={pb.model} />
+                <SummaryCard title="AI Session Brief" content={pb.content} model={pb.model} sourceNotes={pb.source_notes} />
               </div>
             )}
           </div>

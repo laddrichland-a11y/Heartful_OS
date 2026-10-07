@@ -60,6 +60,8 @@ import {
   Session,
   SessionNote,
   SessionNoteField,
+  StageNotes,
+  StageNotesKey,
   SessionType,
   SmsLog,
   Task,
@@ -664,6 +666,7 @@ export async function deleteClient(clientId: string): Promise<void> {
     removeWhere(store.sessions, "sessions", "client_id", clientId),
     removeWhere(store.transcripts, "transcripts", "client_id", clientId),
     removeWhere(store.aiSummaries, "aiSummaries", "client_id", clientId),
+    removeWhere(store.stageNotes, "stageNotes", "client_id", clientId),
     removeWhere(store.memory, "memory", "client_id", clientId),
     removeWhere(store.preparationPlans, "preparationPlans", "client_id", clientId),
     removeWhere(store.checkIns, "checkIns", "client_id", clientId),
@@ -858,12 +861,119 @@ export async function deleteClientDocument(documentId: string): Promise<void> {
 export async function getFormTemplates(): Promise<FormTemplate[]> {
   if (isFirebaseConfigured) {
     const existing = await allDocs<FormTemplate>("formTemplates");
-    if (existing.length > 0) return existing;
-    // Seed once from the mock library so a brand-new Firestore project has
-    // the practitioner's real intake/consent forms available immediately.
-    return insertDocs("formTemplates", store.formTemplates);
+    if (existing.length === 0) {
+      // Seed once from the mock library so a brand-new Firestore project has
+      // the practitioner's real intake/consent forms available immediately.
+      return insertDocs("formTemplates", store.formTemplates);
+    }
+    // A built-in form added to the code later (e.g. the 12-Hour Check-In)
+    // is added automatically — without this it would never appear until
+    // someone pressed "Update form content".
+    const existingIds = new Set(existing.map((t) => t.id));
+    const missingBuiltIns = store.formTemplates.filter((t) => !t.custom && !existingIds.has(t.id));
+    if (missingBuiltIns.length === 0) return existing;
+    const added = await insertDocs("formTemplates", missingBuiltIns);
+    invalidateFirestoreReadCache();
+    return [...existing, ...added];
   }
   return store.formTemplates;
+}
+
+// Makes sure a client has a document slot for every active form that
+// auto-attaches (Required + Active) — including forms added to the library
+// after the client was created. Idempotent; called whenever a client's
+// record, stage pages, session pages or portal are loaded, so a new form
+// shows up everywhere it belongs without any manual step.
+export async function ensureClientFormDocuments(clientId: string): Promise<void> {
+  if (!clientId || !(await getClient(clientId))) return;
+  const [templates, documents] = await Promise.all([getFormTemplates(), getDocuments(clientId)]);
+  const existingTypes = new Set(documents.map((d) => d.document_type));
+  const missing: ClientDocument[] = [...new Map(
+    templates
+      .filter((t) => t.active && t.required && !existingTypes.has(t.document_type))
+      .map((t) => [t.document_type, t]),
+  ).values()].map((t) => ({
+    id: nextId("doc"),
+    client_id: clientId,
+    document_type: t.document_type,
+    title: t.title,
+    required: t.required,
+    status: "missing" as const,
+    versions: [],
+  }));
+  if (missing.length > 0) await createMany(store.documents, "documents", missing);
+}
+
+export interface FormTemplateInput {
+  title: string;
+  description?: string;
+  session_types: SessionType[];
+  required: boolean;
+  sections: FormTemplate["sections"];
+}
+
+function slugify(value: string) {
+  return value.toLowerCase().replace(/[^a-z0-9]+/g, "_").replace(/^_+|_+$/g, "").slice(0, 40) || "form";
+}
+
+// A form the practitioner builds in Settings → Forms. It gets its own
+// document type so it attaches to clients like any built-in form.
+export async function createFormTemplate(input: FormTemplateInput): Promise<FormTemplate> {
+  const now = new Date().toISOString();
+  const id = nextId("tmpl_custom");
+  const template: FormTemplate = {
+    id,
+    document_type: `custom_${slugify(input.title)}_${id.slice(-6)}`,
+    title: input.title.trim(),
+    ...(input.description?.trim() ? { description: input.description.trim() } : {}),
+    required: input.required,
+    active: true,
+    session_types: input.session_types,
+    sections: input.sections,
+    custom: true,
+    created_at: now,
+    updated_at: now,
+  };
+  const created = await create(store.formTemplates, "formTemplates", template);
+  if (created.required) await attachTemplateToAllClients(created);
+  return created;
+}
+
+// Built-in forms: only the stages and auto-attach setting can change (their
+// wording is managed in code). Custom forms: everything can change.
+export async function updateFormTemplate(templateId: string, input: FormTemplateInput): Promise<FormTemplate | undefined> {
+  const existing = await getFormTemplateById(templateId);
+  if (!existing) return undefined;
+  const patch: Partial<FormTemplate> = existing.custom
+    ? {
+        title: input.title.trim(),
+        description: input.description?.trim() ?? "",
+        session_types: input.session_types,
+        required: input.required,
+        sections: input.sections,
+        updated_at: new Date().toISOString(),
+      }
+    : { session_types: input.session_types, required: input.required, updated_at: new Date().toISOString() };
+  const updated = await patchById<FormTemplate>(store.formTemplates, "formTemplates", templateId, patch);
+  if (updated?.required && updated.active) await attachTemplateToAllClients(updated);
+  return updated;
+}
+
+async function attachTemplateToAllClients(template: FormTemplate): Promise<void> {
+  const clients = await getClientsIncludingOnHold();
+  for (const client of clients) {
+    const docs = await getDocuments(client.id);
+    if (docs.some((d) => d.document_type === template.document_type)) continue;
+    await create(store.documents, "documents", {
+      id: nextId("doc"),
+      client_id: client.id,
+      document_type: template.document_type,
+      title: template.title,
+      required: template.required,
+      status: "missing" as const,
+      versions: [],
+    });
+  }
 }
 
 export async function getFormTemplateById(templateId: string): Promise<FormTemplate | undefined> {
@@ -886,7 +996,11 @@ export async function resyncFormTemplates(): Promise<FormTemplate[]> {
   const existingById = new Map(existing.map((t) => [t.id, t]));
   const merged = store.formTemplates.map((tpl) => {
     const prev = existingById.get(tpl.id);
-    return prev ? { ...tpl, required: prev.required, active: prev.active } : tpl;
+    // Keep the practitioner's own choices: auto-attach, active, and which
+    // stage(s) the form belongs to (editable in Settings → Forms).
+    return prev
+      ? { ...tpl, required: prev.required, active: prev.active, session_types: prev.session_types ?? tpl.session_types }
+      : tpl;
   });
   const updatedTemplates = await insertDocs("formTemplates", merged);
 
@@ -1230,15 +1344,33 @@ function sanitizeFileName(name: string): string {
 // Returns null if Cloud Storage isn't configured (no bucket set up yet) —
 // callers should show a clear "storage isn't set up" message rather than a
 // generic error in that case.
+// LOCAL DEMO ONLY: with no Firebase at all (the local copy on Ladd's Mac),
+// recordings are written to a folder next to the app instead of Cloud
+// Storage, so the upload button works end-to-end while testing. Paths are
+// prefixed "local:" and served by /api/local-recordings. Never used when
+// Firebase is configured (the live site).
+export const LOCAL_RECORDING_PREFIX = "local:";
+export function localRecordingsEnabled() {
+  return !isFirebaseConfigured && !getBucket();
+}
+
 export async function createRecordingUploadUrl(
   clientId: string,
-  sessionId: string,
+  /** A session id, or "stage-<stage>" for a stage-page recording. */
+  folder: string,
   fileName: string,
   contentType: string
 ): Promise<{ uploadUrl: string; storagePath: string } | null> {
+  if (localRecordingsEnabled()) {
+    const relative = `${sanitizeFileName(clientId)}/${sanitizeFileName(folder)}/${Date.now()}-${sanitizeFileName(fileName)}`;
+    return {
+      uploadUrl: `/api/local-recordings?path=${encodeURIComponent(relative)}`,
+      storagePath: `${LOCAL_RECORDING_PREFIX}${relative}`,
+    };
+  }
   const bucket = getBucket();
   if (!bucket) return null;
-  const storagePath = `recordings/${clientId}/${sessionId}/${Date.now()}-${sanitizeFileName(fileName)}`;
+  const storagePath = `recordings/${clientId}/${folder}/${Date.now()}-${sanitizeFileName(fileName)}`;
   const [uploadUrl] = await bucket.file(storagePath).getSignedUrl({
     version: "v4",
     action: "write",
@@ -1251,6 +1383,11 @@ export async function createRecordingUploadUrl(
 // A fresh, short-lived signed READ url — generated on demand rather than
 // stored, since signed URLs expire and files aren't public.
 export async function getRecordingDownloadUrl(storagePath: string): Promise<string | null> {
+  if (storagePath.startsWith(LOCAL_RECORDING_PREFIX)) {
+    return localRecordingsEnabled()
+      ? `/api/local-recordings?path=${encodeURIComponent(storagePath.slice(LOCAL_RECORDING_PREFIX.length))}`
+      : null;
+  }
   const bucket = getBucket();
   if (!bucket) return null;
   const [url] = await bucket.file(storagePath).getSignedUrl({
@@ -1268,17 +1405,24 @@ export async function getRecordings(clientId: string, sessionId?: string): Promi
     .sort((a, b) => (a.created_at < b.created_at ? 1 : -1));
 }
 
+export async function getStageRecordings(clientId: string, stage: StageNotesKey): Promise<Recording[]> {
+  const recordings = await getRecordings(clientId);
+  return recordings.filter((r) => r.stage === stage && !r.session_id);
+}
+
 export async function addRecording(
   clientId: string,
-  sessionId: string,
+  sessionId: string | undefined,
   fileName: string,
   storagePath: string,
-  sizeBytes?: number
+  sizeBytes?: number,
+  stage?: StageNotesKey
 ): Promise<Recording> {
   const recording: Recording = {
     id: nextId("rec"),
     client_id: clientId,
-    session_id: sessionId,
+    ...(sessionId ? { session_id: sessionId } : {}),
+    ...(stage ? { stage } : {}),
     storage_path: storagePath,
     file_name: fileName,
     size_bytes: sizeBytes,
@@ -1294,6 +1438,17 @@ export async function deleteRecording(recordingId: string): Promise<void> {
   // (leaving an orphaned Storage object) is far less harmful than failing
   // the whole delete over a Storage hiccup, so this is deliberately
   // fire-and-forget with its own try/catch.
+  if (existing?.storage_path.startsWith(LOCAL_RECORDING_PREFIX)) {
+    try {
+      const { unlink } = await import("fs/promises");
+      const { localRecordingFilePath } = await import("@/lib/localRecordings");
+      const filePath = localRecordingFilePath(existing.storage_path.slice(LOCAL_RECORDING_PREFIX.length));
+      if (filePath) await unlink(/* turbopackIgnore: true */ filePath);
+    } catch {
+      // Ignore — same reasoning as the Cloud Storage cleanup below.
+    }
+    return;
+  }
   if (existing) {
     const bucket = getBucket();
     if (bucket) {
@@ -1438,13 +1593,15 @@ export async function addAiSummary(
   content: Record<string, unknown>,
   model = "gpt-4o",
   sessionId?: string,
-  stageLabel?: string
+  stageLabel?: string,
+  sourceNotes?: string
 ): Promise<AiSummary> {
   const summary: AiSummary = {
     id: nextId("ai"),
     client_id: clientId,
     ...(sessionId ? { session_id: sessionId } : {}),
     ...(stageLabel ? { stage_label: stageLabel } : {}),
+    ...(sourceNotes?.trim() ? { source_notes: sourceNotes } : {}),
     summary_type: type,
     title,
     content,
@@ -1452,6 +1609,32 @@ export async function addAiSummary(
     created_at: new Date().toISOString(),
   };
   return create(store.aiSummaries, "aiSummaries", summary);
+}
+
+// ---------------------------------------------------------------------------
+// Stage notes — the notes box on a stage page (no session on the calendar
+// yet). One record per client per stage; saved as the practitioner types so
+// nothing typed or uploaded is ever lost to a page reload or a Generate click.
+// ---------------------------------------------------------------------------
+export async function getStageNotes(clientId: string, stage: StageNotesKey): Promise<StageNotes | undefined> {
+  const all = await listWhere(store.stageNotes, "stageNotes", "client_id", clientId);
+  return all.find((n) => n.stage === stage);
+}
+
+export async function saveStageNotes(clientId: string, stage: StageNotesKey, content: string): Promise<StageNotes> {
+  const existing = await getStageNotes(clientId, stage);
+  const updated_at = new Date().toISOString();
+  if (existing) {
+    const patched = await patchById<StageNotes>(store.stageNotes, "stageNotes", existing.id, { content, updated_at });
+    return patched ?? { ...existing, content, updated_at };
+  }
+  return create(store.stageNotes, "stageNotes", {
+    id: nextId("stagenotes"),
+    client_id: clientId,
+    stage,
+    content,
+    updated_at,
+  });
 }
 
 export async function getAiConversationMessages(clientId: string): Promise<AiConversationMessage[]> {
@@ -1583,17 +1766,15 @@ export async function setGrowthActionPlan(clientId: string, plan: Omit<GrowthAct
   return create(store.growthActionPlans, "growthActionPlans", created);
 }
 
-// Clears a client's Growth Action Plan (both the dedicated record and its
-// backing AiSummary entry) so the practitioner can regenerate a fresh one
-// from scratch rather than being stuck patching whatever was first generated.
+// Clears a client's CURRENT Growth Action Plan so the practitioner can
+// regenerate a fresh one from scratch rather than being stuck enhancing
+// whatever was first generated. The generated versions (AiSummary rows) are
+// deliberately kept — they're the record's history and are deleted one at a
+// time from the Versions list.
 export async function deleteGrowthActionPlan(clientId: string): Promise<void> {
   const existing = await getGrowthActionPlan(clientId);
   if (existing) {
     await removeById(store.growthActionPlans, "growthActionPlans", existing.id);
-  }
-  const summaries = await getAiSummaries(clientId, "growth_action_plan");
-  for (const s of summaries) {
-    await removeById(store.aiSummaries, "aiSummaries", s.id);
   }
   await uncompleteMilestone(clientId, "growth_action_plan_complete");
 }
@@ -1631,6 +1812,22 @@ export interface OutstandingFormItem {
 // explicitly, the same way the client portal's own Action Items list already
 // does. Without this, a client with zero Task records but several unfilled
 // forms incorrectly reads as having nothing outstanding.
+/**
+ * Drop form rows that duplicate an outstanding task for the same client
+ * (e.g. a "12-Hour Check-In" task AND the 12-Hour Check-In form, or
+ * "Collect Harm Reduction Services Agreement" AND the agreement itself).
+ * The task wins because it carries the due date.
+ */
+export function dedupeOutstandingForms<F extends { client_id: string; title: string }>(
+  forms: F[],
+  tasks: { client_id: string; title: string }[],
+): F[] {
+  const norm = (title: string) =>
+    title.toLowerCase().replace(/^(collect|sign|complete|send)\s+/, "").replace(/\s+/g, " ").trim();
+  const taskKeys = new Set(tasks.map((task) => `${task.client_id}|${norm(task.title)}`));
+  return forms.filter((form) => !taskKeys.has(`${form.client_id}|${norm(form.title)}`));
+}
+
 export async function getOutstandingForms(): Promise<OutstandingFormItem[]> {
   const [clients, templates] = await Promise.all([getClients(), getFormTemplates()]);
   const items: OutstandingFormItem[] = [];
@@ -1911,7 +2108,7 @@ export async function getActiveClientCount(): Promise<number> {
 export async function getDashboardSummary() {
   // These reads are independent. Parallelizing them removes several server
   // round trips from every dashboard navigation.
-  const [clients, clientsForRevenue, outstandingTasks, outstandingForms, unreadMessages, upcomingSessions, payments, referralSources] = await Promise.all([
+  const [clients, clientsForRevenue, outstandingTasks, allOutstandingForms, unreadMessages, upcomingSessions, payments, referralSources] = await Promise.all([
     getClients(),
     getClientsIncludingOnHold(),
     getOutstandingTasks(),
@@ -1921,6 +2118,7 @@ export async function getDashboardSummary() {
     getPayments(),
     getReferralSources(),
   ]);
+  const outstandingForms = dedupeOutstandingForms(allOutstandingForms, outstandingTasks);
   const activeClients = clients.filter((c) => isActiveClient(c.status));
   const awaitingIntegration = clients.filter((c) => isAwaitingIntegrationClient(c.status));
   const urgencyReference = Date.now();

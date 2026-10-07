@@ -1,7 +1,7 @@
 import { randomUUID } from "crypto";
 import { calendar_v3 } from "googleapis";
 import * as data from "@/lib/data";
-import { occupiesCalendarSlot } from "@/lib/utils";
+import { occupiesCalendarSlot, SESSION_TYPE_LABELS } from "@/lib/utils";
 import {
   getAuthorizedClient,
   ensureHeartfulCalendar,
@@ -62,7 +62,7 @@ export async function pushSessionToGoogle(sessionId: string): Promise<void> {
     }
 
     const client = await data.getClient(session.client_id);
-    const title = `${client?.full_name ?? "Client"} — ${session.session_type.replace(/_/g, " ")}`;
+    const title = `${client?.full_name ?? "Client"} — ${SESSION_TYPE_LABELS[session.session_type] ?? session.session_type.replace(/_/g, " ")}`;
 
     const event = await upsertHeartfulEvent(
       auth,

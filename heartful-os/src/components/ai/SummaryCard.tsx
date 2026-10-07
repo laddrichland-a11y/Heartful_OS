@@ -30,6 +30,7 @@ export default function SummaryCard({
   variant,
   titleAs: Title = "span",
   titleClassName,
+  sourceNotes,
 }: {
   title: string;
   content: Record<string, unknown>;
@@ -42,6 +43,8 @@ export default function SummaryCard({
   /** Lets a containing workspace keep a summary's title at its own hierarchy level. */
   titleAs?: "span" | "h2" | "h3";
   titleClassName?: string;
+  /** The notes / transcript this version was generated from, shown below it. */
+  sourceNotes?: string;
 }) {
   const [editing, setEditing] = useState(false);
   const [draft, setDraft] = useState<Record<string, string>>(() => toEditableStrings(content));
@@ -128,6 +131,7 @@ export default function SummaryCard({
             )}
           </div>
         )}
+        <SourceNotes notes={sourceNotes} />
       </div>
     );
   }
@@ -217,7 +221,20 @@ export default function SummaryCard({
           ))}
         </dl>
       )}
+      <SourceNotes notes={sourceNotes} />
     </div>
+  );
+}
+
+function SourceNotes({ notes }: { notes?: string }) {
+  if (!notes?.trim()) return null;
+  return (
+    <details className="summary-source-notes mt-3 rounded-lg border border-ink-100 bg-white/60 px-3 py-2 text-sm">
+      <summary className="cursor-pointer select-none text-xs font-medium text-ink-500 hover:text-ink-800">
+        Notes this version was generated from
+      </summary>
+      <p className="mt-2 max-h-72 overflow-y-auto whitespace-pre-wrap text-ink-700">{notes}</p>
+    </details>
   );
 }
 

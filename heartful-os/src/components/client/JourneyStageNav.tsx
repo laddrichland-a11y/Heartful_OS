@@ -69,11 +69,9 @@ export function JourneyStageNav({ clientId, client, sessions, milestones, curren
           const stageStatus = journeyProgress.stages.find((candidate) => candidate.phase === stage.phase)?.status ?? "future";
           const completed = stageStatus === "completed";
           const viewing = current === stage.phase;
-          const href = stage.phase === "post_journey_check_in"
-            ? `/clients/${clientId}?tab=${encodeURIComponent("Journey & AI")}&stage=${stage.phase}`
-            : session
-              ? `/clients/${clientId}/sessions/${session.id}`
-              : `/clients/${clientId}/${stage.href}`;
+          const href = session
+            ? `/clients/${clientId}/sessions/${session.id}`
+            : `/clients/${clientId}/${stage.href}`;
           const statusText = journeyStageStatusLabel(stageStatus);
           return (
             <li

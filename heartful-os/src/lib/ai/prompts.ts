@@ -137,7 +137,7 @@ ${manualNotes}
 export function buildCheckInSummaryPrompt(checkInData: string, clientName: string): PromptPair {
   return {
     system: BASE_SYSTEM_FRAME,
-    user: `Below is a 12-Hour Check-In form submitted by client "${clientName}" (emotional state, physical state, immediate insights, support needs, safety concerns).
+    user: `Below is the 12-Hour Check-In information for client "${clientName}" — the check-in form answers (emotional state, physical state, immediate insights, support needs, safety concerns) and/or the practitioner's notes or transcript from the check-in call.
 
 Produce a 12-Hour Check-In Summary as JSON with exactly these keys:
 {

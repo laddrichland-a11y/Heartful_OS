@@ -42,7 +42,7 @@ import {
   Session,
   Recording,
 } from "@/lib/types";
-import { AlertCircle, Check, CheckCircle2, Send, Sparkles, FileText, ChevronDown, ChevronUp, CalendarDays, MapPin, Clock, Pencil, Trash2, MessageSquareText, Mail, Music, ScrollText, UserRound, LayoutDashboard, ListChecks, Sprout, PanelLeftClose, PanelLeftOpen, Settings, ArrowRight } from "@/components/ui/HeartfulIcon";
+import { AlertCircle, Check, CheckCircle2, Send, Sparkles, FileText, ChevronDown, ChevronUp, CalendarDays, MapPin, Clock, Pencil, Trash2, MessageSquareText, Mail, Music, UserRound, LayoutDashboard, ListChecks, Sprout, PanelLeftClose, PanelLeftOpen, Settings, ArrowRight } from "@/components/ui/HeartfulIcon";
 import { formatDate, formatDateTime, getClientJourneyProgress, journeyStageStatusLabel, relativeDueLabel, cx, isGeneralPaperwork, phaseForStatus } from "@/lib/utils";
 import { selectCurrentOrNextSession, selectSessionTimeline } from "@/lib/sessionSelectors";
 import JourneyProgressBar from "@/components/JourneyProgressBar";
@@ -974,7 +974,10 @@ function PortalPageInner() {
                 </>
               )}
             </div>
-            {(bundle.checkIns.length > 0 || PHASE_ORDER.indexOf(client.current_phase) >= PHASE_ORDER.indexOf("post_journey_check_in")) && (
+            {/* The 12-Hour Check-In is now a regular form (listed with the other
+                forms). This older card only shows if that form is switched off. */}
+            {!bundle.formTemplates.some((t) => t.document_type === "check_in_12hr_form" && t.active) &&
+              (bundle.checkIns.length > 0 || PHASE_ORDER.indexOf(client.current_phase) >= PHASE_ORDER.indexOf("post_journey_check_in")) && (
               <CheckInCard clientId={portalClientId} checkIn={bundle.checkIns[0]} onSaved={refresh} />
             )}
           </div>
@@ -995,7 +998,7 @@ function PortalPageInner() {
                   <PlanList title="Accountability Commitments" items={bundle.growthPlan.accountability_commitments} />
                 </div>
               ) : (
-                <p className="text-sm text-ink-400">Your Growth Action Plan will appear here after Integration Session Two.</p>
+                <p className="text-sm text-ink-400">Your Growth Action Plan will appear here after Integration Session 2.</p>
               )}
             </div>
           </div>
@@ -1004,7 +1007,47 @@ function PortalPageInner() {
         {tab === "Messages" && <MessagesPanel clientId={portalClientId} messages={bundle.messages} onSent={refresh} />}
       </main>
       </div>
+      <PortalMobileTabBar activeTab={tab} onTabChange={(nextTab) => setTab(nextTab)} />
     </div>
+  );
+}
+
+/** Phone-only bottom tab bar — the sidebar is hidden below md, so without this
+ *  a client on their phone had no way to switch sections. */
+function PortalMobileTabBar({
+  activeTab,
+  onTabChange,
+}: {
+  activeTab: PortalTab;
+  onTabChange: (tab: (typeof TABS)[number]) => void;
+}) {
+  const shortLabels: Record<string, string> = {
+    Home: "Home",
+    Appointments: "Appointments",
+    "Forms & Check-Ins": "Forms",
+    "Growth & Integration": "Growth",
+    Messages: "Messages",
+  };
+  return (
+    <nav className="portal-mobile-tabbar md:hidden" aria-label="Client portal sections">
+      {PORTAL_NAV.map((item) => {
+        const Icon = item.icon;
+        const active = activeTab === item.label;
+        return (
+          <button
+            type="button"
+            key={item.label}
+            onClick={() => onTabChange(item.label)}
+            aria-current={active ? "page" : undefined}
+            aria-label={item.label}
+            data-active={active ? "true" : "false"}
+          >
+            <Icon aria-hidden="true" />
+            <span>{shortLabels[item.label] ?? item.label}</span>
+          </button>
+        );
+      })}
+    </nav>
   );
 }
 
@@ -1108,8 +1151,8 @@ const SESSION_TYPE_DISPLAY_LABELS: Partial<Record<Session["session_type"], strin
   preparation: "Preparation Session",
   harm_reduction_support: "Journey Day",
   check_in_12hr: "12-Hour Check-In",
-  integration_1: "Integration Session One",
-  integration_2: "Integration Session Two",
+  integration_1: "Integration Session 1",
+  integration_2: "Integration Session 2",
 };
 
 function sessionTypeLabel(type: Session["session_type"]) {
@@ -1184,6 +1227,60 @@ function AppointmentsPanel({
           </ul>
         )}
       </div>
+      <StageRecordingsCard clientId={clientId} recordings={recordings.filter((r) => !r.session_id)} />
+    </div>
+  );
+}
+
+const STAGE_RECORDING_LABELS: Record<string, string> = {
+  intake: "Intake & Assessment",
+  preparation: "Preparation",
+  journey_day: "Journey Day",
+  check_in_12hr: "12-Hour Check-In",
+  integration_1: "Integration Session 1",
+  integration_2: "Integration Session 2",
+  growth_plan: "Growth Plan",
+};
+
+// Recordings your practitioner added on a stage page rather than to a
+// specific appointment — listed on their own so none go missing.
+function StageRecordingsCard({ clientId, recordings }: { clientId: string; recordings: Recording[] }) {
+  const [playingId, setPlayingId] = useState<string | null>(null);
+  if (recordings.length === 0) return null;
+
+  async function play(rec: Recording) {
+    setPlayingId(rec.id);
+    try {
+      const url = await getPortalRecordingUrlAction(clientId, rec.id);
+      if (url) window.open(url, "_blank");
+    } finally {
+      setPlayingId(null);
+    }
+  }
+
+  return (
+    <div className="card p-5">
+      <h2 className="portal-appointments-heading font-semibold mb-3 flex items-center gap-2">
+        <Music className="h-4 w-4" aria-hidden="true" /> Session Recordings
+      </h2>
+      <ul className="space-y-2">
+        {recordings.map((rec) => (
+          <li key={rec.id} className="flex flex-wrap items-center gap-2 text-sm">
+            <button
+              type="button"
+              onClick={() => play(rec)}
+              disabled={playingId === rec.id}
+              className="flex items-center gap-1.5 text-xs text-ink-600 hover:text-ink-900 font-medium disabled:opacity-50"
+            >
+              <Music className="h-3.5 w-3.5" aria-hidden="true" />
+              {playingId === rec.id ? "Opening…" : `Play Recording${rec.file_name ? ` — ${rec.file_name}` : ""}`}
+            </button>
+            <span className="text-xs text-ink-400">
+              {rec.stage ? STAGE_RECORDING_LABELS[rec.stage] ?? "" : ""} · {formatDateTime(rec.created_at)}
+            </span>
+          </li>
+        ))}
+      </ul>
     </div>
   );
 }
@@ -1210,7 +1307,6 @@ function SessionRow({
   prefill?: FormPrefill;
 }) {
   const [expanded, setExpanded] = useState<string | null>(null);
-  const [transcriptOpen, setTranscriptOpen] = useState(false);
   const [playingId, setPlayingId] = useState<string | null>(null);
   const [openFormDocId, setOpenFormDocId] = useState<string | null>(null);
 
@@ -1287,24 +1383,6 @@ function SessionRow({
               )}
             </div>
           ))}
-        </div>
-      )}
-
-      {s.transcript && s.transcript.trim() && (
-        <div className="mt-2">
-          <button
-            onClick={() => setTranscriptOpen((o) => !o)}
-            className="flex items-center gap-1.5 text-xs text-ink-500 hover:text-ink-800 font-medium"
-          >
-            <ScrollText className="h-3.5 w-3.5" />
-            Session Transcript
-            <span className="ml-0.5">{transcriptOpen ? "▲" : "▼"}</span>
-          </button>
-          {transcriptOpen && (
-            <div className="mt-2 text-sm text-ink-700 bg-ink-50/60 rounded-xl p-3 max-h-64 overflow-y-auto">
-              <p className="whitespace-pre-wrap">{s.transcript}</p>
-            </div>
-          )}
         </div>
       )}
 
@@ -1425,9 +1503,13 @@ function FormDocumentCard({
   const [open, setOpen] = useState(false);
   const [editing, setEditing] = useState(false);
   const status = submission?.status ?? "missing";
-  const isSubmitted = agreementState === "completed" || status === "signed" || status === "submitted";
+  // A form the practitioner already marked reviewed/signed (e.g. completed on
+  // paper or in session) counts as done here too — otherwise the portal says
+  // "Not Started" while the practitioner side says "Reviewed".
+  const practitionerCompleted = !submission && (doc.status === "signed" || doc.status === "reviewed");
+  const isSubmitted = agreementState === "completed" || status === "signed" || status === "submitted" || practitionerCompleted;
   const statusBadge =
-    agreementState === "completed"
+    agreementState === "completed" || practitionerCompleted
       ? { label: AGREEMENT_STATE_LABELS.completed, cls: "bg-sage-100 text-sage-700" }
       : agreementState === "opened"
         ? { label: AGREEMENT_STATE_LABELS.opened, cls: "bg-amber-100 text-amber-700" }

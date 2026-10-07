@@ -8,6 +8,9 @@ import {
   getMilestones,
   getSessions,
   pickPhaseSession,
+  getStageNotes,
+  getStageRecordings,
+  ensureClientFormDocuments,
 } from "@/lib/data";
 import { notFound, redirect } from "next/navigation";
 import IntegrationWorkspace from "@/components/client/IntegrationWorkspace";
@@ -21,16 +24,21 @@ export const dynamic = "force-dynamic";
 
 export default async function Integration1Page({ params }: { params: Promise<{ id: string }> }) {
   const { id } = await params;
+  // Attach any Form Library form this client doesn't have yet (e.g. one
+  // added after they became a client) so it shows under Forms for This Session.
+  await ensureClientFormDocuments(id);
   const client = await getClient(id);
   if (!client) notFound();
 
-  const [documents, formTemplates, formSubmissions, summaries, milestones, sessions] = await Promise.all([
+  const [documents, formTemplates, formSubmissions, summaries, milestones, sessions, stageNotes, stageRecordings] = await Promise.all([
     getDocuments(id),
     getFormTemplates(),
     getFormSubmissionsForClient(id),
     getAiSummaries(id, "integration_summary"),
     getMilestones(id),
     getSessions(id),
+    getStageNotes(id, "integration_1"),
+    getStageRecordings(id, "integration_1"),
   ]);
 
   const session = pickPhaseSession(sessions, "integration_1");
@@ -46,14 +54,14 @@ export default async function Integration1Page({ params }: { params: Promise<{ i
       <MilestoneToggleBanner
         clientId={id}
         milestoneKey="integration_1_complete"
-        label="Integration Session One"
+        label="Integration Session 1"
         meta="Phase 5 · Within 72 hours"
         initialCompleted={milestone?.completed ?? false}
         stageStatus={stage.status}
         canMarkComplete={stage.canMarkComplete}
         canPrepare={stage.canPrepare}
       />
-      {stage.canPrepare && <PhasePrepareMe clientId={id} sessionTypeLabel="Integration Session 1" sessionType="integration_1" />}
+      <PhasePrepareMe readOnly={!stage.canPrepare} clientId={id} sessionTypeLabel="Integration Session 1" sessionType="integration_1" />
       <IntegrationWorkspace
         clientId={id}
         clientName={client.full_name}
@@ -61,7 +69,9 @@ export default async function Integration1Page({ params }: { params: Promise<{ i
         documents={documents}
         formTemplates={formTemplates}
         formSubmissions={formSubmissions}
-        existingSummary={summaries.find((s) => s.title === "Integration Summary 1")}
+        existingSummaries={summaries.filter((s) => s.title === "Integration Summary 1")}
+        initialNotes={stageNotes?.content ?? ""}
+        initialRecordings={stageRecordings}
         canCompleteStage={stage.canCompleteStage}
       />
       </ClientPhaseWorkspace>

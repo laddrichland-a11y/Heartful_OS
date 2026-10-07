@@ -1,7 +1,7 @@
 import AppShell from "@/components/layout/AppShell";
-import { getClients, getOnHoldClients, getMilestones, getReferralSources, getSessions } from "@/lib/data";
+import { getAgreementStatusByClient, getClients, getOnHoldClients, getMilestones, getReferralSources, getSessions } from "@/lib/data";
 import Link from "next/link";
-import { cx, isActiveClient, isAwaitingIntegrationClient, isCompletedClient } from "@/lib/utils";
+import { cx, isActiveClient, isCompletedClient } from "@/lib/utils";
 import { selectCurrentOrNextSession } from "@/lib/sessionSelectors";
 import ClientList from "@/components/client/ClientList";
 import NewClientButton from "@/components/client/NewClientButton";
@@ -9,7 +9,7 @@ import { PauseCircle } from "@/components/ui/HeartfulIcon";
 
 export const dynamic = "force-dynamic";
 
-type ClientFilter = "all" | "active" | "awaiting_integration" | "completed" | "inactive";
+type ClientFilter = "all" | "active" | "needs_scheduling" | "paperwork_missing" | "completed" | "inactive";
 
 export default async function ClientsPage({
   searchParams,
@@ -19,7 +19,13 @@ export default async function ClientsPage({
   const { view, new: newClient, filter } = await searchParams;
   const showingHeld = view === "hold";
   const selectedFilter: ClientFilter =
-    filter === "active" || filter === "awaiting_integration" || filter === "completed" || filter === "inactive" ? filter : "all";
+    filter === "active" ||
+    filter === "needs_scheduling" ||
+    filter === "paperwork_missing" ||
+    filter === "completed" ||
+    filter === "inactive"
+      ? filter
+      : "all";
 
   const [allClients, held, referralSources] = await Promise.all([
     getClients(),
@@ -28,18 +34,37 @@ export default async function ClientsPage({
   ]);
   const completedCount = allClients.filter((client) => isCompletedClient(client.status)).length;
   const activeCount = allClients.filter((client) => isActiveClient(client.status)).length;
-  const awaitingIntegrationCount = allClients.filter((client) => isAwaitingIntegrationClient(client.status)).length;
+  const activeClients = allClients.filter((client) => isActiveClient(client.status));
+  // Active clients with nothing current or upcoming on the calendar — the ones
+  // most likely to slip through the cracks.
+  const [activeSessions, activeAgreements] = await Promise.all([
+    Promise.all(activeClients.map((client) => getSessions(client.id))),
+    getAgreementStatusByClient(activeClients),
+  ]);
+  const needsSchedulingIds = new Set(
+    activeClients
+      .filter((_, index) => !selectCurrentOrNextSession(activeSessions[index]))
+      .map((client) => client.id)
+  );
+  // Active clients who haven't completed all three signed-once agreements.
+  const paperworkMissingIds = new Set(
+    activeAgreements
+      .filter((agreement) => agreement.total_count > 0 && !agreement.complete)
+      .map((agreement) => agreement.client_id)
+  );
   const inactiveCount = allClients.filter((client) => client.status === "inactive").length;
   const filterOptions: Array<{ key: ClientFilter; label: string; count: number; href: string }> = [
     { key: "all", label: "All", count: allClients.length, href: "/clients" },
     { key: "active", label: "Active", count: activeCount, href: "/clients?filter=active" },
-    { key: "awaiting_integration", label: "Awaiting Integration", count: awaitingIntegrationCount, href: "/clients?filter=awaiting_integration" },
+    { key: "needs_scheduling", label: "Needs Scheduling", count: needsSchedulingIds.size, href: "/clients?filter=needs_scheduling" },
+    { key: "paperwork_missing", label: "Paperwork Missing", count: paperworkMissingIds.size, href: "/clients?filter=paperwork_missing" },
     { key: "completed", label: "Completed", count: completedCount, href: "/clients?filter=completed" },
     { key: "inactive", label: "Inactive", count: inactiveCount, href: "/clients?filter=inactive" },
   ];
   const filteredClients = allClients.filter((client) => {
     if (selectedFilter === "active") return isActiveClient(client.status);
-    if (selectedFilter === "awaiting_integration") return isAwaitingIntegrationClient(client.status);
+    if (selectedFilter === "needs_scheduling") return needsSchedulingIds.has(client.id);
+    if (selectedFilter === "paperwork_missing") return paperworkMissingIds.has(client.id);
     if (selectedFilter === "completed") return isCompletedClient(client.status);
     if (selectedFilter === "inactive") return client.status === "inactive";
     return true;
@@ -72,27 +97,38 @@ export default async function ClientsPage({
           {showingHeld ? (
             <p className="text-sm text-ink-500">{held.length} on hold</p>
           ) : (
-            <nav aria-label="Filter clients" className="inline-flex flex-wrap items-center rounded-full bg-ink-50 p-1">
-              {filterOptions.map((option) => {
-                const selected = selectedFilter === option.key;
-                return (
-                  <Link
-                    key={option.key}
-                    href={option.href}
-                    aria-current={selected ? "page" : undefined}
-                    className={cx(
-                      "inline-flex h-7 items-center gap-1.5 rounded-full px-4 py-0 text-sm font-semibold transition-colors",
-                      selected
-                        ? "bg-clay-50 text-clay-800"
-                        : "text-ink-500 hover:bg-white hover:text-ink-700"
-                    )}
-                  >
-                    {option.label}
-                    <span className={selected ? "text-clay-700" : "text-ink-400"}>{option.count}</span>
-                  </Link>
-                );
-              })}
-            </nav>
+            <>
+              {/* Status pills always add up to "All". The to-do filters are
+                  subsets of Active, so they sit in their own group. */}
+              {[
+                { label: "Filter clients by status", keys: ["all", "active", "completed", "inactive"] },
+                { label: "Clients needing action", keys: ["needs_scheduling", "paperwork_missing"] },
+              ].map((group) => (
+                <nav key={group.label} aria-label={group.label} className="inline-flex flex-wrap items-center rounded-full bg-ink-50 p-1">
+                  {filterOptions
+                    .filter((option) => group.keys.includes(option.key))
+                    .map((option) => {
+                      const selected = selectedFilter === option.key;
+                      return (
+                        <Link
+                          key={option.key}
+                          href={option.href}
+                          aria-current={selected ? "page" : undefined}
+                          className={cx(
+                            "inline-flex h-7 items-center gap-1.5 rounded-full px-4 py-0 text-sm font-semibold transition-colors",
+                            selected
+                              ? "bg-clay-50 text-clay-800"
+                              : "text-ink-500 hover:bg-white hover:text-ink-700"
+                          )}
+                        >
+                          {option.label}
+                          <span className={selected ? "text-clay-700" : "text-ink-400"}>{option.count}</span>
+                        </Link>
+                      );
+                    })}
+                </nav>
+              ))}
+            </>
           )}
         </div>
         <NewClientButton referralSources={referralSources} initialOpen={newClient === "1"} />
@@ -134,8 +170,10 @@ export default async function ClientsPage({
             ? "Nobody is on hold right now."
             : selectedFilter === "active"
               ? "No active clients."
-              : selectedFilter === "awaiting_integration"
-                ? "No clients are awaiting integration."
+              : selectedFilter === "needs_scheduling"
+                ? "Every active client has a session on the calendar."
+              : selectedFilter === "paperwork_missing"
+                ? "Every active client has signed all their agreements."
               : selectedFilter === "completed"
                 ? "No completed clients."
                 : selectedFilter === "inactive"

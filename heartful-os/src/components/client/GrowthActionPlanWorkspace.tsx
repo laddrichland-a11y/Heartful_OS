@@ -1,8 +1,10 @@
 "use client";
 
 import { useState } from "react";
-import { AiSummary, GrowthActionPlan } from "@/lib/types";
+import { AiSummary, GrowthActionPlan, Recording } from "@/lib/types";
 import TranscriptInput from "@/components/ai/TranscriptInput";
+import SummaryVersions from "@/components/ai/SummaryVersions";
+import { useStageNotes } from "@/components/ai/useStageNotes";
 import AiGenerateButton from "@/components/ai/AiGenerateButton";
 import ActionCardHeader from "@/components/client/ActionCardHeader";
 import { ScrollText, Trash2 } from "@/components/ui/HeartfulIcon";
@@ -16,35 +18,31 @@ export default function GrowthActionPlanWorkspace({
   clientId,
   clientName,
   existingGrowthPlan,
+  existingVersions,
+  initialNotes,
+  initialRecordings = [],
   canCompleteStage,
 }: {
   clientId: string;
   clientName: string;
   existingGrowthPlan?: GrowthActionPlan;
+  /** Every plan the AI has generated, newest first. */
+  existingVersions: AiSummary[];
+  /** Notes already saved on the client record for this stage. */
+  initialNotes: string;
+  /** Recordings already uploaded on this stage page. */
+  initialRecordings?: Recording[];
   canCompleteStage: boolean;
 }) {
-  // Persisted to localStorage (not just React state) so the pasted transcript
-  // survives a Generate/Enhance click — that button triggers a router.refresh()
-  // to pull the freshly generated plan from the server, and plain useState
-  // isn't guaranteed to survive that trip through the Server Component tree.
-  const transcriptStorageKey = `heartful_transcript_${clientId}_growth_plan`;
-  const [transcript, setTranscriptState] = useState(() => {
-    if (typeof window === "undefined") return "";
-    return window.localStorage.getItem(transcriptStorageKey) ?? "";
-  });
-  function setTranscript(v: string) {
-    setTranscriptState(v);
-    if (typeof window !== "undefined") {
-      if (v) window.localStorage.setItem(transcriptStorageKey, v);
-      else window.localStorage.removeItem(transcriptStorageKey);
-    }
-  }
+  // Saved to the client record as you type, and kept after generating.
+  const { notes, setNotes, saveState } = useStageNotes(clientId, "growth_plan", initialNotes);
+  const [versions, setVersions] = useState(existingVersions);
 
   const [growthPlan, setGrowthPlan] = useState(existingGrowthPlan);
   const [deletingPlan, setDeletingPlan] = useState(false);
 
   async function handleDeleteGrowthPlan() {
-    if (!confirm("Delete this Growth Action Plan? You can regenerate a new one afterward.")) return;
+    if (!confirm("Clear the current Growth Action Plan so you can generate a fresh one? Earlier generated versions stay in the Versions list below.")) return;
     setDeletingPlan(true);
     try {
       await deleteGrowthActionPlanAction(clientId);
@@ -57,15 +55,15 @@ export default function GrowthActionPlanWorkspace({
   return (
     <div className="space-y-6">
       <div className="card p-5 space-y-4">
-        <h2 className="flex items-center gap-2 font-semibold text-ink-900"><ScrollText className="h-4 w-4 text-ink-500" />Session Transcript</h2>
-        <TranscriptInput value={transcript} onChange={setTranscript} hideLabel />
+        <h2 className="flex items-center gap-2 font-semibold text-ink-900"><ScrollText className="h-4 w-4 text-ink-500" />Session Notes &amp; Transcript</h2>
+        <TranscriptInput clientId={clientId} stage="growth_plan" initialRecordings={initialRecordings} value={notes} onChange={setNotes} saveState={saveState} hideLabel />
       </div>
 
       <div className="card p-5 space-y-4">
         <ActionCardHeader
           title="Growth Action Plan"
           description={growthPlan
-            ? "Enhance the existing plan with a new transcript without starting over."
+            ? "Enhance the existing plan using your notes above, without starting over. Each result is kept as a new version."
             : `Turn ${clientName}'s journey into practical 30-day commitments and next steps.`}
           titleAction={growthPlan && (
             <button
@@ -73,8 +71,8 @@ export default function GrowthActionPlanWorkspace({
               onClick={handleDeleteGrowthPlan}
               disabled={deletingPlan}
               className="p-1 rounded text-ink-300 hover:text-red-500 hover:bg-red-50 disabled:opacity-50"
-              title="Delete this Growth Action Plan"
-              aria-label="Delete this Growth Action Plan"
+              title="Clear the current plan"
+              aria-label="Clear the current Growth Action Plan"
             >
               <Trash2 className="h-3.5 w-3.5" />
             </button>
@@ -84,9 +82,10 @@ export default function GrowthActionPlanWorkspace({
               clientId={clientId}
               summaryType="growth_action_plan"
               label={growthPlan ? "Enhance Growth Action Plan" : "Generate Growth Action Plan"}
-              extra={{ transcript }}
-              disabled={!canCompleteStage || !transcript.trim()}
+              extra={{ transcript: notes, stageNotesKey: "growth_plan" }}
+              disabled={!canCompleteStage || !notes.trim()}
               onDone={(s) => {
+                setVersions((prev) => [s as unknown as AiSummary, ...prev]);
                 const content = (s as unknown as AiSummary).content as unknown as GrowthActionPlan;
                 setGrowthPlan({
                   ...content,
@@ -111,6 +110,15 @@ export default function GrowthActionPlanWorkspace({
           <p className="text-sm text-ink-400">No Growth Action Plan generated yet.</p>
         )}
       </div>
+
+      <SummaryVersions
+        clientId={clientId}
+        summaries={versions}
+        onChange={setVersions}
+        heading="Growth Action Plan Versions"
+        description={`Every plan the AI has generated for ${clientName}, newest first, with the notes each one came from. Deleting a version here doesn't change the current plan above.`}
+        cardTitle="Growth Action Plan"
+      />
     </div>
   );
 }

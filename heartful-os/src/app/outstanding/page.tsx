@@ -3,7 +3,7 @@ import OutstandingQueue, {
   type OutstandingQueueGroup,
   type OutstandingQueueItem,
 } from "@/components/outstanding/OutstandingQueue";
-import { getOutstandingForms, getOutstandingTasks } from "@/lib/data";
+import { dedupeOutstandingForms, getOutstandingForms, getOutstandingTasks } from "@/lib/data";
 import {
   isPastDue,
   outstandingActionLabel,
@@ -40,7 +40,8 @@ function actionLabel(item: Parameters<typeof outstandingActionLabel>[0]) {
 }
 
 export default async function OutstandingPage() {
-  const [tasks, forms] = await Promise.all([getOutstandingTasks(), getOutstandingForms()]);
+  const [tasks, allForms] = await Promise.all([getOutstandingTasks(), getOutstandingForms()]);
+  const forms = dedupeOutstandingForms(allForms, tasks);
   const byClient = new Map<string, OutstandingQueueGroup>();
 
   function groupFor(clientId: string, clientName: string) {

@@ -1,5 +1,5 @@
 import AppShell from "@/components/layout/AppShell";
-import { getClient, getGrowthActionPlan, getMilestones } from "@/lib/data";
+import { getAiSummaries, getClient, getGrowthActionPlan, getMilestones, getStageNotes, getStageRecordings } from "@/lib/data";
 import { notFound } from "next/navigation";
 import GrowthActionPlanWorkspace from "@/components/client/GrowthActionPlanWorkspace";
 import MilestoneToggleBanner from "@/components/client/MilestoneToggleBanner";
@@ -12,10 +12,13 @@ export const dynamic = "force-dynamic";
 
 export default async function GrowthPlanPage({ params }: { params: Promise<{ id: string }> }) {
   const { id } = await params;
-  const [client, growthPlan, milestones] = await Promise.all([
+  const [client, growthPlan, milestones, planVersions, stageNotes, stageRecordings] = await Promise.all([
     getClient(id),
     getGrowthActionPlan(id),
     getMilestones(id),
+    getAiSummaries(id, "growth_action_plan"),
+    getStageNotes(id, "growth_plan"),
+    getStageRecordings(id, "growth_plan"),
   ]);
   if (!client) notFound();
 
@@ -36,11 +39,14 @@ export default async function GrowthPlanPage({ params }: { params: Promise<{ id:
         canMarkComplete={stage.canMarkComplete}
         canPrepare={stage.canPrepare}
       />
-      {stage.canPrepare && <PhasePrepareMe clientId={id} sessionTypeLabel="Growth Plan" />}
+      <PhasePrepareMe readOnly={!stage.canPrepare} clientId={id} sessionTypeLabel="Growth Plan" />
       <GrowthActionPlanWorkspace
         clientId={id}
         clientName={client.full_name}
         existingGrowthPlan={growthPlan ?? undefined}
+        existingVersions={planVersions}
+        initialNotes={stageNotes?.content ?? ""}
+        initialRecordings={stageRecordings}
         canCompleteStage={stage.canCompleteStage}
       />
       </ClientPhaseWorkspace>

@@ -21,6 +21,10 @@ import {
   getPractitioner,
   getEmailLogs,
   getTranscripts,
+  getStageNotes,
+  getStageRecordings,
+  getRecordings,
+  ensureClientFormDocuments,
 } from "@/lib/data";
 import { notFound } from "next/navigation";
 import { headers } from "next/headers";
@@ -40,6 +44,9 @@ export default async function ClientPage({
   searchParams: Promise<{ intro?: string; tab?: string; stage?: string }>;
 }) {
   const { id } = await params;
+  // Attach any Form Library form this client doesn't have yet (e.g. one
+  // added after they became a client) so it shows under Forms for This Session.
+  await ensureClientFormDocuments(id);
   const { intro, tab: rawTab, stage } = await searchParams;
   const tab = TABS.includes(rawTab as Tab) ? (rawTab as Tab) : undefined;
   const client = await getClient(id);
@@ -64,6 +71,9 @@ export default async function ClientPage({
     practitioner,
     emailLogs,
     transcripts,
+    intakeNotes,
+    intakeRecordings,
+    allRecordings,
   ] = await Promise.all([
     getMilestones(id),
     getDocuments(id),
@@ -83,6 +93,9 @@ export default async function ClientPage({
     getPractitioner(),
     getEmailLogs(id),
     getTranscripts(id),
+    getStageNotes(id, "intake"),
+    getStageRecordings(id, "intake"),
+    getRecordings(id),
   ]);
 
   const h = await headers();
@@ -139,6 +152,9 @@ export default async function ClientPage({
             formSubmissions={formSubmissions}
             milestones={milestones}
             emailLogs={emailLogs}
+            intakeNotes={intakeNotes?.content ?? ""}
+            intakeRecordings={intakeRecordings}
+            allRecordings={allRecordings}
             defaultTab={tab}
             defaultStage={stage}
           />

@@ -1,7 +1,8 @@
 "use client";
 
 import { useState, useTransition } from "react";
-import { CheckIn } from "@/lib/types";
+import { CheckIn, Recording } from "@/lib/types";
+import { RecordingsSection, useRecordings } from "@/components/ai/RecordingsPanel";
 import { submitCheckInAction } from "@/lib/actions";
 import { ClipboardList, Send } from "@/components/ui/HeartfulIcon";
 
@@ -18,12 +19,16 @@ export default function CheckInWorkspace({
   clientName,
   existingCheckIn,
   onSubmitted,
+  initialRecordings = [],
 }: {
   clientId: string;
   clientName: string;
   existingCheckIn?: CheckIn;
   onSubmitted?: () => void;
+  /** Recordings of the 12-hour check-in call added before it was scheduled. */
+  initialRecordings?: Recording[];
 }) {
+  const rec = useRecordings(clientId, { stage: "check_in_12hr" }, initialRecordings);
   const [fields, setFields] = useState<Record<string, string>>(
     Object.fromEntries(FIELDS.map((f) => [f.key, (existingCheckIn?.[f.key] as string) ?? ""]))
   );
@@ -75,6 +80,16 @@ export default function CheckInWorkspace({
         >
           <Send className="h-4 w-4" /> {submitted ? "Update Check-In" : "Submit Check-In"}
         </button>
+        <div className="mt-5">
+          <RecordingsSection
+            busy={rec.busy}
+            error={rec.error}
+            recordings={rec.recordings}
+            onFile={rec.upload}
+            onPlay={rec.play}
+            onRemove={rec.remove}
+          />
+        </div>
       </section>
   );
 }

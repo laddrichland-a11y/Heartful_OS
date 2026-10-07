@@ -23,10 +23,10 @@ export type Tab = (typeof TABS)[number];
 export const SESSION_TYPE_LABELS: Record<string, string> = {
   intake_assessment: "Intake & Assessment",
   preparation: "Preparation",
-  harm_reduction_support: "Harm Reduction Support Session",
+  harm_reduction_support: "Journey Day",
   check_in_12hr: "12-Hour Check-In",
-  integration_1: "Integration Session One",
-  integration_2: "Integration Session Two",
+  integration_1: "Integration Session 1",
+  integration_2: "Integration Session 2",
   other: "Other",
 };
 
@@ -381,7 +381,7 @@ export function clientJourneyWorkspaceHref(
     case "harm_reduction_session":
       return `${base}/journey-day`;
     case "post_journey_check_in":
-      return `${base}?tab=${encodeURIComponent("Journey & AI")}&stage=post_journey_check_in`;
+      return `${base}/check-in`;
     case "integration_1":
       return `${base}/integration-1`;
     case "integration_2":

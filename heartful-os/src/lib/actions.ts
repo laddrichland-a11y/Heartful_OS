@@ -4,8 +4,8 @@ import { revalidatePath } from "next/cache";
 import { forbidden, redirect, unauthorized } from "next/navigation";
 import { cookies } from "next/headers";
 import * as data from "@/lib/data";
-import { SessionNoteField, ClientStatus, JourneyPhase, DocumentType, SessionType, type PaymentMethod } from "@/lib/types";
-import { canSetJourneyStatus, JOURNEY_PROGRESS_COMPLETED_MILESTONES } from "@/lib/utils";
+import { SessionNoteField, StageNotesKey, ClientStatus, JourneyPhase, DocumentType, SessionType, type PaymentMethod } from "@/lib/types";
+import { canSetJourneyStatus, JOURNEY_PROGRESS_COMPLETED_MILESTONES, SESSION_TYPE_LABELS } from "@/lib/utils";
 import { runAiJson } from "@/lib/ai/generate";
 import { buildAiConversationPrompt, buildProspectIntroSummaryPrompt } from "@/lib/ai/prompts";
 import { mockAiConversationReply } from "@/lib/ai/mocks";
@@ -264,6 +264,18 @@ export async function deleteAiSummaryAction(summaryId: string, clientId: string)
   revalidatePath(`/clients/${clientId}`);
   revalidatePath(`/clients/${clientId}/sessions`);
   revalidatePath(`/clients/${clientId}/journey-day`);
+}
+
+const STAGE_NOTES_KEYS: StageNotesKey[] = ["intake", "preparation", "journey_day", "check_in_12hr", "integration_1", "integration_2", "growth_plan"];
+
+// Autosave for the notes box on stage pages. Deliberately no revalidatePath:
+// the textarea is the source of truth while typing, and every stage page is
+// force-dynamic so it reads the saved copy fresh on the next visit.
+export async function saveStageNotesAction(clientId: string, stage: StageNotesKey, content: string) {
+  await requireClientAccess(clientId);
+  if (!STAGE_NOTES_KEYS.includes(stage)) forbidden();
+  const saved = await data.saveStageNotes(clientId, stage, content);
+  return { updated_at: saved.updated_at };
 }
 
 export async function updateAiSummaryAction(summaryId: string, clientId: string, content: Record<string, unknown>) {
@@ -574,6 +586,50 @@ export async function addRecordingAction(
   return recording;
 }
 
+// Recordings for a session OR a stage page (Intake, Preparation, Integration,
+// Growth Plan before a session is on the calendar). One set of actions so
+// every place with an "Upload recording" button stores it the same way.
+type RecordingTarget = { sessionId: string } | { stage: StageNotesKey };
+
+async function requireRecordingTarget(clientId: string, target: RecordingTarget) {
+  await requireClientAccess(clientId);
+  if ("sessionId" in target) {
+    await requireSessionForClient(clientId, target.sessionId);
+    return { sessionId: target.sessionId, stage: undefined, folder: target.sessionId };
+  }
+  if (!STAGE_NOTES_KEYS.includes(target.stage)) forbidden();
+  return { sessionId: undefined, stage: target.stage, folder: `stage-${target.stage}` };
+}
+
+export async function createRecordingUploadForAction(
+  clientId: string,
+  target: RecordingTarget,
+  fileName: string,
+  contentType: string
+) {
+  const { folder } = await requireRecordingTarget(clientId, target);
+  return data.createRecordingUploadUrl(clientId, folder, fileName, contentType);
+}
+
+export async function addRecordingForAction(
+  clientId: string,
+  target: RecordingTarget,
+  fileName: string,
+  storagePath: string,
+  sizeBytes?: number
+) {
+  const { sessionId, stage } = await requireRecordingTarget(clientId, target);
+  const recording = await data.addRecording(clientId, sessionId, fileName, storagePath, sizeBytes, stage);
+  if (sessionId) revalidatePath(`/clients/${clientId}/sessions/${sessionId}`);
+  return recording;
+}
+
+export async function deleteClientRecordingAction(clientId: string, recordingId: string) {
+  await requireClientAccess(clientId);
+  if (!(await data.getRecordings(clientId)).some((recording) => recording.id === recordingId)) forbidden();
+  await data.deleteRecording(recordingId);
+}
+
 export async function getRecordingDownloadUrlAction(storagePath: string) {
   await requirePractitioner();
   return data.getRecordingDownloadUrl(storagePath);
@@ -675,6 +731,25 @@ export async function addSessionAction(input: {
   revalidatePath("/copilot");
   revalidatePath(`/clients/${input.clientId}`);
   return session;
+}
+
+// Journey Day doesn't need to be scheduled first: the first save on the
+// Journey Day page creates the appointment (dated now) if there isn't one.
+export async function ensureJourneyDaySessionAction(clientId: string): Promise<string> {
+  await requireClientAccess(clientId);
+  const existing = data.pickPhaseSession(await data.getSessions(clientId), "harm_reduction_support");
+  if (existing) return existing.id;
+  const session = await data.addSession({
+    client_id: clientId,
+    session_type: "harm_reduction_support",
+    scheduled_at: new Date().toISOString(),
+    duration_minutes: 480,
+  });
+  syncSessionToGoogleInBackground(session.id);
+  revalidatePath("/calendar");
+  revalidatePath("/dashboard");
+  revalidatePath(`/clients/${clientId}`);
+  return session.id;
 }
 
 export async function updateSessionAction(
@@ -1065,6 +1140,7 @@ export async function getPortalBundleAction(clientId: string) {
     interruptUnauthorizedAction(error);
   }
 
+  await data.ensureClientFormDocuments(clientId);
   const [
     tasks,
     assignments,
@@ -1111,8 +1187,22 @@ export async function getPortalBundleAction(clientId: string) {
     documents,
     formTemplates,
     formSubmissions,
-    sessions,
-    sessionCallSummaries,
+    // The practitioner's own notes and pasted transcripts never leave the
+    // server for the portal — not shown, and not even sent to the browser.
+    sessions: sessions.map((session) => {
+      const { manual_notes: _notes, transcript: _transcript, ...clientSafe } = session;
+      void _notes;
+      void _transcript;
+      return clientSafe;
+    }),
+    // AI session summaries are shown to the client; the notes each one was
+    // generated from are stripped for the same reason.
+    sessionCallSummaries: sessionCallSummaries.map((summary) => {
+      const { source_notes: _sourceNotes, ...clientSafe } = summary;
+      void _sourceNotes;
+      return clientSafe;
+    }),
+    // Every recording on the record — session recordings and stage-page ones.
     recordings,
   };
 }
@@ -1208,6 +1298,65 @@ export async function setFormTemplateFlagsAction(templateId: string, patch: { re
   await requirePractitioner();
   await data.setFormTemplateFlags(templateId, patch);
   revalidatePath("/settings/forms");
+}
+
+const FORM_STAGE_OPTIONS: SessionType[] = ["intake_assessment", "preparation", "harm_reduction_support", "check_in_12hr", "integration_1", "integration_2"];
+const FORM_FIELD_TYPES = ["short_text", "long_text", "yes_no", "select", "multi_select", "static_text", "signature"] as const;
+
+function cleanFormTemplateInput(input: data.FormTemplateInput): data.FormTemplateInput {
+  const title = input.title?.trim();
+  if (!title) throw new Error("Give the form a name.");
+  const session_types = (input.session_types ?? []).filter((t) => FORM_STAGE_OPTIONS.includes(t));
+  if (session_types.length === 0) throw new Error("Choose at least one stage for this form.");
+  const sections = (input.sections ?? []).map((section, sIndex) => ({
+    id: section.id || `section_${sIndex + 1}`,
+    ...(section.title?.trim() ? { title: section.title.trim() } : {}),
+    ...(section.body?.trim() ? { body: section.body.trim() } : {}),
+    fields: (section.fields ?? [])
+      .filter((field) => field.label?.trim() && (FORM_FIELD_TYPES as readonly string[]).includes(field.type))
+      .map((field, fIndex) => ({
+        id: field.id || `q_${sIndex + 1}_${fIndex + 1}`,
+        type: field.type,
+        label: field.label.trim(),
+        ...(field.helpText?.trim() ? { helpText: field.helpText.trim() } : {}),
+        ...(field.required ? { required: true } : {}),
+        ...(field.type === "select" || field.type === "multi_select"
+          ? { options: (field.options ?? []).filter((o) => o.label?.trim()).map((o) => ({ value: o.label.trim(), label: o.label.trim() })) }
+          : {}),
+      })),
+  }));
+  if (!sections.some((section) => section.fields.some((field) => field.type !== "static_text"))) {
+    throw new Error("Add at least one question.");
+  }
+  return { title, description: input.description ?? "", session_types, required: Boolean(input.required), sections };
+}
+
+export async function createFormTemplateAction(input: data.FormTemplateInput) {
+  await requirePractitioner();
+  try {
+    const template = await data.createFormTemplate(cleanFormTemplateInput(input));
+    revalidatePath("/settings/forms");
+    return { ok: true as const, template };
+  } catch (error) {
+    return { ok: false as const, error: error instanceof Error ? error.message : "The form couldn't be saved." };
+  }
+}
+
+export async function updateFormTemplateAction(templateId: string, input: data.FormTemplateInput) {
+  await requirePractitioner();
+  try {
+    const existing = await data.getFormTemplateById(templateId);
+    if (!existing) return { ok: false as const, error: "That form no longer exists." };
+    // Built-in forms keep their own wording; only stages + auto-attach change.
+    const cleaned = existing.custom
+      ? cleanFormTemplateInput(input)
+      : cleanFormTemplateInput({ ...input, title: existing.title, sections: existing.sections });
+    const template = await data.updateFormTemplate(templateId, cleaned);
+    revalidatePath("/settings/forms");
+    return { ok: true as const, template };
+  } catch (error) {
+    return { ok: false as const, error: error instanceof Error ? error.message : "The form couldn't be saved." };
+  }
 }
 
 export async function resyncFormTemplatesAction() {
@@ -1527,7 +1676,7 @@ export async function checkScheduleConflictsAction(
   for (const s of sessions) {
     if (s.id === excludeId || s.status !== "scheduled" || !s.scheduled_at) continue;
     if (overlaps(s.scheduled_at, s.duration_minutes)) {
-      conflicts.push({ type: "session", title: `${s.client_name} — ${s.session_type.replace(/_/g, " ")}`, start_at: s.scheduled_at });
+      conflicts.push({ type: "session", title: `${s.client_name} — ${SESSION_TYPE_LABELS[s.session_type] ?? s.session_type.replace(/_/g, " ")}`, start_at: s.scheduled_at });
     }
   }
   for (const c of prospectCalls) {

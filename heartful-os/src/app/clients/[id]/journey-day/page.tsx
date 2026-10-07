@@ -6,7 +6,12 @@ import {
   getMilestones,
   getPractitioner,
   getRecordings,
+  getStageRecordings,
   pickPhaseSession,
+  ensureClientFormDocuments,
+  getFormTemplates,
+  getDocuments,
+  getFormSubmissionsForClient,
 } from "@/lib/data";
 import { notFound, redirect } from "next/navigation";
 import JourneyDayWorkspace from "@/components/client/JourneyDayWorkspace";
@@ -24,6 +29,9 @@ export const dynamic = "force-dynamic";
 
 export default async function JourneyDayPage({ params }: { params: Promise<{ id: string }> }) {
   const { id } = await params;
+  // Attach any Form Library form this client doesn't have yet (e.g. one
+  // added after they became a client) so it shows under Forms for This Session.
+  await ensureClientFormDocuments(id);
   const client = await getClient(id);
   if (!client) notFound();
 
@@ -31,13 +39,16 @@ export default async function JourneyDayPage({ params }: { params: Promise<{ id:
   const host = h.get("host") ?? "localhost:3000";
   const protocol = h.get("x-forwarded-proto") ?? "http";
   const portalUrl = `${protocol}://${host}/portal?client=${id}`;
-  const [sessions, milestones, practitioner, manualNotesSummaries, callSummaries] =
+  const [sessions, milestones, practitioner, manualNotesSummaries, callSummaries, formTemplates, documents, formSubmissions] =
     await Promise.all([
       getSessions(id),
       getMilestones(id),
       getPractitioner(),
       getAiSummaries(id, "journey_manual_notes_summary"),
       getAiSummaries(id, "session_call_summary"),
+      getFormTemplates(),
+      getDocuments(id),
+      getFormSubmissionsForClient(id),
     ]);
   // Prefer the scheduled Journey Day session if one exists; otherwise fall
   // back to the most recent one by date (completed/cancelled) — see
@@ -46,6 +57,7 @@ export default async function JourneyDayPage({ params }: { params: Promise<{ id:
   const canonicalSessionHref = session ? `/clients/${id}/sessions/${session.id}` : undefined;
   if (canonicalSessionHref) redirect(canonicalSessionHref);
   const recordings = session ? await getRecordings(id, session.id) : [];
+  const stageRecordings = session ? [] : await getStageRecordings(id, "journey_day");
   const milestone = milestones.find((m) => m.milestone_key === "journey_complete");
   const stage = getJourneyStageWorkspaceState(client, milestones, "harm_reduction_session", "journey_complete");
   const pastCallSummaries = session ? callSummaries.filter((s) => s.session_id === session.id) : [];
@@ -86,13 +98,13 @@ export default async function JourneyDayPage({ params }: { params: Promise<{ id:
         clientId={id}
         milestoneKey="journey_complete"
         label="Journey Day"
-        meta="Phase 3 · Harm Reduction Support · 8 hours"
+        meta="Phase 3 · 8 hours"
         initialCompleted={milestone?.completed ?? false}
         stageStatus={stage.status}
         canMarkComplete={stage.canMarkComplete}
         canPrepare={stage.canPrepare}
       />
-      {stage.canPrepare && <PhasePrepareMe clientId={id} sessionTypeLabel="Journey Day" sessionId={session?.id} />}
+      <PhasePrepareMe readOnly={!stage.canPrepare} clientId={id} sessionTypeLabel="Journey Day" sessionId={session?.id} />
 
       <JourneyDayWorkspace
         clientId={id}
@@ -108,6 +120,10 @@ export default async function JourneyDayPage({ params }: { params: Promise<{ id:
         pastCallSummaries={pastCallSummaries}
         initialTranscript={session?.transcript ?? ""}
         initialRecordings={recordings}
+        initialStageRecordings={stageRecordings}
+        formTemplates={formTemplates}
+        documents={documents}
+        formSubmissions={formSubmissions}
       />
       </ClientPhaseWorkspace>
     </AppShell>

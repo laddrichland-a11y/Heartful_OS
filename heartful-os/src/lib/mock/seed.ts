@@ -13,6 +13,7 @@ import {
   PostIntegrationForm,
   PreparationPlan,
   Profile,
+  Prospect,
   ReferralSource,
   Session,
   SessionNote,
@@ -107,7 +108,7 @@ function docSet(
     { type: "integration_summary_2", required: false },
     { type: "growth_action_plan", required: false },
   ];
-  return base.map(({ type, required }) => {
+  const docs = base.map(({ type, required }) => {
     const legacyIntegrationStatus = type === "integration_session_1"
       ? overrides.post_integration_form
       : type === "integration_session_2"
@@ -151,6 +152,80 @@ function docSet(
       current_version_id: versions[0]?.id,
     };
   });
+  // 12-Hour Check-In form, only for clients whose check-in is done. Uses fixed
+  // ids (not nextId) so adding it doesn't shift every later demo id — bookmarked
+  // client/session URLs stay valid.
+  const checkInStatus = overrides.check_in_12hr_form;
+  if (checkInStatus && checkInStatus !== "missing") {
+    const docId = `doc_${clientId}_check_in_12hr`;
+    docs.push({
+      id: docId,
+      client_id: clientId,
+      document_type: "check_in_12hr_form",
+      title: "check_in_12hr_form",
+      required: true,
+      status: checkInStatus,
+      versions: [
+        {
+          id: `${docId}_v1`,
+          document_id: docId,
+          version_number: 1,
+          file_url: `/mock-files/${clientId}/check_in_12hr_form-v1.pdf`,
+          file_name: "check_in_12hr_form-v1.pdf",
+          file_size_bytes: 120000,
+          mime_type: "application/pdf",
+          uploaded_by_role: "practitioner" as const,
+          created_at: daysAgo(4),
+        },
+      ],
+      current_version_id: `${docId}_v1`,
+    });
+  }
+  return docs;
+}
+
+// Demo prospects so the Prospects pipeline isn't empty in the demo.
+export function buildDemoProspects(): Prospect[] {
+  const base = { practitioner_id: PRACTITIONER.id };
+  return [
+    {
+      ...base,
+      id: nextId("prospect"),
+      full_name: "Jordan Ellis",
+      email: "jordan.ellis@example.com",
+      phone: "(720) 555-0142",
+      referral_source: "Word of Mouth",
+      status: "new",
+      notes: "Referred by a past client. Curious about integration support after a retreat last spring.",
+      created_at: daysAgo(1),
+      updated_at: daysAgo(1),
+    },
+    {
+      ...base,
+      id: nextId("prospect"),
+      full_name: "Alana Brooks",
+      email: "alana.brooks@example.com",
+      phone: "(303) 555-0177",
+      referral_source: "Psychedelic.support directory",
+      status: "intro_complete",
+      notes: "Found us through the directory listing. Intro call done — wants to explore grief work. Send pricing and next steps.",
+      intro_call_at: daysAgo(2),
+      created_at: daysAgo(4),
+      updated_at: daysAgo(2),
+    },
+    {
+      ...base,
+      id: nextId("prospect"),
+      full_name: "Tom Reyes",
+      email: "tom.reyes@example.com",
+      referral_source: "Local Integration Circle",
+      status: "considering",
+      notes: "Intro call went well. Thinking it over with his partner; follow up next week.",
+      intro_call_at: daysAgo(6),
+      created_at: daysAgo(9),
+      updated_at: daysAgo(6),
+    },
+  ];
 }
 
 export interface SeedBundle {
@@ -546,6 +621,7 @@ function buildMarcus(): SeedBundle {
       journey_brief: "reviewed",
       session_notes: "uploaded",
       post_integration_form: "uploaded",
+      check_in_12hr_form: "reviewed",
     }),
     sessions: [
       { id: nextId("sess"), client_id: c.id, practitioner_id: PRACTITIONER.id, session_type: "intake_assessment", scheduled_at: daysAgo(19), duration_minutes: 90, status: "completed" },
@@ -667,6 +743,7 @@ function buildSarah(): SeedBundle {
       session_notes: "uploaded",
       post_integration_form: "reviewed",
       post_integration_form_updated: "reviewed",
+      check_in_12hr_form: "reviewed",
       integration_summary_1: "uploaded",
       integration_summary_2: "uploaded",
       growth_action_plan: "uploaded",
